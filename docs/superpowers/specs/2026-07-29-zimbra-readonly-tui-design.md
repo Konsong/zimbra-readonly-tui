@@ -256,6 +256,7 @@ selections are fixed identifiers and are never converted into command names.
 | 22 | command timed out (`timeout`'s 124 normalised here) |
 | 23 | log unreadable |
 | 30 | partial bulk failure |
+| 40 | operator cancelled — navigation, never a process exit status |
 | 90 | **allowlist denial** — always logged, treated as a defect |
 | 91 | unsupported operating-system user |
 | 92 | capability unavailable |
