@@ -42,6 +42,10 @@ assert_fail zro_prov_ldap_capable gmi
 assert_fail zro_prov_ldap_capable getMailboxInfo
 assert_fail zro_prov_ldap_capable ''
 
+it "declares no mailbox command as a read"
+assert_not_contains "$ZRO_PROV_READS" "gmi"
+assert_not_contains "$ZRO_PROV_READS" "gqu"
+
 it "uses SOAP when SOAP works, and says so"
 : >"$ZRO_MOCK_LOG"
 out=$(ZRO_MOCK_ZMPROV_GA_OUT="$FIX/zmprov_ga_active.txt" \
@@ -75,12 +79,11 @@ out=$(ZRO_MOCK_ZMPROV_GAM_ERR="$FIX/zmprov_io_error_refused.err" \
       zro_prov_read "$ZRO_E_NO_ACCOUNT" gam 'ahmet.yilmaz@example.com')
 assert_contains "$out" "sistem@example.com"
 
-it "does not attempt LDAP for a subcommand LDAP cannot answer"
+it "refuses a subcommand that was never declared a read"
 : >"$ZRO_MOCK_LOG"
-ZRO_MOCK_ZMPROV_GMI_ERR="$FIX/zmprov_io_error_refused.err" \
-ZRO_MOCK_ZMPROV_GMI_RC=1 \
-  assert_status "$ZRO_E_UNAVAILABLE" zro_prov_read "$ZRO_E_NO_MAILBOX" gmi 'a@b.com'
-assert_not_contains "$(cat "$ZRO_MOCK_LOG")" "$(printf 'zmprov\t-l')"
+assert_status "$ZRO_E_DENIED" zro_prov_read "$ZRO_E_NO_MAILBOX" gmi 'a@b.com'
+assert_status "$ZRO_E_DENIED" zro_prov_read "$ZRO_E_NO_ACCOUNT" ma 'a@b.com'
+assert_eq "$(cat "$ZRO_MOCK_LOG")" ""
 
 it "does not reach for LDAP when the account simply does not exist"
 : >"$ZRO_MOCK_LOG"
@@ -146,32 +149,31 @@ out=$(ZRO_MOCK_ZMPROV_GA_OUT="$FIX/zmprov_ga_active.txt" \
 assert_contains "$out" "5.0 GB"
 assert_not_contains "$out" "10.0 GB"
 
-it "the quota screen still shows the limit when usage cannot be read"
+it "the quota screen works over LDAP with mailboxd down"
 out=$(ZRO_MOCK_ZMPROV_GA_ERR="$FIX/zmprov_io_error_refused.err" \
       ZRO_MOCK_ZMPROV_GA_RC=1 \
       ZRO_MOCK_ZMPROV_GC_ERR="$FIX/zmprov_io_error_refused.err" \
       ZRO_MOCK_ZMPROV_GC_RC=1 \
-      ZRO_MOCK_ZMPROV_GMI_ERR="$FIX/zmprov_io_error_refused.err" \
-      ZRO_MOCK_ZMPROV_GMI_RC=1 \
       ZRO_MOCK_ZMPROV__L_GA_OUT="$FIX/zmprov_l_ga_no_quota.txt" \
       ZRO_MOCK_ZMPROV__L_GC_OUT="$FIX/zmprov_gc_10gb.txt" \
       zro_account_quota 'kotasiz@example.com')
 assert_contains "$out" "10.0 GB"
-assert_contains "$out" "okunamadi"
 assert_contains "$out" "LDAP"
+
+it "the banner claims no more than LDAP mode actually costs"
+out=$(ZRO_MOCK_ZMPROV_GA_ERR="$FIX/zmprov_io_error_refused.err" \
+      ZRO_MOCK_ZMPROV_GA_RC=1 \
+      ZRO_MOCK_ZMPROV__L_GA_OUT="$FIX/zmprov_l_ga_active.txt" \
+      zro_account_summary 'ahmet.yilmaz@example.com')
+# zmprov expands COS-inherited values in BOTH modes -- getAttrs(expandCos)
+# reaching setAccountDefaults(true) -- and only `-e` suppresses it. The banner
+# used to warn that inherited settings might be missing, which was untrue.
+assert_not_contains "$out" "COS uzerinden miras"
 
 it "a genuinely missing account still fails the quota screen"
 ZRO_MOCK_ZMPROV_GA_ERR="$FIX/zmprov_ga_no_such_account.err" \
 ZRO_MOCK_ZMPROV_GA_RC=1 \
   assert_status "$ZRO_E_NO_ACCOUNT" zro_account_quota 'yok@example.com'
-
-it "usage and percentage are still shown when mailboxd answers"
-out=$(ZRO_MOCK_ZMPROV_GA_OUT="$FIX/zmprov_ga_active.txt" \
-      ZRO_MOCK_ZMPROV_GMI_OUT="$FIX/zmprov_gmi_ok.txt" \
-      zro_account_quota 'ahmet.yilmaz@example.com')
-assert_contains "$out" "1.0 GB"
-assert_contains "$out" "20%"
-assert_not_contains "$out" "okunamadi"
 
 rm -f -- "$ZRO_MOCK_LOG"
 zro_t_report

@@ -23,82 +23,73 @@ chmod +x "$ZRO_TEST_ROOT"/mocks/bin/* 2>/dev/null || true
 ZRO_MOCK_LOG=$(mktemp); export ZRO_MOCK_LOG
 FIX="$ZRO_TEST_ROOT/fixtures"
 
-it "never calls the server-wide quota command"
+# The quota screen used to read usage with `zmprov gmi`. That command's handler,
+# GetMailbox, calls MailboxManager.getMailboxByAccount(account) — the AUTOCREATE
+# overload — so reading an account's usage created a mailbox for any account
+# that had none. It is the only read-named admin handler that does this.
+#
+# These tests exist to keep it out. Losing the usage figure is the price; a tool
+# whose promise is that a write cannot be expressed cannot ship a command that
+# creates mailboxes.
+it "the quota screen runs no mailbox command at all"
 : >"$ZRO_MOCK_LOG"
 ZRO_MOCK_ZMPROV_GA_OUT="$FIX/zmprov_ga_active.txt" \
-ZRO_MOCK_ZMPROV_GMI_OUT="$FIX/zmprov_gmi_ok.txt" \
   zro_account_quota 'ahmet.yilmaz@example.com' >/dev/null
-assert_not_contains "$(cat "$ZRO_MOCK_LOG")" "gqu"
-assert_not_contains "$(cat "$ZRO_MOCK_LOG")" "getQuotaUsage"
+log=$(cat "$ZRO_MOCK_LOG")
+assert_not_contains "$log" "$(printf '\tgmi')"
+assert_not_contains "$log" "getMailboxInfo"
+assert_not_contains "$log" "$(printf '\tgqu')"
+assert_not_contains "$log" "getQuotaUsage"
 
-it "reads per-account usage from gmi"
+it "the gate refuses the mailbox command even if something calls it"
 : >"$ZRO_MOCK_LOG"
-info=$(ZRO_MOCK_ZMPROV_GMI_OUT="$FIX/zmprov_gmi_ok.txt" zro_account_mailbox_info 'a@b.com')
-assert_contains "$info" "mailboxId: 214"
-assert_contains "$(cat "$ZRO_MOCK_LOG")" "$(printf 'zmprov\tgmi\ta@b.com')"
+assert_status "$ZRO_E_DENIED" zro_exec zmprov gmi 'a@b.com'
+assert_not_contains "$(cat "$ZRO_MOCK_LOG")" "zmprov"
 
-# zmprov gmi prints two lines and calls the usage field quotaUsed:
-#
-#   mailboxId: 26446
-#   quotaUsed: 508385755
-#
-# The first fixture for this was invented rather than captured, using a single
-# comma-joined line with a field called `used`. The parser matched the invented
-# shape, the suite agreed with it, and a production account with 485 MB in it
-# was reported to the operator as 0 B. Both shapes are accepted now, and these
-# numbers are the ones that server actually returned.
-it "parses the two-line gmi output Zimbra really prints"
-assert_out_eq "26446" zro_mailbox_number "$(printf 'mailboxId: 26446\nquotaUsed: 508385755\n')" mailboxId
-assert_out_eq "508385755" zro_mailbox_number "$(printf 'mailboxId: 26446\nquotaUsed: 508385755\n')" quotaUsed
-
-it "still parses the comma-joined shape"
-assert_out_eq "216" zro_mailbox_number "$(cat "$FIX/zmprov_gmi_legacy.txt")" mailboxId
-assert_out_eq "2147483648" zro_mailbox_number "$(cat "$FIX/zmprov_gmi_legacy.txt")" used
-
-it "does not mistake quotaUsed for used, or the reverse"
-assert_out_eq "" zro_mailbox_number "$(printf 'quotaUsed: 508385755\n')" used
-assert_out_eq "" zro_mailbox_number "$(printf 'mailboxId: 1\n')" quotaUsed
-
-it "reports real usage rather than zero"
+it "shows the quota limit and the mailbox host"
 out=$(ZRO_MOCK_ZMPROV_GA_OUT="$FIX/zmprov_ga_active.txt" \
-      ZRO_MOCK_ZMPROV_GMI_OUT="$FIX/zmprov_gmi_ok.txt" \
+      ZRO_MOCK_ZMPROV_GC_OUT="$FIX/zmprov_gc_10gb.txt" \
       zro_account_quota 'ahmet.yilmaz@example.com')
-assert_not_contains "$out" "Kullanilan   : 0 B"
-
-it "handles the comma-joined shape end to end"
-out=$(ZRO_MOCK_ZMPROV_GA_OUT="$FIX/zmprov_ga_active.txt" \
-      ZRO_MOCK_ZMPROV_GMI_OUT="$FIX/zmprov_gmi_legacy.txt" \
-      zro_account_quota 'ahmet.yilmaz@example.com')
-assert_contains "$out" "216"
-assert_contains "$out" "2.0 GB"
-assert_contains "$out" "40%"
-
-it "renders quota with limit, usage and percentage"
-out=$(ZRO_MOCK_ZMPROV_GA_OUT="$FIX/zmprov_ga_active.txt" \
-      ZRO_MOCK_ZMPROV_GMI_OUT="$FIX/zmprov_gmi_ok.txt" \
-      zro_account_quota 'ahmet.yilmaz@example.com')
-assert_contains "$out" "214"
-assert_contains "$out" "1.0 GB"
 assert_contains "$out" "5.0 GB"
-assert_contains "$out" "20%"
+assert_contains "$out" "mail01.example.com"
 
-it "reports an account that is exactly at its quota"
+it "says plainly why usage is not shown"
 out=$(ZRO_MOCK_ZMPROV_GA_OUT="$FIX/zmprov_ga_active.txt" \
-      ZRO_MOCK_ZMPROV_GMI_OUT="$FIX/zmprov_gmi_full.txt" \
       zro_account_quota 'ahmet.yilmaz@example.com')
-assert_contains "$out" "100%"
+assert_contains "$out" "gosterilmiyor"
+assert_contains "$out" "YARATIYOR"
 
-it "reports unlimited quota without dividing by zero"
+it "reports unlimited quota as such"
 out=$(ZRO_MOCK_ZMPROV_GA_OUT="$FIX/zmprov_ga_locked.txt" \
-      ZRO_MOCK_ZMPROV_GMI_OUT="$FIX/zmprov_gmi_ok.txt" \
       zro_account_quota 'kilitli@example.com')
 assert_contains "$out" "sinirsiz"
-assert_not_contains "$out" "%"
 
-it "maps a missing mailbox to the documented exit code"
-ZRO_MOCK_ZMPROV_GMI_ERR="$FIX/zmprov_gmi_no_mailbox.err" \
-ZRO_MOCK_ZMPROV_GMI_RC=1 \
-  assert_status "$ZRO_E_NO_MAILBOX" zro_account_mailbox_info 'yok@example.com'
+it "falls back to the COS limit when the account carries none"
+out=$(ZRO_MOCK_ZMPROV_GA_OUT="$FIX/zmprov_l_ga_no_quota.txt" \
+      ZRO_MOCK_ZMPROV_GC_OUT="$FIX/zmprov_gc_10gb.txt" \
+      zro_account_quota 'kotasiz@example.com')
+assert_contains "$out" "10.0 GB"
+assert_not_contains "$out" "sinirsiz"
+
+it "an explicit account quota still wins over the COS"
+out=$(ZRO_MOCK_ZMPROV_GA_OUT="$FIX/zmprov_ga_active.txt" \
+      ZRO_MOCK_ZMPROV_GC_OUT="$FIX/zmprov_gc_10gb.txt" \
+      zro_account_quota 'ahmet.yilmaz@example.com')
+assert_contains "$out" "5.0 GB"
+assert_not_contains "$out" "10.0 GB"
+
+it "a missing account still fails the quota screen"
+ZRO_MOCK_ZMPROV_GA_ERR="$FIX/zmprov_ga_no_such_account.err" \
+ZRO_MOCK_ZMPROV_GA_RC=1 \
+ZRO_MOCK_ZMPROV__L_GA_ERR="$FIX/zmprov_ga_no_such_account.err" \
+ZRO_MOCK_ZMPROV__L_GA_RC=1 \
+  assert_status "$ZRO_E_NO_ACCOUNT" zro_account_quota 'yok@example.com'
+
+it "validates the account before running anything"
+: >"$ZRO_MOCK_LOG"
+assert_status "$ZRO_E_INPUT" zro_account_quota 'a@b.com; id'
+assert_status "$ZRO_E_INPUT" zro_account_membership 'a@b.com; id'
+assert_not_contains "$(cat "$ZRO_MOCK_LOG")" "zmprov"
 
 it "lists distribution-list membership"
 out=$(ZRO_MOCK_ZMPROV_GAM_OUT="$FIX/zmprov_gam_ok.txt" \
@@ -136,12 +127,6 @@ it "the summary survives an account with no COS set"
 out=$(ZRO_MOCK_ZMPROV_GA_OUT="$FIX/zmprov_ga_locked.txt" \
       zro_account_summary 'kilitli@example.com')
 assert_contains "$out" "locked"
-
-it "validates the account before any of these calls"
-: >"$ZRO_MOCK_LOG"
-assert_status "$ZRO_E_INPUT" zro_account_mailbox_info 'a@b.com; id'
-assert_status "$ZRO_E_INPUT" zro_account_membership 'a@b.com; id'
-assert_not_contains "$(cat "$ZRO_MOCK_LOG")" "zmprov"
 
 rm -f -- "$ZRO_MOCK_LOG"
 zro_t_report

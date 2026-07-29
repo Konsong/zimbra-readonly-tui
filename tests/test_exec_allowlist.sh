@@ -10,8 +10,6 @@ set -uo pipefail
 it "allows every M1 read operation in both forms"
 assert_ok zro_allowed zmprov ga
 assert_ok zro_allowed zmprov getAccount
-assert_ok zro_allowed zmprov gmi
-assert_ok zro_allowed zmprov getMailboxInfo
 assert_ok zro_allowed zmprov gam
 assert_ok zro_allowed zmprov getAccountMembership
 assert_ok zro_allowed zmprov gc
@@ -56,8 +54,21 @@ $entries
 EOF
 
 it "a two-token entry still matches when a third argument follows"
-assert_ok zro_allowed zmprov ga 'melda.kocaman@diyanet.gov.tr'
-assert_ok zro_allowed zmprov gmi 'melda.kocaman@diyanet.gov.tr'
+assert_ok zro_allowed zmprov ga 'ahmet.yilmaz@example.com'
+assert_ok zro_allowed zmprov gam 'ahmet.yilmaz@example.com'
+
+# zmprov gmi maps to the admin GetMailboxRequest, whose handler calls
+# MailboxManager.getMailboxByAccount(account) — the AUTOCREATE overload,
+# documented as "Creates a new mailbox if one doesn't already exist".
+# GetMailbox is the ONLY read-named admin handler that does this; every sibling
+# passes DO_NOT_AUTOCREATE and throws "mailbox not found" instead.
+#
+# A command that creates a mailbox cannot sit in the allowlist of a tool whose
+# claim is that a write cannot be expressed. See docs/research/.
+it "denies the one read-named command that creates a mailbox"
+assert_fail zro_allowed zmprov gmi
+assert_fail zro_allowed zmprov getMailboxInfo
+assert_fail zro_allowed zmprov -l gmi
 
 it "denies a binary that is not on the list at all"
 assert_fail zro_allowed zmmailbox search

@@ -118,18 +118,14 @@ What still works, and what does not:
 |---|---|
 | Hesap ozeti | works in full |
 | Dagitim listesi uyelikleri | works in full |
-| Kota kullanimi | limit is shown; **usage** reads `okunamadi` |
+| Kota limiti | works in full |
 
-Usage cannot be recovered from LDAP: Zimbra answers `zmprov -l gmi` with
-`can only be used with SOAP`, because mailbox usage lives in the mailbox
-database, not in the directory. The quota limit does come from LDAP, and when an
-account inherits its limit from its COS the tool reads the COS record rather
-than reporting the account as unlimited.
+Every screen keeps working, because none of them needs the mailbox service any
+more.
 
-**Read the banner as a caveat, not as a failure.** LDAP returns what is written
-on the entry. Anything Zimbra would normally compute or inherit on the way out
-may be missing, so treat a degraded reading as a diagnostic aid rather than as
-the authoritative account state.
+**Read the banner as a caveat, not as a failure.** `zmprov` expands values
+inherited from a COS in *both* modes, so those are not what LDAP mode costs.
+What it costs is anything held outside the directory — mailbox facts above all.
 
 When you see it, check the two usual causes:
 
@@ -144,11 +140,13 @@ The complete set, enforced centrally in `lib/exec.sh`:
 
 ```
 zmprov ga        getAccount                 zmprov -l ga    same, from LDAP
-zmprov gmi       getMailboxInfo             (SOAP only)
 zmprov gam       getAccountMembership       zmprov -l gam   same, from LDAP
 zmprov gc        getCos                     zmprov -l gc    same, from LDAP
 zmcontrol -v     version
 ```
+
+`zmprov gmi` was on this list and has been removed — it creates mailboxes. See
+section 5.
 
 `zmmailbox` is not on this list at all. That matters — see section 5.
 
@@ -194,19 +192,38 @@ Three questions are open. The first two concern `zmmailbox`, which this release
 does not use at all — they must be answered before the message-search milestone
 adds it. The third concerns a command this release does use.
 
-| Question | Milestone | How it was tested | Result | Date |
-|---|---|---|---|---|
-| Does `zmmailbox -z -m <account>` create a mailbox for an account that has never logged in? | Blocks M2 | not yet — this release never runs `zmmailbox` | **open** | |
-| Does `zmmailbox gm <id>` clear the unread flag on an unread message? | Blocks M2 | not yet — this release never runs `zmmailbox` | **open** | |
-| Does `zmprov gmi` on an account with **no** mailbox return an error, or provision one? | This release | not settled: it needs an account whose mailbox has never been created, and confirming that state without running `gmi` is the difficulty | **open** | |
+All three were answered on 2026-07-29 by reading the `zm-mailbox` source, and
+**all three came back on the unsafe side**. Full citations are in
+[`docs/research/2026-07-29-zimbra-cli-read-only-reference.md`](research/2026-07-29-zimbra-cli-read-only-reference.md).
 
-Fill these in on a disposable test account. Do not carry them over from
-another installation — the answer can depend on version and configuration.
+| Question | Answer | Consequence |
+|---|---|---|
+| Does `zmmailbox -z -m <account>` create a mailbox for an account that has never logged in? | **Yes.** `zmmailbox` never sets `noSession`, and `Session.register()` resolves the mailbox through the auto-creating overload. No `zmmailbox` invocation — not even `noOp` — can serve as an existence probe. | M2 must treat every `zmmailbox` call as capable of creating a mailbox. |
+| Does `zmmailbox gm <id>` clear the unread flag? | **Yes.** `doGetMessage` hard-codes `params.setMarkRead(true)` and the client emits `read="1"` unconditionally. No CLI flag disables it. `GetMsg` is one of only two handlers in the service tree that declare themselves not read-only. | Message detail in M2 cannot use `gm`. |
+| Does `zmprov gmi` on an account with **no** mailbox provision one? | **Yes.** `GetMailbox.handle()` calls `getMailboxByAccount(account)`, the `AUTOCREATE` overload. It is the only read-named admin handler that does; every sibling passes `DO_NOT_AUTOCREATE` and throws `mailbox not found`. | **`zmprov gmi` was removed from the allowlist.** See below. |
 
-The third question is the only one that touches this release. Until it is
-settled, use the quota screen on accounts that have a mailbox — an account with
-a last logon, or one that has received mail. The other screens never run `gmi`
-and are unaffected.
+These are code-reading answers, not observations. They are believed but not yet
+seen: the experiments that would confirm them on a live server are listed in the
+research document's closing section. Confirming them is worthwhile — but the
+tool has already been changed to assume the unsafe answer, because that is the
+side to be wrong on.
+
+### Why usage is no longer shown
+
+Per-account quota **usage** has been removed from the quota screen. The only
+command that reports it, `zmprov gmi`, creates a mailbox for an account that has
+none — so a read-only tool cannot run it. The quota limit, the mailbox host and
+everything on the summary screen are unaffected, and all still work.
+
+The safe replacement is `zmprov gqu <server>`, which joins LDAP accounts against
+mailbox ids already known to the server and creates nothing. Its argument is a
+server rather than an account, so it belongs with the bulk quota overview rather
+than with a single-account lookup, and it arrives with that milestone.
+
+If you ran an earlier build of this tool against an account that had never
+logged in and had no mailbox, **that account may now have an empty mailbox that
+this tool created.** Check `mailbox.log` for `Creating mailbox with id` lines
+around the times you used it.
 
 ### Acceptance runs
 

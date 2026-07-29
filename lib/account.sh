@@ -96,7 +96,7 @@ ZRO_LDAP_READS=' ga getAccount gam getAccountMembership gc getCos '
 # because that one call site passes a variable, which a static reader cannot
 # resolve — so the set of values that variable may hold is written down here,
 # enforced at runtime, and checked against the allowlist by the scanner.
-ZRO_PROV_READS=' ga gam gc gmi '
+ZRO_PROV_READS=' ga gam gc '
 
 zro_prov_ldap_capable() {
   [ -n "${1-}" ] || return 1
@@ -251,81 +251,61 @@ zro_account_summary() {
 }
 
 # Printed above a result when the answer did not come from the mailbox service.
+# Printed above a result when the answer did not come from the mailbox service.
+#
+# It deliberately does NOT claim that COS-inherited values are missing: zmprov
+# expands them in both modes (getAttrs(expandCos) -> setAccountDefaults(true)),
+# and only `-e` suppresses that. What LDAP mode really costs is anything held
+# outside the directory — mailbox facts above all.
 zro_mode_banner() {
   [ "$(zro_mode)" = ldap ] || return 0
-  printf 'UYARI: mailboxd yanit vermedi; degerler LDAP uzerinden okundu.\n'
-  printf '       COS uzerinden miras alinan ayarlar eksik gorunebilir.\n'
+  printf 'UYARI: mailboxd yanit vermedi; degerler dogrudan LDAP uzerinden okundu.\n'
+  printf '       Dizinde tutulmayan bilgiler bu ekranda gorunmez.\n'
   printf '\n'
 }
 
-zro_account_mailbox_info() {
-  local acct=${1-}
-  zro_validate_email "$acct" || return "$ZRO_E_INPUT"
-  zro_prov_read "$ZRO_E_NO_MAILBOX" gmi "$acct"
-}
+# zro_account_mailbox_info used to live here and read `zmprov gmi`. It is gone
+# because that command creates a mailbox for an account that has none — see the
+# note above ZRO_ALLOW in lib/exec.sh. Usage will return in M6 through
+# `zmprov gqu <server>`, which joins LDAP accounts against already-known
+# mailbox ids and creates nothing, but answers for a whole server at a time.
 
-# Pulls a numeric field out of zmprov gmi output. What that command really
-# prints, captured from a production server, is two lines:
-#
-#   mailboxId: 26446
-#   quotaUsed: 508385755
-#
-# Older builds have been reported joining them on one line with the usage field
-# named `used`, so both shapes are read. The leading (^|[^A-Za-z]) guard is what
-# keeps `used` from matching inside `quotaUsed`, which is the bug that reported
-# a mailbox holding 485 MB as empty.
-zro_mailbox_number() {
-  local text=$1 name=$2
-  printf '%s\n' "$text" \
-    | grep -oE "(^|[^A-Za-z])$name:[[:space:]]*[0-9]+" \
-    | grep -oE '[0-9]+$' \
-    | head -n 1
-}
-
-# zmprov gqu is deliberately absent: it takes a SERVER and returns every
-# account on it. Per-account usage comes from gmi.
+# Shows the quota an account is subject to. Usage is deliberately absent: the
+# only per-account source for it is `zmprov gmi`, which creates a mailbox for an
+# account that has none. The screen says so rather than quietly dropping the
+# figure, because an operator who came looking for usage deserves to know where
+# it went.
 zro_account_quota() {
-  local acct=$1 raw info rc=0
+  local acct=$1 raw rc=0
   zro_reset_mode
   raw=$(zro_account_fetch "$acct") || rc=$?
   [ "$rc" -eq 0 ] || return "$rc"
 
-  # Usage lives in the mailbox database, so a stopped mailbox service costs the
-  # usage figure — not the whole screen. The limit comes from LDAP and is still
-  # worth showing. Any other failure is a real failure.
-  local info_rc=0
-  info=$(zro_account_mailbox_info "$acct") || info_rc=$?
-  if [ "$info_rc" -ne 0 ] && [ "$info_rc" != "$ZRO_E_UNAVAILABLE" ]; then
-    return "$info_rc"
-  fi
-
-  local limit used mbox limit_h used_h
+  local limit limit_h host
   limit=$(zro_account_quota_limit "$raw")
-  mbox=$(zro_mailbox_number "$info" mailboxId)
-  used=$(zro_mailbox_number "$info" quotaUsed)
-  [ -n "$used" ] || used=$(zro_mailbox_number "$info" used)
-  [ -n "$used" ] || used=0
-
-  if [ "$info_rc" -ne 0 ]; then
-    used_h="okunamadi (mailboxd yanit vermiyor)"
-  else
-    used_h=$(zro_human_bytes "$used" 2>/dev/null) || used_h="-"
-  fi
+  host=$(zro_attr_get "$raw" zimbraMailHost)
+  [ -n "$host" ] || host="-"
 
   zro_mode_banner
 
   printf 'Hesap        : %s\n' "$acct"
-  printf 'Mailbox ID   : %s\n' "${mbox:--}"
-  printf 'Kullanilan   : %s\n' "$used_h"
+  printf 'Mailbox host : %s\n' "$host"
   if [ "$limit" = "0" ]; then
     printf 'Kota limiti  : sinirsiz\n'
   else
     limit_h=$(zro_human_bytes "$limit" 2>/dev/null) || limit_h="-"
     printf 'Kota limiti  : %s\n' "$limit_h"
-    if [ "$info_rc" -eq 0 ]; then
-      printf 'Doluluk      : %s%%\n' "$(( used * 100 / limit ))"
-    fi
   fi
+  printf 'Kullanilan   : gosterilmiyor\n'
+  printf '\n'
+  # Double-quoted on purpose: the static scanner treats a double-quoted span as
+  # data, so this text may name the commands it is warning about.
+  printf "Kullanim degeri yalnizca zmprov gmi ile okunabiliyor, ve o komut\n"
+  printf "mailboxu olmayan bir hesapta mailboxu YARATIYOR. Salt-okunur\n"
+  printf "garantisini bozdugu icin izin listesinden cikarildi.\n"
+  printf '\n'
+  printf "Guvenli alternatif zmprov gqu sunucu genelinde calisir ve hicbir sey\n"
+  printf "yaratmaz; toplu kota ekraniyla birlikte gelecek.\n"
 }
 
 zro_account_membership() {

@@ -16,11 +16,17 @@ ZRO_LIB_EXEC_LOADED=1
 # which is what lets this tool keep working when the mailbox service is down —
 # but the flag itself decides nothing about reading or writing, so it is never
 # approved alone. `zmprov:-l` would let every subcommand behind it ride in free.
+#
+# `zmprov gmi` (getMailboxInfo) was here and has been REMOVED. Its handler,
+# GetMailbox, calls MailboxManager.getMailboxByAccount(account) — the
+# AUTOCREATE overload, documented as "Creates a new mailbox if one doesn't
+# already exist". It is the only read-named admin handler that does; every
+# sibling passes DO_NOT_AUTOCREATE and throws "mailbox not found". Reading an
+# account's quota usage would therefore create a mailbox for an account that
+# had none. See docs/research/2026-07-29-zimbra-cli-read-only-reference.md §A.3.
 ZRO_ALLOW='
 zmprov:ga
 zmprov:getAccount
-zmprov:gmi
-zmprov:getMailboxInfo
 zmprov:gam
 zmprov:getAccountMembership
 zmprov:gc
