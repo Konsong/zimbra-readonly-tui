@@ -37,6 +37,42 @@ info=$(ZRO_MOCK_ZMPROV_GMI_OUT="$FIX/zmprov_gmi_ok.txt" zro_account_mailbox_info
 assert_contains "$info" "mailboxId: 214"
 assert_contains "$(cat "$ZRO_MOCK_LOG")" "$(printf 'zmprov\tgmi\ta@b.com')"
 
+# zmprov gmi prints two lines and calls the usage field quotaUsed:
+#
+#   mailboxId: 26446
+#   quotaUsed: 508385755
+#
+# The first fixture for this was invented rather than captured, using a single
+# comma-joined line with a field called `used`. The parser matched the invented
+# shape, the suite agreed with it, and a production account with 485 MB in it
+# was reported to the operator as 0 B. Both shapes are accepted now, and these
+# numbers are the ones that server actually returned.
+it "parses the two-line gmi output Zimbra really prints"
+assert_out_eq "26446" zro_mailbox_number "$(printf 'mailboxId: 26446\nquotaUsed: 508385755\n')" mailboxId
+assert_out_eq "508385755" zro_mailbox_number "$(printf 'mailboxId: 26446\nquotaUsed: 508385755\n')" quotaUsed
+
+it "still parses the comma-joined shape"
+assert_out_eq "216" zro_mailbox_number "$(cat "$FIX/zmprov_gmi_legacy.txt")" mailboxId
+assert_out_eq "2147483648" zro_mailbox_number "$(cat "$FIX/zmprov_gmi_legacy.txt")" used
+
+it "does not mistake quotaUsed for used, or the reverse"
+assert_out_eq "" zro_mailbox_number "$(printf 'quotaUsed: 508385755\n')" used
+assert_out_eq "" zro_mailbox_number "$(printf 'mailboxId: 1\n')" quotaUsed
+
+it "reports real usage rather than zero"
+out=$(ZRO_MOCK_ZMPROV_GA_OUT="$FIX/zmprov_ga_active.txt" \
+      ZRO_MOCK_ZMPROV_GMI_OUT="$FIX/zmprov_gmi_ok.txt" \
+      zro_account_quota 'ahmet.yilmaz@example.com')
+assert_not_contains "$out" "Kullanilan   : 0 B"
+
+it "handles the comma-joined shape end to end"
+out=$(ZRO_MOCK_ZMPROV_GA_OUT="$FIX/zmprov_ga_active.txt" \
+      ZRO_MOCK_ZMPROV_GMI_OUT="$FIX/zmprov_gmi_legacy.txt" \
+      zro_account_quota 'ahmet.yilmaz@example.com')
+assert_contains "$out" "216"
+assert_contains "$out" "2.0 GB"
+assert_contains "$out" "40%"
+
 it "renders quota with limit, usage and percentage"
 out=$(ZRO_MOCK_ZMPROV_GA_OUT="$FIX/zmprov_ga_active.txt" \
       ZRO_MOCK_ZMPROV_GMI_OUT="$FIX/zmprov_gmi_ok.txt" \

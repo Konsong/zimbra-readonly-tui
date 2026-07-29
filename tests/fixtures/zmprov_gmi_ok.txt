@@ -1,1 +1,2 @@
-mailboxId: 214, used: 1073741824
+mailboxId: 214
+quotaUsed: 1073741824

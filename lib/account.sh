@@ -255,9 +255,26 @@ zro_account_mailbox_info() {
   zro_prov_read "$ZRO_E_NO_MAILBOX" gmi "$acct"
 }
 
+# Pulls a numeric field out of zmprov gmi output. What that command really
+# prints, captured from a production server, is two lines:
+#
+#   mailboxId: 26446
+#   quotaUsed: 508385755
+#
+# Older builds have been reported joining them on one line with the usage field
+# named `used`, so both shapes are read. The leading (^|[^A-Za-z]) guard is what
+# keeps `used` from matching inside `quotaUsed`, which is the bug that reported
+# a mailbox holding 485 MB as empty.
+zro_mailbox_number() {
+  local text=$1 name=$2
+  printf '%s\n' "$text" \
+    | grep -oE "(^|[^A-Za-z])$name:[[:space:]]*[0-9]+" \
+    | grep -oE '[0-9]+$' \
+    | head -n 1
+}
+
 # zmprov gqu is deliberately absent: it takes a SERVER and returns every
-# account on it. Per-account usage comes from gmi, which prints
-# "mailboxId: 214, used: 1073741824".
+# account on it. Per-account usage comes from gmi.
 zro_account_quota() {
   local acct=$1 raw info rc=0
   zro_reset_mode
@@ -275,8 +292,9 @@ zro_account_quota() {
 
   local limit used mbox limit_h used_h
   limit=$(zro_account_quota_limit "$raw")
-  mbox=$(printf '%s' "$info" | sed -n 's/.*mailboxId: *\([0-9]*\).*/\1/p')
-  used=$(printf '%s' "$info" | sed -n 's/.*used: *\([0-9]*\).*/\1/p')
+  mbox=$(zro_mailbox_number "$info" mailboxId)
+  used=$(zro_mailbox_number "$info" quotaUsed)
+  [ -n "$used" ] || used=$(zro_mailbox_number "$info" used)
   [ -n "$used" ] || used=0
 
   if [ "$info_rc" -ne 0 ]; then
