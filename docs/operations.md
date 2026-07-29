@@ -196,12 +196,24 @@ adds it. The third concerns a command this release does use.
 
 | Question | Milestone | How it was tested | Result | Date |
 |---|---|---|---|---|
-| Does `zmmailbox -z -m <account>` create a mailbox for an account that has never logged in? | Blocks M2 | | | |
-| Does `zmmailbox gm <id>` clear the unread flag on an unread message? | Blocks M2 | | | |
-| Does `zmprov gmi` on an account with no mailbox return an error, or provision one? | This release | | | |
+| Does `zmmailbox -z -m <account>` create a mailbox for an account that has never logged in? | Blocks M2 | not yet — this release never runs `zmmailbox` | **open** | |
+| Does `zmmailbox gm <id>` clear the unread flag on an unread message? | Blocks M2 | not yet — this release never runs `zmmailbox` | **open** | |
+| Does `zmprov gmi` on an account with **no** mailbox return an error, or provision one? | This release | not settled: it needs an account whose mailbox has never been created, and confirming that state without running `gmi` is the difficulty | **open** | |
 
 Fill these in on a disposable test account. Do not carry them over from
 another installation — the answer can depend on version and configuration.
+
+The third question is the only one that touches this release. Until it is
+settled, use the quota screen on accounts that have a mailbox — an account with
+a last logon, or one that has received mail. The other screens never run `gmi`
+and are unaffected.
+
+### Acceptance runs
+
+| Date | Server | What was run | Result |
+|---|---|---|---|
+| 2026-07-29 | production, all services healthy | All three M1 screens against a quiet test account, with `zmprov gmi` recorded before and after | `mailboxId 38131` and `quotaUsed 0` **unchanged**. A test message delivered afterwards moved `quotaUsed` to 2804 and the tool then reported `2.7 KB` — so the reading is live and accurate, and the tool changed nothing. |
+| 2026-07-29 | test server, `mailboxd` stopped | All three M1 screens | Summary and membership answered in full over LDAP with the degraded-mode banner; the quota screen showed the limit and marked usage unreadable. |
 
 ## 6. Production acceptance
 

@@ -6,12 +6,16 @@ filters and service health — without changing any Zimbra data or configuration
 
 Bash + whiptail. No runtime dependencies beyond what a Zimbra host already has.
 
-> **Status: M1 complete, pending verification on a real server.** The safety
-> spine and the account/quota menu are built and tested: account summary, quota
-> usage and distribution-list membership. Before using it against real accounts,
-> work through the acceptance steps in the [operator guide](docs/operations.md) —
-> three questions about Zimbra's own side effects are still open and are recorded
-> there. Message search arrives in M2; see the
+> **Status: M1 verified on a production server.** The safety spine and the
+> account/quota menu are built, tested and exercised against a live Zimbra:
+> running every screen left `mailboxId` and `quotaUsed` unchanged, and a message
+> delivered afterwards was reflected immediately — so the readings are live and
+> the tool changes nothing. It was also run against a server with `mailboxd`
+> stopped, where it degraded to LDAP reads rather than failing.
+>
+> One question about Zimbra's own side effects remains open and is recorded in
+> the [operator guide](docs/operations.md); it affects the quota screen only.
+> Message search arrives in M2; see the
 > [design spec](docs/superpowers/specs/2026-07-29-zimbra-readonly-tui-design.md).
 
 ## Why "read-only" is a structural claim, not a promise
