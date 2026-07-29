@@ -76,7 +76,10 @@ zro_bin_available() {
 # caller can take to run something the allowlist does not name.
 zro_exec() {
   if [ $# -lt 2 ]; then
-    zro_log error "denied: zro_exec requires a binary and a token"
+    # Worded without naming this function: the static scanner extracts call
+    # sites by matching the name followed by two words, and a message that
+    # looks like a call would read as one.
+    zro_log error "denied: the exec gate needs a binary and a token"
     return "$ZRO_E_DENIED"
   fi
   local bin=$1 token=$2
