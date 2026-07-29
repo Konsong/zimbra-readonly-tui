@@ -77,6 +77,28 @@ zro_last_error() {
   cat -- "$ZRO_ERROR_FILE" 2>/dev/null
 }
 
+# Which path answered the last read: soap or ldap. Same file-backed reason as
+# the error message above. It matters to the operator, because LDAP does not
+# expand values a COS provides.
+ZRO_MODE_FILE="${ZRO_MODE_FILE:-${TMPDIR:-/tmp}/zro-mode.$$}"
+
+# Degrading is sticky for the duration of an operation. A screen that made
+# three reads, one of which fell back to LDAP, is an LDAP answer as a whole —
+# reporting the mode of whichever read happened to run last would hide that.
+zro_set_mode() {
+  [ "$(zro_mode)" = ldap ] && return 0
+  ( umask 077; printf '%s' "$1" >"$ZRO_MODE_FILE" ) 2>/dev/null || true
+}
+
+zro_reset_mode() {
+  ( umask 077; printf 'soap' >"$ZRO_MODE_FILE" ) 2>/dev/null || true
+}
+
+zro_mode() {
+  [ -f "$ZRO_MODE_FILE" ] || { printf 'soap'; return 0; }
+  cat -- "$ZRO_MODE_FILE" 2>/dev/null
+}
+
 ZRO_TMPFILES=()
 
 zro_tmpfile() {
@@ -95,6 +117,7 @@ zro_cleanup() {
   done
   ZRO_TMPFILES=()
   [ -e "$ZRO_ERROR_FILE" ] && rm -f -- "$ZRO_ERROR_FILE"
+  [ -e "$ZRO_MODE_FILE" ] && rm -f -- "$ZRO_MODE_FILE"
   return 0
 }
 

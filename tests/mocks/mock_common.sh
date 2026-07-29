@@ -20,6 +20,22 @@ zro_mock_record() {
 # Replies according to ZRO_MOCK_<BIN>_<TOKEN>_{OUT,ERR,RC}, where <TOKEN> has
 # every character outside [A-Za-z0-9_] replaced by an underscore and the whole
 # name is upper-cased. So `zmcontrol -v` reads ZRO_MOCK_ZMCONTROL__V_OUT.
+# Mirrors the gate's rule: a flag-shaped token is keyed together with the
+# subcommand behind it, so a test can script `zmprov ga` and `zmprov -l ga`
+# with different answers.
+zro_mock_token() {
+  case ${1:-} in
+    -*)
+      if [ -n "${2:-}" ]; then
+        printf '%s %s' "$1" "$2"
+      else
+        printf '%s' "$1"
+      fi
+      ;;
+    *) printf '%s' "${1:-}" ;;
+  esac
+}
+
 zro_mock_respond() {
   local name=$1 token=${2:-}
   local key="ZRO_MOCK_${name}_${token}"

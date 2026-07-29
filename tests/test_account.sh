@@ -79,19 +79,28 @@ ZRO_MOCK_ZMPROV_GA_RC=1 \
 # 2026-07-29: one with mailboxd stopped, one with an expired admin certificate.
 # zmprov speaks SOAP to mailboxd by default, so neither host could answer any
 # query, and the operator saw only "islem basarisiz (kod 1)".
+# A SOAP failure alone is no longer a failure: the read is retried against
+# LDAP. These cases fail BOTH paths, which is what a genuinely unreachable
+# Zimbra looks like. The retry itself is covered in test_prov_fallback.sh.
 it "maps an unreachable mailbox service to the documented exit code"
 ZRO_MOCK_ZMPROV_GA_ERR="$FIX/zmprov_io_error_refused.err" \
 ZRO_MOCK_ZMPROV_GA_RC=1 \
+ZRO_MOCK_ZMPROV__L_GA_ERR="$FIX/zmprov_io_error_refused.err" \
+ZRO_MOCK_ZMPROV__L_GA_RC=1 \
   assert_status "$ZRO_E_UNAVAILABLE" zro_account_fetch 'a@b.com'
 
 it "maps a broken admin certificate to the documented exit code"
 ZRO_MOCK_ZMPROV_GA_ERR="$FIX/zmprov_io_error_ssl.err" \
 ZRO_MOCK_ZMPROV_GA_RC=1 \
+ZRO_MOCK_ZMPROV__L_GA_ERR="$FIX/zmprov_io_error_ssl.err" \
+ZRO_MOCK_ZMPROV__L_GA_RC=1 \
   assert_status "$ZRO_E_UNAVAILABLE" zro_account_fetch 'a@b.com'
 
 it "keeps the underlying Zimbra message for the operator to read"
 ZRO_MOCK_ZMPROV_GA_ERR="$FIX/zmprov_io_error_refused.err" \
 ZRO_MOCK_ZMPROV_GA_RC=1 \
+ZRO_MOCK_ZMPROV__L_GA_ERR="$FIX/zmprov_io_error_refused.err" \
+ZRO_MOCK_ZMPROV__L_GA_RC=1 \
   zro_account_fetch 'a@b.com' >/dev/null 2>&1
 detail=$(zro_last_error)
 assert_contains "$detail" "Connection refused"
@@ -99,13 +108,18 @@ assert_contains "$detail" "Connection refused"
 it "reports the certificate failure in the operator's own words"
 ZRO_MOCK_ZMPROV_GA_ERR="$FIX/zmprov_io_error_ssl.err" \
 ZRO_MOCK_ZMPROV_GA_RC=1 \
+ZRO_MOCK_ZMPROV__L_GA_ERR="$FIX/zmprov_io_error_ssl.err" \
+ZRO_MOCK_ZMPROV__L_GA_RC=1 \
   zro_account_fetch 'a@b.com' >/dev/null 2>&1
 detail=$(zro_last_error)
 assert_contains "$detail" "PKIX"
 
 it "keeps the message across a subshell, which is where menus read it"
 out=$( ZRO_MOCK_ZMPROV_GA_ERR="$FIX/zmprov_io_error_refused.err" \
-       ZRO_MOCK_ZMPROV_GA_RC=1 zro_account_summary 'a@b.com' ) || true
+       ZRO_MOCK_ZMPROV_GA_RC=1 \
+       ZRO_MOCK_ZMPROV__L_GA_ERR="$FIX/zmprov_io_error_refused.err" \
+       ZRO_MOCK_ZMPROV__L_GA_RC=1 \
+       zro_account_summary 'a@b.com' ) || true
 assert_eq "$out" ""
 assert_contains "$(zro_last_error)" "Connection refused"
 

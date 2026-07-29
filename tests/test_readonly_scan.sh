@@ -78,10 +78,13 @@ assert_not_contains "$code" "bash -c"
 assert_not_contains "$code" "sh -c"
 assert_not_contains "$code" '`'
 
-it "every zro_exec call site is covered by the allowlist"
+it "every literal zro_exec call site is covered by the allowlist"
 allow=$(zro_allow_entries)
-calls=$(printf '%s\n' "$code" \
-        | grep -oE 'zro_exec[[:space:]]+[A-Za-z0-9_-]+[[:space:]]+[^[:space:]"]+([[:space:]]+[^[:space:]"]+)?' \
+# Extracted from code with the quotes still on. A quoted or variable token
+# marks a call site no static reader can resolve; those are skipped here and
+# accounted for by the two checks below instead.
+calls=$(printf '%s\n' "$raw_code" \
+        | grep -oE 'zro_exec[[:space:]]+[A-Za-z0-9_-]+[[:space:]]+[^[:space:]]+([[:space:]]+[^[:space:]]+)?' \
         | sort -u)
 uncovered=""
 while IFS= read -r call; do
@@ -89,23 +92,20 @@ while IFS= read -r call; do
   bin=$(printf '%s' "$call" | awk '{print $2}')
   t1=$(printf '%s' "$call" | awk '{print $3}')
   t2=$(printf '%s' "$call" | awk '{print $4}')
+
   case $t1 in
-    '$'*) continue ;;   # only literal call sites are decidable here
-  esac
-  # Only an alphabetic word can be a subcommand. A redirection such as
-  # `2>/dev/null` is not one, and anything else — a variable, an operator —
-  # falls back to the two-token key, which is the safe direction: a dynamic
-  # subcommand behind a mode flag then shows up as uncovered.
-  case $t2 in
-    [A-Za-z]*) ;;
-    *) t2="" ;;
+    '"'*|'$'*) continue ;;          # dynamic: not decidable here
   esac
 
-  # A mode flag is only ever approved together with the subcommand behind it,
-  # so the key the gate will use is the key checked here.
   key="$bin:$t1"
   case $t1 in
-    -*) [ -n "$t2" ] && key="$bin:$t1:$t2" ;;
+    -*)
+      case $t2 in
+        '"'*|'$'*) continue ;;      # dynamic subcommand behind a mode flag
+        [A-Za-z]*) key="$bin:$t1:$t2" ;;
+        *) ;;                       # a redirection or operator: two-token key
+      esac
+      ;;
   esac
   printf '%s\n' "$allow" | grep -qxF -- "$key" || uncovered="$uncovered $key"
 done <<EOF
@@ -114,11 +114,57 @@ EOF
 assert_eq "$uncovered" ""
 
 it "found the call sites it claims to check"
-assert_contains "$calls" "zro_exec zmprov ga"
-assert_contains "$calls" "zro_exec zmprov gmi"
-assert_contains "$calls" "zro_exec zmprov gam"
-assert_contains "$calls" "zro_exec zmprov gc"
 assert_contains "$calls" "zro_exec zmcontrol -v"
+
+# zro_prov_read is the one function that hands the gate a variable, so that it
+# can retry a read against LDAP without four copies of the same logic. The
+# guarantee is preserved one level up: the set of values the variable may hold
+# is declared, and every caller names its subcommand literally.
+it "the one dynamic gate call declares the subcommands it may pass"
+declared=$(printf '%s\n' "$raw_code" | sed -n "s/^ZRO_PROV_READS='\(.*\)'/\1/p")
+assert_contains "$declared" "ga"
+assert_contains "$declared" "gam"
+assert_contains "$declared" "gc"
+assert_contains "$declared" "gmi"
+
+it "every declared read subcommand is on the allowlist"
+for sub in $declared; do
+  printf '%s\n' "$allow" | grep -qxF -- "zmprov:$sub" || \
+    zro_t_fail "declared read subcommand is not allowlisted: zmprov:$sub"
+done
+zro_t_pass
+
+it "no declared read subcommand is a write verb"
+for sub in $declared; do
+  case $sub in
+    ca|ma|da|dm|mm|mmr|ef|df|create*|modify*|delete*|remove*|move*|mark*|empty*|add*)
+      zro_t_fail "write subcommand declared as a read: $sub" ;;
+    *) zro_t_pass ;;
+  esac
+done
+
+it "every zro_prov_read call site names its subcommand literally"
+prov_calls=$(printf '%s\n' "$raw_code" \
+             | grep -oE 'zro_prov_read[[:space:]]+[^[:space:]]+[[:space:]]+[^[:space:]]+' \
+             | sort -u)
+bad=""
+while IFS= read -r call; do
+  [ -n "$call" ] || continue
+  sub=$(printf '%s' "$call" | awk '{print $3}')
+  case $sub in
+    [A-Za-z]*) ;;
+    *) bad="$bad [$sub]" ;;
+  esac
+  case " $declared " in
+    *" $sub "*) ;;
+    *) bad="$bad [$sub]" ;;
+  esac
+done <<EOF
+$prov_calls
+EOF
+assert_eq "$bad" ""
+assert_contains "$prov_calls" "ga"
+assert_contains "$prov_calls" "gmi"
 
 it "the allowlist itself names no write verb"
 for verb in create modify delete remove move mark flag tag empty import post recover sync; do
