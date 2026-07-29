@@ -158,6 +158,11 @@ zro_exec() {
 }
 ```
 
+The second argument is positional, not semantic: it is whatever token follows
+the binary, whether that is a subcommand (`zmprov ga`) or a flag (`zmcontrol -v`).
+Every allowlist entry is therefore an exact two-token prefix of the argument
+vector, which is what makes the static cross-check in §7.4 decidable.
+
 Adding an operation therefore requires two deliberate edits — the calling
 function and an allowlist entry. In a read-only tool that friction is the
 point: a command that is not listed does not run even if it is called.
@@ -180,6 +185,10 @@ M1 accepts exactly one operator-supplied value, an account address.
 
 - **email** — `^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$`, length ≤ 320.
 - **domain** — leading `@` stripped, LDH labels, length ≤ 253.
+
+The domain validator ships in M1 despite no menu asking for a bare domain: the
+email validator delegates its right-hand side to it, so the two share one set of
+rules and one set of tests rather than drifting apart later.
 
 Validators for dates, limits, item ids and folder paths ship with the milestone
 that uses them. Adding them now would mean shipping untested-in-context code.
