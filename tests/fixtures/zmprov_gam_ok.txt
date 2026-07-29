@@ -1,0 +1,2 @@
+bilgi-islem@example.com
+tum-personel@example.com
