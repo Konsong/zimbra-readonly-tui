@@ -1,0 +1,3 @@
+# name buyukkota
+cn: buyukkota
+zimbraMailQuota: 10737418240

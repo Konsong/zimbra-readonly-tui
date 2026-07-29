@@ -6,9 +6,17 @@ filters and service health — without changing any Zimbra data or configuration
 
 Bash + whiptail. No runtime dependencies beyond what a Zimbra host already has.
 
-> **Status: in development.** Milestone M1 (safety spine + account/quota menu) is
-> being built. See the [design spec](docs/superpowers/specs/2026-07-29-zimbra-readonly-tui-design.md)
-> for the full plan.
+> **Status: M1 verified on a production server.** The safety spine and the
+> account/quota menu are built, tested and exercised against a live Zimbra:
+> running every screen left `mailboxId` and `quotaUsed` unchanged, and a message
+> delivered afterwards was reflected immediately — so the readings are live and
+> the tool changes nothing. It was also run against a server with `mailboxd`
+> stopped, where it degraded to LDAP reads rather than failing.
+>
+> One question about Zimbra's own side effects remains open and is recorded in
+> the [operator guide](docs/operations.md); it affects the quota screen only.
+> Message search arrives in M2; see the
+> [design spec](docs/superpowers/specs/2026-07-29-zimbra-readonly-tui-design.md).
 
 ## Why "read-only" is a structural claim, not a promise
 
@@ -18,6 +26,9 @@ from a write. This one is built so a write cannot be expressed:
 - **One exec gate.** Every external command passes through a single function
   that checks the `(binary, subcommand)` pair against a central allowlist.
   A command that is not listed does not run, even if some function calls it.
+  A mode flag such as `zmprov -l` is only ever approved together with the
+  subcommand it precedes — listing the flag alone would admit everything behind
+  it.
 - **A checked invariant, not a convention.** The test suite statically extracts
   every call site in the tree and fails if any of them resolves to something the
   allowlist does not cover.
@@ -59,8 +70,13 @@ External Zimbra binaries are replaced by mocks that record the exact argument
 vector they received, so tests assert on what would have been executed, not
 merely on printed output. Nothing in the suite contacts a real server.
 
+The suite also enforces the Bash 4.2 floor by scanning for constructs that only
+exist in later versions — development happens on 5.x, where they would pass
+silently and fail only on an older Zimbra host.
+
 ## Documentation
 
+- [Operator guide](docs/operations.md) — installation, failure messages, exit codes, and the production acceptance procedure
 - [Design spec](docs/superpowers/specs/2026-07-29-zimbra-readonly-tui-design.md) — architecture, security model, milestones
+- [Implementation plan](docs/superpowers/plans/2026-07-29-m1-safety-spine-account.md) — the M1 task breakdown
 - [Original design draft](docs/superpowers/specs/2026-07-28-zimbra-readonly-tui-design.md) — superseded, kept for history
-- `docs/operations.md` — operator guide and verification records (arrives with M1)

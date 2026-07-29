@@ -1,0 +1,3 @@
+# name default
+cn: default
+zimbraMailQuota: 5368709120

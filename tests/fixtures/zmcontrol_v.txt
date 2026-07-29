@@ -1,0 +1,1 @@
+Release 10.0.8.GA.4518.UBUNTU20.64 UBUNTU20_64 FOSS edition, Patch 10.0.8_P1.

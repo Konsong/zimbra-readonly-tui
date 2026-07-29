@@ -158,6 +158,11 @@ zro_exec() {
 }
 ```
 
+The second argument is positional, not semantic: it is whatever token follows
+the binary, whether that is a subcommand (`zmprov ga`) or a flag (`zmcontrol -v`).
+Every allowlist entry is therefore an exact two-token prefix of the argument
+vector, which is what makes the static cross-check in §7.4 decidable.
+
 Adding an operation therefore requires two deliberate edits — the calling
 function and an allowlist entry. In a read-only tool that friction is the
 point: a command that is not listed does not run even if it is called.
@@ -180,6 +185,10 @@ M1 accepts exactly one operator-supplied value, an account address.
 
 - **email** — `^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$`, length ≤ 320.
 - **domain** — leading `@` stripped, LDH labels, length ≤ 253.
+
+The domain validator ships in M1 despite no menu asking for a bare domain: the
+email validator delegates its right-hand side to it, so the two share one set of
+rules and one set of tests rather than drifting apart later.
 
 Validators for dates, limits, item ids and folder paths ship with the milestone
 that uses them. Adding them now would mean shipping untested-in-context code.
@@ -247,6 +256,7 @@ selections are fixed identifiers and are never converted into command names.
 | 22 | command timed out (`timeout`'s 124 normalised here) |
 | 23 | log unreadable |
 | 30 | partial bulk failure |
+| 40 | operator cancelled — navigation, never a process exit status |
 | 90 | **allowlist denial** — always logged, treated as a defect |
 | 91 | unsupported operating-system user |
 | 92 | capability unavailable |
@@ -342,7 +352,64 @@ operation, compare after. Results are recorded in `docs/operations.md`.
 
 ---
 
-## 9. M1 acceptance criteria
+## 9. Revisions from field testing
+
+Three findings from running M1 on real Zimbra servers on 2026-07-29. All three
+are implemented; they are recorded here because each changed a decision made
+above.
+
+### 9.1 whiptail draws on stdout, and the wrappers discarded it
+
+Every account operation froze the terminal. whiptail draws its dialog on stdout
+and returns the answer on stderr; both were left as the caller found them, and
+prompts are read inside command substitution, so stdout was a pipe. The msgbox,
+textbox and yesno wrappers additionally discarded stdout. The dialog was drawn
+into `/dev/null` while whiptail still waited on stdin.
+
+Drawing is now pinned to the controlling terminal (`$ZRO_UI_TTY`, default
+`/dev/tty`) and the answer travels out on the caller's stdout. Startup refuses to
+run when that terminal cannot be opened.
+
+**The stub backend could not have caught this** — it writes to a file and returns
+at once, modelling neither drawing nor blocking. §4.2 presented the stub as the
+seam that makes the UI testable; it is the seam that makes *navigation* testable.
+Terminal behaviour needs the real whiptail path, which `tests/test_ui_render.sh`
+now exercises against a mock that reports where its drawing landed.
+
+### 9.2 The tool failed exactly when it was most needed
+
+Two test servers could not answer a single query: one with `mailboxd` stopped,
+one with an expired admin certificate. `zmprov` speaks SOAP to `mailboxd` by
+default, so both failed at the first call — and a stopped mailbox service is
+precisely when an administrator wants to inspect an account.
+
+Measured on the server with `mailboxd` stopped: `zmprov -l ga`, `-l gam` and
+`-l gc` all answered from LDAP in about two seconds, while `-l gmi` refused with
+`can only be used with SOAP`. So a failed SOAP read is now retried against LDAP
+for the subcommands that support it. Account summary and membership work during
+an outage; the quota screen shows the limit and marks usage unreadable.
+
+LDAP does not expand a value inherited from a COS, so the quota limit falls back
+to the COS record — otherwise an inheriting account would read as unlimited,
+which is worse than reading as unknown. Any screen answered over LDAP carries a
+banner saying so, and degrading is sticky for the whole screen.
+
+### 9.3 The allowlist had to grow a third token
+
+`zmprov -l ga` puts a mode flag where the gate expected a subcommand. Approving
+`zmprov:-l` would have admitted every subcommand behind it, including every
+write, so §5.1's two-token model was extended: a flag-shaped token is only ever
+approved together with the subcommand it precedes, and a test enforces that no
+bare mode-flag entry exists. `zmcontrol:-v` still matches as two tokens, because
+there the flag is the whole operation.
+
+Sharing the retry logic introduced one gate call that passes a variable, which a
+static reader cannot resolve. Rather than accept a hole in the guarantee of
+§7.4, the values that variable may hold are declared in `ZRO_PROV_READS`,
+enforced at runtime, and checked by the scanner — which also verifies that every
+caller names its subcommand literally.
+
+## 10. M1 acceptance criteria
 
 1. Running as any user other than `zimbra` or `root` refuses to start (91).
 2. As `root`, every command observably runs through `runuser -u zimbra --`.

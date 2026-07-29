@@ -1,0 +1,6 @@
+# name ahmet.yilmaz@example.com
+displayName: Ahmet Yilmaz
+zimbraAccountStatus: active
+zimbraCOSId: e00428a1-0c00-11d9-836a-000d93afea2a
+zimbraMailHost: mail01.example.com
+zimbraMailQuota: 0

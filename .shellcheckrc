@@ -1,0 +1,10 @@
+# Follow `source` directives relative to each script's own directory, so
+# `shellcheck <files>` behaves the same locally and in CI.
+source-path=SCRIPTDIR
+external-sources=true
+
+# Optional checks worth having in a program whose job is building command lines.
+enable=quote-safe-variables
+enable=check-set-e-suppressed
+enable=deprecate-which
+enable=avoid-nullary-conditions

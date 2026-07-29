@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+set -uo pipefail
+# shellcheck source=../mock_common.sh
+. "${ZRO_MOCK_LIB:?ZRO_MOCK_LIB is required}/mock_common.sh"
+zro_mock_record whiptail "$@"
+
+# Real whiptail draws its dialog on stdout and returns the operator's answer on
+# stderr. This mock does the same, so a test can prove the dialog reached a
+# terminal even when the caller redirected stdout away.
+printf 'WHIPTAIL_DREW\n'
+printf '%s' "${ZRO_MOCK_WHIPTAIL_ANSWER:-}" >&2
+exit "${ZRO_MOCK_WHIPTAIL_RC:-0}"
