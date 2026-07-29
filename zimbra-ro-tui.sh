@@ -98,15 +98,32 @@ zro_prompt_account() {
 }
 
 zro_report_error() {
+  # Whatever Zimbra actually said, when it said anything. Without this the
+  # operator sees a bare code and has to reproduce the command by hand to learn
+  # that, say, mailboxd is stopped.
+  local detail
+  detail=$(zro_last_error)
+  [ -n "$detail" ] && detail="
+
+Zimbra ciktisi:
+$detail"
+
   case $1 in
-    "$ZRO_E_NO_ACCOUNT") zro_ui_msgbox "Bulunamadi" "Hesap bulunamadi." ;;
-    "$ZRO_E_NO_MAILBOX") zro_ui_msgbox "Bulunamadi" "Mailbox bulunamadi." ;;
+    "$ZRO_E_NO_ACCOUNT") zro_ui_msgbox "Bulunamadi" "Hesap bulunamadi.$detail" ;;
+    "$ZRO_E_NO_MAILBOX") zro_ui_msgbox "Bulunamadi" "Mailbox bulunamadi.$detail" ;;
     "$ZRO_E_NO_RESULT")  zro_ui_msgbox "Sonuc yok" "Kayit bulunamadi." ;;
     "$ZRO_E_TIMEOUT")    zro_ui_msgbox "Zaman asimi" "Komut zaman asimina ugradi." ;;
     "$ZRO_E_DENIED")     zro_ui_msgbox "Reddedildi" "Bu islem izin listesinde degil." ;;
     "$ZRO_E_NOCAP")      zro_ui_msgbox "Kullanilamaz" "Bu islem bu sunucuda mevcut degil." ;;
-    "$ZRO_E_PERM")       zro_ui_msgbox "Yetki" "Yetki reddedildi." ;;
-    *)                   zro_ui_msgbox "Hata" "Islem basarisiz (kod $1)." ;;
+    "$ZRO_E_PERM")       zro_ui_msgbox "Yetki" "Yetki reddedildi.$detail" ;;
+    "$ZRO_E_UNAVAILABLE")
+      zro_ui_msgbox "Zimbra servisine erisilemiyor" \
+"Sorgu calistirilamadi.
+
+zmprov varsayilan olarak mailboxd servisine SOAP ile baglanir. En sik iki sebep:
+  - mailbox servisi durmus     (kontrol: zmcontrol status)
+  - admin sertifikasi gecersiz (kontrol: zmcertmgr viewdeployedcrt)$detail" ;;
+    *)                   zro_ui_msgbox "Hata" "Islem basarisiz (kod $1).$detail" ;;
   esac
 }
 

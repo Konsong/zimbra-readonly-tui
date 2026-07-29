@@ -58,6 +58,25 @@ zro_first_existing() {
   return 1
 }
 
+# The last underlying failure message, kept in a file rather than a variable.
+# Menu code runs operations inside command substitution, so a variable set in
+# that subshell would never reach the caller — the operator would be left with
+# a bare exit code instead of what the command actually said.
+ZRO_ERROR_FILE="${ZRO_ERROR_FILE:-${TMPDIR:-/tmp}/zro-error.$$}"
+
+zro_set_error() {
+  ( umask 077; printf '%s\n' "$1" >"$ZRO_ERROR_FILE" ) 2>/dev/null || true
+}
+
+zro_clear_error() {
+  ( umask 077; : >"$ZRO_ERROR_FILE" ) 2>/dev/null || true
+}
+
+zro_last_error() {
+  [ -f "$ZRO_ERROR_FILE" ] || return 0
+  cat -- "$ZRO_ERROR_FILE" 2>/dev/null
+}
+
 ZRO_TMPFILES=()
 
 zro_tmpfile() {
@@ -75,6 +94,8 @@ zro_cleanup() {
     [ -e "$f" ] && rm -f -- "$f"
   done
   ZRO_TMPFILES=()
+  [ -e "$ZRO_ERROR_FILE" ] && rm -f -- "$ZRO_ERROR_FILE"
+  return 0
 }
 
 zro_human_bytes() {

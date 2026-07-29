@@ -1,0 +1,1 @@
+ERROR: zclient.IO_ERROR (invoke PKIX path validation failed: java.security.cert.CertPathValidatorException: validity check failed, server: localhost) (cause: javax.net.ssl.SSLHandshakeException PKIX path validation failed: java.security.cert.CertPathValidatorException: validity check failed)

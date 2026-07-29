@@ -75,6 +75,45 @@ ZRO_MOCK_ZMPROV_GA_ERR="$FIX/zmprov_ga_no_such_account.err" \
 ZRO_MOCK_ZMPROV_GA_RC=1 \
   assert_status "$ZRO_E_NO_ACCOUNT" zro_account_fetch 'yok@example.com'
 
+# Both fixtures are verbatim output from real Zimbra test servers on
+# 2026-07-29: one with mailboxd stopped, one with an expired admin certificate.
+# zmprov speaks SOAP to mailboxd by default, so neither host could answer any
+# query, and the operator saw only "islem basarisiz (kod 1)".
+it "maps an unreachable mailbox service to the documented exit code"
+ZRO_MOCK_ZMPROV_GA_ERR="$FIX/zmprov_io_error_refused.err" \
+ZRO_MOCK_ZMPROV_GA_RC=1 \
+  assert_status "$ZRO_E_UNAVAILABLE" zro_account_fetch 'a@b.com'
+
+it "maps a broken admin certificate to the documented exit code"
+ZRO_MOCK_ZMPROV_GA_ERR="$FIX/zmprov_io_error_ssl.err" \
+ZRO_MOCK_ZMPROV_GA_RC=1 \
+  assert_status "$ZRO_E_UNAVAILABLE" zro_account_fetch 'a@b.com'
+
+it "keeps the underlying Zimbra message for the operator to read"
+ZRO_MOCK_ZMPROV_GA_ERR="$FIX/zmprov_io_error_refused.err" \
+ZRO_MOCK_ZMPROV_GA_RC=1 \
+  zro_account_fetch 'a@b.com' >/dev/null 2>&1
+detail=$(zro_last_error)
+assert_contains "$detail" "Connection refused"
+
+it "reports the certificate failure in the operator's own words"
+ZRO_MOCK_ZMPROV_GA_ERR="$FIX/zmprov_io_error_ssl.err" \
+ZRO_MOCK_ZMPROV_GA_RC=1 \
+  zro_account_fetch 'a@b.com' >/dev/null 2>&1
+detail=$(zro_last_error)
+assert_contains "$detail" "PKIX"
+
+it "keeps the message across a subshell, which is where menus read it"
+out=$( ZRO_MOCK_ZMPROV_GA_ERR="$FIX/zmprov_io_error_refused.err" \
+       ZRO_MOCK_ZMPROV_GA_RC=1 zro_account_summary 'a@b.com' ) || true
+assert_eq "$out" ""
+assert_contains "$(zro_last_error)" "Connection refused"
+
+it "clears the previous error on a successful call"
+ZRO_MOCK_ZMPROV_GA_OUT="$FIX/zmprov_ga_active.txt" \
+  zro_account_fetch 'ahmet.yilmaz@example.com' >/dev/null
+assert_eq "$(zro_last_error)" ""
+
 it "renders a summary with the operator-facing fields"
 out=$(ZRO_MOCK_ZMPROV_GA_OUT="$FIX/zmprov_ga_active.txt" \
       zro_account_summary 'ahmet.yilmaz@example.com')

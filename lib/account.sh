@@ -41,6 +41,49 @@ zro_zimbra_time() {
     "${t:0:4}" "${t:4:2}" "${t:6:2}" "${t:8:2}" "${t:10:2}" "${t:12:2}"
 }
 
+# Interprets what a Zimbra CLI wrote to stderr, and prints the matching exit
+# code — or 0 when it recognises nothing.
+#
+# By default zmprov talks SOAP to mailboxd, so a stopped mailbox service or an
+# expired admin certificate fails every single query. Both were seen on real
+# test servers on 2026-07-29, and both surfaced to the operator as nothing more
+# than "islem basarisiz (kod 1)".
+zro_zimbra_error_code() {
+  local errfile=$1
+  [ -f "$errfile" ] || { printf '0'; return 0; }
+
+  if grep -qE 'zclient\.IO_ERROR|Connection refused|SSLHandshakeException|PKIX|SERVICE_UNAVAILABLE' \
+       "$errfile" 2>/dev/null; then
+    printf '%s' "$ZRO_E_UNAVAILABLE"
+    return 0
+  fi
+  if grep -qE 'PERM_DENIED|permission denied|AUTH_FAILED' "$errfile" 2>/dev/null; then
+    printf '%s' "$ZRO_E_PERM"
+    return 0
+  fi
+  printf '0'
+}
+
+# Records the underlying message so a screen can show it, and maps the failure
+# to a documented code. $2 is the code to use when the text names a missing
+# object, which differs between an account lookup and a mailbox lookup.
+zro_account_fail() {
+  local errfile=$1 missing_code=$2 rc=$3
+  zro_set_error "$(head -c 500 -- "$errfile" 2>/dev/null)"
+
+  if grep -qE 'NO_SUCH_ACCOUNT|NO_SUCH_MAILBOX' "$errfile" 2>/dev/null; then
+    printf '%s' "$missing_code"
+    return 0
+  fi
+  local mapped
+  mapped=$(zro_zimbra_error_code "$errfile")
+  if [ "$mapped" != "0" ]; then
+    printf '%s' "$mapped"
+    return 0
+  fi
+  printf '%s' "$rc"
+}
+
 zro_account_fetch() {
   local acct=${1-}
   zro_validate_email "$acct" || return "$ZRO_E_INPUT"
@@ -50,14 +93,13 @@ zro_account_fetch() {
   out=$(zro_exec zmprov ga "$acct" "${ZRO_ACCOUNT_ATTRS[@]}" 2>"$err") || rc=$?
 
   if [ "$rc" -ne 0 ]; then
-    if grep -q 'NO_SUCH_ACCOUNT' "$err" 2>/dev/null; then
-      rm -f -- "$err"
-      return "$ZRO_E_NO_ACCOUNT"
-    fi
+    local mapped
+    mapped=$(zro_account_fail "$err" "$ZRO_E_NO_ACCOUNT" "$rc")
     rm -f -- "$err"
-    return "$rc"
+    return "$mapped"
   fi
   rm -f -- "$err"
+  zro_clear_error
   printf '%s' "$out"
 }
 
@@ -111,14 +153,13 @@ zro_account_mailbox_info() {
   out=$(zro_exec zmprov gmi "$acct" 2>"$err") || rc=$?
 
   if [ "$rc" -ne 0 ]; then
-    if grep -qE 'NO_SUCH_ACCOUNT|NO_SUCH_MAILBOX' "$err" 2>/dev/null; then
-      rm -f -- "$err"
-      return "$ZRO_E_NO_MAILBOX"
-    fi
+    local mapped
+    mapped=$(zro_account_fail "$err" "$ZRO_E_NO_MAILBOX" "$rc")
     rm -f -- "$err"
-    return "$rc"
+    return "$mapped"
   fi
   rm -f -- "$err"
+  zro_clear_error
   printf '%s' "$out"
 }
 
@@ -157,9 +198,19 @@ zro_account_membership() {
   local acct=${1-}
   zro_validate_email "$acct" || return "$ZRO_E_INPUT"
 
-  local out rc=0
-  out=$(zro_exec zmprov gam "$acct" 2>/dev/null) || rc=$?
-  [ "$rc" -eq 0 ] || return "$rc"
+  local err out rc=0
+  err=$(zro_tmpfile) || return "$ZRO_E_UNAVAILABLE"
+  out=$(zro_exec zmprov gam "$acct" 2>"$err") || rc=$?
+
+  if [ "$rc" -ne 0 ]; then
+    local mapped
+    mapped=$(zro_account_fail "$err" "$ZRO_E_NO_ACCOUNT" "$rc")
+    rm -f -- "$err"
+    return "$mapped"
+  fi
+  rm -f -- "$err"
+  zro_clear_error
+
   out=$(printf '%s' "$out" | grep -v '^[[:space:]]*$')
   [ -n "$out" ] || return "$ZRO_E_NO_RESULT"
   printf '%s\n' "$out"

@@ -19,11 +19,40 @@ zro_scan_raw() {
   done
 }
 
+# Removes double-quoted spans, tracking the quote state ACROSS lines. A
+# line-based `sed s/"[^"]*"//g` cannot do this, and the operator-facing messages
+# in this program are multi-line Turkish text: the middle lines carry no quotes
+# at all and read exactly like code, which produced a false alarm the first time
+# a message named a Zimbra command.
+#
+# Runs after comment stripping, so it never has to reason about a quote inside
+# a comment.
+zro_strip_dquotes() {
+  awk '
+    BEGIN { inq = 0 }
+    {
+      out = ""
+      n = length($0)
+      for (i = 1; i <= n; i++) {
+        c = substr($0, i, 1)
+        if (c == "\\") {
+          if (!inq) { out = out c; if (i + 1 <= n) out = out substr($0, i + 1, 1) }
+          i++
+          continue
+        }
+        if (c == "\"") { inq = !inq; continue }
+        if (!inq) { out = out c }
+      }
+      print out
+    }
+  '
+}
+
 # Comments and double-quoted spans. Text inside a string is data the program
 # prints, not something it runs, so an error message is free to name a command
 # without that reading as a call to it.
 zro_scan_code() {
-  zro_scan_raw | sed 's/"[^"]*"//g'
+  zro_scan_raw | zro_strip_dquotes
 }
 
 raw_code=$(zro_scan_raw)
@@ -90,7 +119,7 @@ assert_eq "$(printf '%s\n' "$raw_code" | grep -c '/opt/zimbra')" "1"
 
 it "no module calls a Zimbra binary outside the gate"
 for f in "${SOURCES[@]}"; do
-  body=$(sed -e 's/[[:space:]]*#.*$//' -e 's/"[^"]*"//g' "$f" \
+  body=$(sed 's/[[:space:]]*#.*$//' "$f" | zro_strip_dquotes \
          | grep -v 'zro_exec' | grep -v 'ZRO_ALLOW')
   assert_not_contains "$body" 'zmprov '
   assert_not_contains "$body" 'zmmailbox '
