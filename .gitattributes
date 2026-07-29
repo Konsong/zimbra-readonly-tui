@@ -1,0 +1,13 @@
+# Shell scripts are executed on Linux. A CRLF line ending makes the kernel
+# report `bad interpreter: /bin/bash^M`, so line endings are pinned to LF
+# regardless of the contributor's core.autocrlf setting.
+* text=auto eol=lf
+
+*.sh    text eol=lf
+*.bash  text eol=lf
+*.md    text eol=lf
+*.yml   text eol=lf
+*.yaml  text eol=lf
+
+# Fixtures capture real Zimbra CLI output byte for byte; never transform them.
+tests/fixtures/**  -text
