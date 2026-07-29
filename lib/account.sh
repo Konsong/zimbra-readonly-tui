@@ -33,10 +33,16 @@ zro_attr_all() {
   '
 }
 
-# Zimbra stores timestamps as LDAP generalized time: 20260715103012Z
+# Zimbra stores timestamps as LDAP generalized time. A production server
+# returned 20260728064034.819Z: fourteen digits, then fractional seconds, then
+# a zone. The fraction is optional in the standard and absent from some
+# attributes, and a zone may be an offset rather than Z, so all three shapes
+# are accepted. Only the leading fourteen digits are displayed.
+ZRO_RE_GENTIME='^[0-9]{14}(\.[0-9]{1,6})?(Z|[+-][0-9]{4})?$'
+
 zro_zimbra_time() {
   local t=${1-}
-  [[ $t =~ ^[0-9]{14}Z?$ ]] || return "$ZRO_E_INPUT"
+  [[ $t =~ $ZRO_RE_GENTIME ]] || return "$ZRO_E_INPUT"
   printf '%s-%s-%s %s:%s:%s' \
     "${t:0:4}" "${t:4:2}" "${t:6:2}" "${t:8:2}" "${t:10:2}" "${t:12:2}"
 }

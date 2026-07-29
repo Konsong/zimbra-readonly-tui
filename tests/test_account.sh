@@ -48,11 +48,27 @@ it "converts Zimbra generalized time"
 assert_out_eq "2026-07-15 10:30:12" zro_zimbra_time "20260715103012Z"
 assert_out_eq "2026-07-15 10:30:12" zro_zimbra_time "20260715103012"
 
+# A production server returned 20260728064034.819Z. The invented fixture had no
+# fractional part, so the validator rejected the real thing and every account
+# showed a last logon of "-".
+it "accepts the fractional seconds Zimbra really writes"
+assert_out_eq "2026-07-28 06:40:34" zro_zimbra_time "20260728064034.819Z"
+assert_out_eq "2026-07-15 10:30:12" zro_zimbra_time "20260715103012.1Z"
+assert_out_eq "2026-07-15 10:30:12" zro_zimbra_time "20260715103012.123456Z"
+assert_out_eq "2026-07-15 10:30:12" zro_zimbra_time "20260715103012.819"
+
+it "accepts an explicit timezone offset"
+assert_out_eq "2026-07-15 10:30:12" zro_zimbra_time "20260715103012+0300"
+assert_out_eq "2026-07-15 10:30:12" zro_zimbra_time "20260715103012.819-0500"
+
 it "rejects malformed generalized time"
 assert_status "$ZRO_E_INPUT" zro_zimbra_time "2026-07-15"
 assert_status "$ZRO_E_INPUT" zro_zimbra_time ""
 assert_status "$ZRO_E_INPUT" zro_zimbra_time "2026071510301Z"
 assert_status "$ZRO_E_INPUT" zro_zimbra_time "2026071510301X; id"
+assert_status "$ZRO_E_INPUT" zro_zimbra_time "20260715103012.Z"
+assert_status "$ZRO_E_INPUT" zro_zimbra_time "20260715103012.819Z; id"
+assert_status "$ZRO_E_INPUT" zro_zimbra_time "20260715103012.8199999999Z"
 
 it "rejects an invalid account before running anything"
 : >"$ZRO_MOCK_LOG"

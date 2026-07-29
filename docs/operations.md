@@ -219,19 +219,28 @@ Run this sequence before using the tool against real accounts.
 2. Read the allowlist in `lib/exec.sh` and confirm every entry is a read
    operation. It is nine lines. Read them.
 
-3. Choose one disposable test account and record its state:
+3. Choose one test account that is **not receiving mail** during the check, and
+   record its state:
 
    ```bash
-   zmprov gmi test@example.com
-   zmmailbox -z -m test@example.com getAllFolders
+   runuser -u zimbra -- /opt/zimbra/bin/zmprov gmi test@example.com
    ```
 
-   Note the mailbox id, the used bytes, and the message and unread counts of one
-   folder.
+   Note the `mailboxId` and the `quotaUsed`.
+
+   Use `zmprov`, not `zmmailbox`. This release never runs `zmmailbox`, and two
+   open questions in section 5 concern its side effects — reaching for it to
+   verify a tool that avoids it would prove nothing and risk something.
 
 4. Run every screen in the tool against that account.
 
-5. Record the same values again and confirm they are identical.
+5. Record the same values again.
+
+   **`mailboxId` must be identical.** `quotaUsed` will also be identical on a
+   quiet account — but on a mailbox that is receiving mail it drifts by itself,
+   and that drift is delivery, not this tool. If the account cannot be quiet,
+   compare `mailboxId` and repeat the `quotaUsed` reading twice without running
+   the tool in between, so you can see what the account's own noise looks like.
 
 6. Answer the third row of the table in section 5 by running the tool against an
    account that has never logged in, then checking whether a mailbox now exists
