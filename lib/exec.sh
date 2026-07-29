@@ -35,3 +35,27 @@ zro_allowed() {
   # containing a regex metacharacter cannot widen the match.
   printf '%s' "$ZRO_ALLOW" | grep -qxF -- "$bin:$token"
 }
+
+# Binary locations. Production defaults, overridable so the suite can point at
+# mocks. Never write one of these paths as a literal in module code.
+ZRO_ZIMBRA_BIN="${ZRO_ZIMBRA_BIN:-/opt/zimbra/bin}"
+ZRO_RUNUSER="${ZRO_RUNUSER:-$(zro_first_existing /sbin/runuser /usr/sbin/runuser /bin/runuser)}"
+ZRO_TIMEOUT_BIN="${ZRO_TIMEOUT_BIN:-$(zro_first_existing /usr/bin/timeout /bin/timeout)}"
+ZRO_ID_BIN="${ZRO_ID_BIN:-$(zro_first_existing /usr/bin/id /bin/id)}"
+ZRO_TIMEOUT="${ZRO_TIMEOUT:-60}"
+
+zro_current_user() {
+  [ -n "$ZRO_ID_BIN" ] || return "$ZRO_E_UNAVAILABLE"
+  "$ZRO_ID_BIN" -un
+}
+
+# Pure: the identity decision is a function of the user name alone, and has no
+# environment override. A safety check must not have an off switch, so mocking
+# happens one level down, at $ZRO_ID_BIN.
+zro_identity_mode() {
+  case ${1-} in
+    zimbra) printf 'direct' ;;
+    root)   printf 'runuser' ;;
+    *)      return "$ZRO_E_BADUSER" ;;
+  esac
+}
