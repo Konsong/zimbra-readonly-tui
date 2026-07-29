@@ -40,4 +40,13 @@ for f in "$ZRO_TEST_ROOT"/test_*.sh; do
 done
 
 printf -- '----\n%d files, %d ok, %d failed\n' "$files" "$total_ok" "$total_fail"
-[ "$total_fail" -eq 0 ]
+
+# Exit explicitly. CI gates on this status, so it must not depend on whatever
+# the last command in the script happened to return. The verdict is also
+# printed, so a human or a wrapper that loses the exit status can still tell.
+if [ "$total_fail" -eq 0 ] && [ "$files" -gt 0 ]; then
+  printf 'SUITE: PASS\n'
+  exit 0
+fi
+printf 'SUITE: FAIL\n'
+exit 1
