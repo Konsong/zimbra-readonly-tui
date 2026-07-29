@@ -38,20 +38,60 @@ the only question that actually carries risk — *does the read-only claim hold
 against a real server?* — to the very end. The work is sliced vertically
 instead: M1 delivers the entire safety spine plus one real menu.
 
-| Milestone | Contents |
-|---|---|
-| **M1** | Safety spine + account/quota menu. Exec gate, identity wrapper, validation, UI seam, capability probe, mock harness, static read-only scanner, ShellCheck + CI, `.gitattributes`. Menu: account existence/status, COS, mailbox host, mailbox id, quota, last logon, distribution-list membership. |
-| M2 | Message search + message detail. Zimbra query builder and query escaping. |
-| M3 | Mailbox and folder views. |
-| M4 | Filters, forwarding, aliases, identities, signatures. |
-| M5 | Delivery tracing and bounded log inspection. |
-| M6 | Bulk queries, TSV/CSV metadata export, `zmprov -l` and batching. |
-| M7 | System and service status. |
-| M8 | Advanced read-only views (message body, blob path), explicitly labelled. |
+| Milestone | Contents | Needs `zmmailbox`? |
+|---|---|---|
+| **M1** — shipped | Safety spine + account menu. Exec gate, identity wrapper, validation, UI seam, capability probe, mock harness, static read-only scanner, ShellCheck + CI. Menu: account status, COS, mailbox host, quota limit, last logon, distribution-list membership. | no |
+| M2 | Message search + message detail. Zimbra query builder and query escaping. | **yes** |
+| M3 | Mailbox and folder views. | **yes** |
+| M4 | Filters, forwarding, aliases, identities, signatures. | **yes** |
+| M5 | Delivery tracing and bounded log inspection. | no |
+| M6 | Bulk queries, quota usage via `zmprov gqu`, TSV/CSV export, batching. | no |
+| M7 | System and service status. | no |
+| M8 | Advanced read-only views (message body, blob path). | **yes** |
 
-**M1 uses `zmprov` and `zmcontrol` only.** `zmmailbox` does not appear in the M1
-allowlist, so the two effect-level risks in §8 are structurally absent from the
-first release rather than merely avoided by discipline.
+**M1 uses `zmprov` and `zmcontrol` only**, which is what kept the first release
+clear of the effect-level risks in §8 — structurally, not by discipline.
+
+### 2.1 One question gates four milestones
+
+Field experiments (§9.4) established that `zmmailbox` **creates a mailbox for an
+account that has none**, during session setup rather than inside any subcommand.
+No invocation — not even one that only reads a number — can therefore serve as
+an existence probe.
+
+That is not an M2 problem. It is the same problem in M2, M3, M4 and M8, and it
+should be answered once rather than four times:
+
+> **How may this tool use `zmmailbox` at all, given that touching an account
+> creates its mailbox when one is absent?**
+
+Three shapes of answer, none of them chosen yet:
+
+1. **Disclose and confirm.** Any `zmmailbox` operation warns first when the
+   account shows no sign of having a mailbox, and does nothing without an
+   explicit yes. Keeps every feature; makes the tool capable of a write, which
+   is precisely what §5 says it must not be.
+2. **Restrict to a provably safe subset.** `zimbraLastLogonTimestamp` being set
+   is *sufficient* evidence that a mailbox exists — an account cannot have
+   logged in without one. It is not *necessary*, since delivery also creates
+   mailboxes, so the rule refuses some safe accounts and permits no unsafe one.
+   Costs coverage, keeps the guarantee intact.
+3. **Do without `zmmailbox`.** Answer the underlying operator questions from
+   sources that never open a mailbox — delivery from the logs, account facts
+   from LDAP. Narrower, and safe by construction.
+
+Whichever is chosen shapes four milestones, so it belongs at the front of the
+next design conversation rather than inside M2's.
+
+### 2.2 Suggested order of work
+
+**M5 next, not M2.** Delivery tracing reads `zmmsgtrace` and log files and never
+opens a mailbox, so it carries none of the above. It also answers the question
+operators ask most often — *did this message arrive?* — whose answer lives in the
+logs rather than in a mailbox. M7 is similarly free of the constraint.
+
+M2, M3, M4 and M8 stay blocked behind §2.1. They are not cancelled; they are
+waiting on a decision that should be made deliberately, once.
 
 ---
 
@@ -408,6 +448,39 @@ static reader cannot resolve. Rather than accept a hole in the guarantee of
 §7.4, the values that variable may hold are declared in `ZRO_PROV_READS`,
 enforced at runtime, and checked by the scanner — which also verifies that every
 caller names its subcommand literally.
+
+### 9.4 The three side-effect questions came back unsafe
+
+§8 listed three behaviours as believed but unproven. All three were settled on
+2026-07-29 — first by reading `zm-mailbox`, then by experiment on a Zimbra 9.0.0
+test server — and **all three resolved to the unsafe answer**:
+
+| Question | Answer |
+|---|---|
+| Does `zmprov gmi` provision a mailbox for an account with none? | **Yes.** `GetMailbox.handle()` calls the `AUTOCREATE` overload. It is the only read-named admin handler that does. |
+| Does `zmmailbox -z -m <account>` create a mailbox? | **Yes**, during session setup — so nothing it offers can be used as an existence probe. |
+| Does `zmmailbox getMessage` clear the unread flag? | **Yes.** `doGetMessage` hard-codes `setMarkRead(true)`; no flag disables it. |
+
+`zmprov gmi` was in the shipped M1 allowlist and has been removed. Per-account
+quota usage went with it, since that command is its only source; the safe
+replacement, `zmprov gqu <server>`, answers for a whole server and belongs with
+M6. §5.2's allowlist and §4.3's data flow are updated accordingly.
+
+Both research documents live under `docs/research/`: one records what the source
+says, with citations; the other records what was measured, with the conditions.
+The second also records an experiment that was **invalid** — a message that was
+never unread, so nothing was tested, and a script that reported a conclusion
+anyway. It is kept rather than replaced.
+
+### 9.5 Two smaller corrections
+
+- **`zmprov -l` expands COS-inherited values**, in both modes, suppressed only
+  by `-e`. The degraded-mode banner claimed otherwise and has been reworded. The
+  COS fallback in the quota limit is kept: it is correct either way, and cheap.
+- **`zro_query_quote` in §5.4 is wrong as specified.** The Zimbra query grammar's
+  only escape is the two-character `\"`; a doubled backslash is never collapsed.
+  Escape `"` as `\"`, leave everything else alone, and reject a trailing
+  backslash — it would swallow the closing quote. This matters when M2 arrives.
 
 ## 10. M1 acceptance criteria
 
