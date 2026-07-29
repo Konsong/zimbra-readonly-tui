@@ -180,10 +180,32 @@ done
 it "M1 exposes no zmmailbox operation at all"
 assert_not_contains "$allow" "zmmailbox"
 
-it "the production Zimbra path appears only as the overridable default"
-assert_not_contains "$code" "/opt/zimbra/bin/"
-assert_not_contains "$code" "/opt/zimbra/libexec/"
-assert_eq "$(printf '%s\n' "$raw_code" | grep -c '/opt/zimbra')" "1"
+# §7.4, reshaped. This was a count: /opt/zimbra had to appear exactly once in the
+# tree. Three binary roots and two log roots break that count, and raising the
+# number would turn a guarantee into a reminder. What the count was reaching for
+# is that the production path is never reachable except through a variable the
+# operator can override — so that is what is asserted, and it survives the next
+# root without being edited.
+it "every production Zimbra path is an overridable default and nothing else"
+paths=$(printf '%s\n' "$raw_code" | grep -F '/opt/zimbra')
+assert_contains "$paths" "/opt/zimbra"   # the assertion has something to check
+literal=""
+while IFS= read -r line; do
+  [ -n "$line" ] || continue
+  # The backreference is the point of the pattern: the name being assigned and
+  # the name being defaulted have to be the same variable, or setting it in the
+  # environment overrides nothing.
+  name=$(printf '%s\n' "$line" \
+         | sed -n 's/^[[:space:]]*\(ZRO_[A-Z0-9_]*\)="\${\1:-\/opt\/zimbra[^"]*}"[[:space:]]*$/\1/p')
+  [ -n "$name" ] || literal="$literal [$line]"
+done <<EOF
+$paths
+EOF
+assert_eq "$literal" ""
+# Every occurrence sits inside a double-quoted default, so once quoted spans are
+# stripped the path is gone entirely. A literal path anywhere in executable
+# position fails both this and the assertion above.
+assert_not_contains "$code" "/opt/zimbra"
 
 it "no module calls a Zimbra binary outside the gate"
 for f in "${SOURCES[@]}"; do

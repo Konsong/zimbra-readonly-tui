@@ -55,6 +55,14 @@ assert_not_contains "$log" "runuser"
 assert_contains "$log" "$(printf 'timeout\t-k\t5\t60')"
 assert_contains "$log" "$(printf 'zmprov\tga\ta@b.com')"
 
+it "runs the binary at the path its declared root resolves to"
+: >"$ZRO_MOCK_LOG"
+ZRO_MOCK_ID_USER=zimbra zro_exec zmprov ga 'a@b.com' >/dev/null 2>&1
+# What timeout was asked to run is the resolved path. Asserting on the argv
+# rather than on the resolution is what proves nothing else assembled it.
+assert_contains "$(grep '^timeout' "$ZRO_MOCK_LOG")" \
+  "$(printf -- '%s/mocks/bin/zmprov\tga\ta@b.com' "$ZRO_TEST_ROOT")"
+
 it "as root, places timeout inside the runuser wrapper"
 : >"$ZRO_MOCK_LOG"
 ZRO_MOCK_ID_USER=root zro_exec zmprov ga 'a@b.com' >/dev/null 2>&1
@@ -119,6 +127,61 @@ assert_ok zro_bin_available zmprov
 assert_fail zro_bin_available zmmailbox
 assert_fail zro_bin_available 'zmprov; rm -rf /'
 assert_fail zro_bin_available ''
+
+it "resolves each binary under the root its own declaration names"
+assert_out_eq "$ZRO_TEST_ROOT/mocks/bin/zmprov" zro_bin_path zmprov
+assert_out_eq "$ZRO_TEST_ROOT/mocks/bin/zmcontrol" zro_bin_path zmcontrol
+
+# Every binary in the tree declares the same root today, so the behaviour the
+# table exists for — two binaries resolving under two different directories —
+# would otherwise go unexercised until the ticket that needs it. A simulated
+# table proves the mechanism now; adding a real second root is then one line.
+it "resolves two binaries under two different declared roots"
+# SC2034: the table names this variable and the gate reads it indirectly, which
+# is exactly the mechanism under test and not something ShellCheck can follow.
+# shellcheck disable=SC2034
+two_roots=$( ZRO_OTHER_ROOT=/other/root
+             ZRO_BIN_ROOTS='zmprov:ZRO_ZIMBRA_BIN
+zmcontrol:ZRO_OTHER_ROOT'
+             zro_bin_path zmprov; printf '|'; zro_bin_path zmcontrol )
+assert_eq "$two_roots" "$ZRO_TEST_ROOT/mocks/bin/zmprov|/other/root/zmcontrol"
+
+it "refuses to resolve a binary that declares no root"
+assert_fail zro_bin_path zmmailbox
+assert_fail zro_bin_path ''
+# The declaration is matched as literal text, so a name carrying a glob or a
+# shell metacharacter cannot borrow another binary's root.
+assert_fail zro_bin_path 'zm*'
+assert_fail zro_bin_path 'zmprov; rm -rf /'
+assert_fail zro_bin_path zmprov:ZRO_ZIMBRA_BIN
+
+it "refuses to resolve against a root variable that is empty"
+ZRO_ZIMBRA_BIN='' assert_fail zro_bin_path zmprov
+
+# The allowlist and the root table are two separate declarations. A binary the
+# first one names and the second one does not must be refused, not resolved
+# against a default — the whole point of declaring roots is that reaching a new
+# directory cannot happen by omission. Every binary in the tree is declared, so
+# the omission is simulated with a table that names one and forgets the other,
+# which is the shape the mistake would really take.
+it "refuses an allowlisted binary whose root is not declared, and runs nothing"
+: >"$ZRO_MOCK_LOG"
+ZRO_BIN_ROOTS='zmcontrol:ZRO_ZIMBRA_BIN' ZRO_MOCK_ID_USER=zimbra \
+  assert_status "$ZRO_E_DENIED" zro_exec zmprov ga 'a@b.com'
+assert_eq "$(cat "$ZRO_MOCK_LOG")" ""
+
+# Logged wherever the declaration is read, not only by the gate: the capability
+# probe resolves the same path to decide whether to offer a menu entry, and a
+# missing declaration must not reach the operator as an absent program.
+it "logs the refusal of an undeclared root, whichever caller reads it"
+captured=$(ZRO_BIN_ROOTS='zmcontrol:ZRO_ZIMBRA_BIN' ZRO_MOCK_ID_USER=zimbra \
+           zro_exec zmprov ga 'a@b.com' 2>&1 >/dev/null)
+assert_contains "$captured" "denied"
+assert_contains "$captured" "zmprov"
+captured=$(ZRO_BIN_ROOTS='zmcontrol:ZRO_ZIMBRA_BIN' \
+           zro_bin_available zmprov 2>&1 >/dev/null)
+assert_contains "$captured" "denied"
+assert_contains "$captured" "zmprov"
 
 rm -f -- "$ZRO_MOCK_LOG"
 zro_t_report

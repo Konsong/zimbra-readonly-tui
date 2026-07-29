@@ -99,6 +99,59 @@ for verb in create modify delete remove move mark flag tag empty import post rec
   assert_not_contains "$entries" "$verb"
 done
 
+it "every allowlisted binary declares the root it resolves under"
+# There is no default root. A binary the allowlist names and the root table does
+# not is refused at the gate, which would make it an operation that reads as
+# approved and can never run.
+while IFS= read -r entry; do
+  [ -n "$entry" ] || continue
+  assert_ok zro_bin_path "${entry%%:*}"
+done <<EOF
+$(zro_allow_entries)
+EOF
+
+it "the root table names no binary the allowlist does not"
+# The table decides where a binary lives, never whether it may run. Reading the
+# allowlist must still tell a maintainer everything this tool can execute.
+allow=$(zro_allow_entries)
+roots=$(zro_bin_root_entries)
+assert_contains "$roots" ":"        # the loop below has something to check
+unlisted=""
+while IFS= read -r entry; do
+  [ -n "$entry" ] || continue
+  bin=${entry%%:*}
+  found=""
+  # Compared as literal text, for the same reason the gate does: a name is never
+  # allowed to widen into a pattern, not even in a test.
+  while IFS= read -r listed; do
+    case $listed in
+      "$bin":*) found=1; break ;;
+    esac
+  done <<INNER
+$allow
+INNER
+  [ -n "$found" ] || unlisted="$unlisted [$bin]"
+done <<EOF
+$roots
+EOF
+assert_eq "$unlisted" ""
+
+it "every root declaration names an overridable variable, never a path"
+# The value in the table is a variable NAME. A path written here would be a root
+# the operator cannot override and the suite cannot point at its mocks.
+bad=""
+while IFS= read -r entry; do
+  [ -n "$entry" ] || continue
+  var=${entry#*:}
+  case $var in
+    ZRO_[A-Z0-9_]*) case $var in *[!A-Z0-9_]*) bad="$bad [$entry]" ;; esac ;;
+    *) bad="$bad [$entry]" ;;
+  esac
+done <<EOF
+$(zro_bin_root_entries)
+EOF
+assert_eq "$bad" ""
+
 it "every allowlist entry is a binary:token pair"
 while IFS= read -r entry; do
   [ -n "$entry" ] || continue

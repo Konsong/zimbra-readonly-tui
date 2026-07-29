@@ -72,7 +72,8 @@ zro_allowed() {
 }
 
 # Binary locations. Production defaults, overridable so the suite can point at
-# mocks. Never write one of these paths as a literal in module code.
+# mocks. Never write one of these paths as a literal in module code. Which
+# binary resolves under which root is declared in ZRO_BIN_ROOTS below.
 ZRO_ZIMBRA_BIN="${ZRO_ZIMBRA_BIN:-/opt/zimbra/bin}"
 ZRO_RUNUSER="${ZRO_RUNUSER:-$(zro_first_existing /sbin/runuser /usr/sbin/runuser /bin/runuser)}"
 ZRO_TIMEOUT_BIN="${ZRO_TIMEOUT_BIN:-$(zro_first_existing /usr/bin/timeout /bin/timeout)}"
@@ -95,15 +96,77 @@ zro_identity_mode() {
   esac
 }
 
-zro_bin_available() {
-  local bin=${1-}
+# Where each allowlisted binary lives, as "<binary>:<root variable name>". The
+# gate resolves a binary under the root declared here and nowhere else: a binary
+# absent from this table is refused, not resolved against a default. Reaching a
+# new directory is therefore a declaration a reader can see, never a consequence
+# of where a program happens to be installed.
+#
+# The value is the NAME of the variable, not its value. The root is read when the
+# gate runs, which is what keeps every root overridable after this file has been
+# sourced — the suite points them at its mocks.
+#
+# This table says where a binary lives; it never says whether it may run. That
+# stays with ZRO_ALLOW, so reading the allowlist still tells a maintainer
+# everything this tool can execute, and a test holds the two sets equal. The
+# gate's own tools — timeout, id, runuser — are absent from both: they serve this
+# function rather than an operation the operator chose.
+ZRO_BIN_ROOTS='
+zmprov:ZRO_ZIMBRA_BIN
+zmcontrol:ZRO_ZIMBRA_BIN
+'
+
+zro_bin_root_entries() {
+  printf '%s' "$ZRO_BIN_ROOTS" | grep -v '^[[:space:]]*$'
+}
+
+# Prints the absolute path of a binary under its declared root, and fails when
+# the binary declares no root or the root it names is empty. Failure is never a
+# fallback: there is no default root to resolve against.
+#
+# Both failures are logged here rather than by the caller, because the gate is
+# not the only caller: zro_bin_available answers the capability probe, and an
+# undeclared root would otherwise reach the operator as a greyed-out menu entry
+# reading like a program this host does not have. Neither condition is something
+# an operator did, so both are logged the way any other defect is.
+zro_bin_path() {
+  local bin=${1-} entry var=''
   [ -n "$bin" ] || return 1
-  [ -x "$ZRO_ZIMBRA_BIN/$bin" ]
+
+  while IFS= read -r entry; do
+    # Quoted, so the comparison is literal text exactly as in the allowlist: a
+    # name carrying a glob character cannot borrow another binary's root.
+    case $entry in
+      "$bin":?*) var=${entry#*:}; break ;;
+    esac
+  done <<EOF
+$(zro_bin_root_entries)
+EOF
+  if [ -z "$var" ]; then
+    zro_log error "denied, no root declared for binary: $bin"
+    return 1
+  fi
+
+  # Indirect expansion, not a nameref: namerefs are bash 4.3 and the floor is
+  # 4.2. The name comes from the table above, never from anything an operator
+  # typed, and the guard above is what keeps an empty name out of it.
+  local root=${!var-}
+  if [ -z "$root" ]; then
+    zro_log error "denied, root variable is empty: $var"
+    return 1
+  fi
+  printf '%s/%s' "$root" "$bin"
+}
+
+zro_bin_available() {
+  local path
+  path=$(zro_bin_path "${1-}") || return 1
+  [ -x "$path" ]
 }
 
 # The only path from this program to an external command.
 #
-#   $1  binary name, resolved under $ZRO_ZIMBRA_BIN
+#   $1  binary name, resolved under the root it declares in $ZRO_BIN_ROOTS
 #   $2  the token that follows it (subcommand or flag)
 #   $@  already-validated arguments, passed as separate argv elements
 #
@@ -128,8 +191,15 @@ zro_exec() {
     return "$ZRO_E_DENIED"
   fi
 
-  if ! zro_bin_available "$bin"; then
-    zro_log error "not available on this host: $ZRO_ZIMBRA_BIN/$bin"
+  # An allowlisted binary with no declared root is a defect in this file rather
+  # than something the operator did, so it is refused like any other denial and
+  # never resolved against a default. The reason is logged where the declaration
+  # is read, so every caller reports it and not just this one.
+  local path
+  path=$(zro_bin_path "$bin") || return "$ZRO_E_DENIED"
+
+  if [ ! -x "$path" ]; then
+    zro_log error "not available on this host: $path"
     return "$ZRO_E_NOCAP"
   fi
 
@@ -139,7 +209,7 @@ zro_exec() {
   [ -n "$ZRO_TIMEOUT_BIN" ] || return "$ZRO_E_UNAVAILABLE"
 
   local -a argv
-  argv=("$ZRO_TIMEOUT_BIN" -k 5 "$ZRO_TIMEOUT" "$ZRO_ZIMBRA_BIN/$bin" "$token" "$@")
+  argv=("$ZRO_TIMEOUT_BIN" -k 5 "$ZRO_TIMEOUT" "$path" "$token" "$@")
 
   if [ "$mode" = runuser ]; then
     [ -n "$ZRO_RUNUSER" ] || return "$ZRO_E_UNAVAILABLE"
