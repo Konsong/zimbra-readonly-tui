@@ -97,19 +97,64 @@ with `zimbraLastLogonTimestampFrequency`, which defaults to **one day**. A value
 up to a day old does not mean the user has not logged in since. The screen says
 so, but it is worth knowing before drawing conclusions from it.
 
+### When the mailbox service is down
+
+By default `zmprov` talks SOAP to `mailboxd`. If that service is stopped, or the
+admin certificate no longer validates, every query fails — which is exactly the
+moment you most want to look at an account.
+
+So when the SOAP path is unreachable, the same read is retried with `zmprov -l`,
+which goes straight to LDAP and needs neither. You will see this banner above
+the result:
+
+```
+UYARI: mailboxd yanit vermedi; degerler LDAP uzerinden okundu.
+       COS uzerinden miras alinan ayarlar eksik gorunebilir.
+```
+
+What still works, and what does not:
+
+| Screen | With mailboxd down |
+|---|---|
+| Hesap ozeti | works in full |
+| Dagitim listesi uyelikleri | works in full |
+| Kota kullanimi | limit is shown; **usage** reads `okunamadi` |
+
+Usage cannot be recovered from LDAP: Zimbra answers `zmprov -l gmi` with
+`can only be used with SOAP`, because mailbox usage lives in the mailbox
+database, not in the directory. The quota limit does come from LDAP, and when an
+account inherits its limit from its COS the tool reads the COS record rather
+than reporting the account as unlimited.
+
+**Read the banner as a caveat, not as a failure.** LDAP returns what is written
+on the entry. Anything Zimbra would normally compute or inherit on the way out
+may be missing, so treat a degraded reading as a diagnostic aid rather than as
+the authoritative account state.
+
+When you see it, check the two usual causes:
+
+```bash
+zmcontrol status                # is the mailbox service running?
+zmcertmgr viewdeployedcrt       # has the admin certificate expired?
+```
+
 ### Commands this release can run
 
 The complete set, enforced centrally in `lib/exec.sh`:
 
 ```
-zmprov ga        getAccount
-zmprov gmi       getMailboxInfo
-zmprov gam       getAccountMembership
-zmprov gc        getCos
+zmprov ga        getAccount                 zmprov -l ga    same, from LDAP
+zmprov gmi       getMailboxInfo             (SOAP only)
+zmprov gam       getAccountMembership       zmprov -l gam   same, from LDAP
+zmprov gc        getCos                     zmprov -l gc    same, from LDAP
 zmcontrol -v     version
 ```
 
 `zmmailbox` is not on this list at all. That matters — see section 5.
+
+`-l` is never approved on its own. An allowlist entry of `zmprov:-l` would let
+every subcommand behind it through, including every write, so the flag is only
+ever listed together with the subcommand it precedes.
 
 Note that `zmprov gqu` (`getQuotaUsage`) is **not** used. It takes a server, not
 an account, and returns every account on it. Per-account usage comes from `gmi`.

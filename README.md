@@ -22,6 +22,9 @@ from a write. This one is built so a write cannot be expressed:
 - **One exec gate.** Every external command passes through a single function
   that checks the `(binary, subcommand)` pair against a central allowlist.
   A command that is not listed does not run, even if some function calls it.
+  A mode flag such as `zmprov -l` is only ever approved together with the
+  subcommand it precedes — listing the flag alone would admit everything behind
+  it.
 - **A checked invariant, not a convention.** The test suite statically extracts
   every call site in the tree and fails if any of them resolves to something the
   allowlist does not cover.
