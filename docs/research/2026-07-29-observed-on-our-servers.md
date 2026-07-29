@@ -169,14 +169,148 @@ Those two observations together are the evidence worth keeping: the readings are
 **live and accurate**, and the tool **changed nothing**. Either one alone would
 have been weak — an unchanged value could mean the tool reads nothing at all.
 
-## 6. Still open
+## 6. The three side-effect questions, settled
 
-| Question | Why it is awkward | What would settle it |
-|---|---|---|
-| Does `zmprov gmi` provision a mailbox for an account that has one in LDAP but none in the mailbox database? | Confirming "no mailbox yet" without running `gmi` is the difficulty. An account that does not exist at all returns `NO_SUCH_ACCOUNT` and never reaches the mailbox path, so that case answers nothing. | Create a throwaway account, query the mailbox table directly (`select id from mailbox where comment='…'`), run `gmi`, query again. Best done on a test server with `mailboxd` running. |
-| Does `zmmailbox -z -m <account>` create a mailbox? | Blocks M2. Not testable on TEST-A or TEST-B, where `zmmailbox` cannot reach `mailboxd` at all. | Same experiment, substituting `zmmailbox -z -m <account> getMailboxSize`. |
-| Does `zmmailbox gm <id>` clear the unread flag? | Blocks M2. | On a disposable account: deliver a message, confirm it is unread, run `gm`, check the flag again. |
-| Does `-l` expand COS-inherited values? | Our sample cannot distinguish. | Read an account whose quota differs from its COS quota, in both modes. |
+A dedicated test server — **TEST-C**, Zimbra 9.0.0 FOSS on Ubuntu 20.04, all
+services running — was built for these. Each experiment created a throwaway
+account, checked the `mailbox` table directly before and after, and removed the
+account afterwards.
 
-Neither of the `zmmailbox` questions affects the current release: `zmmailbox` is
-not in the allowlist at all.
+### 6.1 `zmprov gmi` provisions a mailbox — CONFIRMED
+
+```
+mailbox rows before:  (empty)
+zmprov gmi <acct>  →  mailboxId: 4 / quotaUsed: 0
+mailbox rows after:   4
+```
+
+Zimbra logged it itself:
+
+```
+… /service/admin/soap/GetMailboxRequest … ua=zmprov/9.0.0_GA_4200046 …
+mailbox - Creating mailbox with id 4 and group id 4 for <acct>
+```
+
+An account that does **not** exist in Zimbra's LDAP is safe: `zmprov` fails at
+the account lookup with `NO_SUCH_ACCOUNT` and never reaches the mailbox path.
+An account present only in Active Directory and not synced into Zimbra is
+therefore also safe. The dangerous population is accounts that exist in Zimbra's
+directory but have never logged in or received mail.
+
+`zmprov gmi` was removed from the allowlist because of this.
+
+### 6.2 `zmmailbox -z -m <account>` creates a mailbox — CONFIRMED
+
+The lightest invocation available was used, `getMailboxSize`, which reads a
+number and nothing else:
+
+```
+mailbox rows before:  (empty)
+zmmailbox -z -m <acct> gms  →  0 B
+mailbox rows after:   5
+```
+
+```
+… /service/admin/soap/BatchRequest … ua=zclient/9.0.0_GA_4200046 …
+mailbox - Creating mailbox with id 5 and group id 5 for <acct>
+```
+
+The creation happens during session setup, not inside the subcommand, so **no
+`zmmailbox` invocation can serve as an existence probe.** This blocks the naive
+design for M2.
+
+### 6.3 `zmmailbox getMessage` clears the unread flag — CONFIRMED
+
+The first attempt at this was **invalid and is recorded as such**: the message
+was added with `addMessage` and no flags, which stores it already read, so
+`unread` was `0` before the call and nothing was tested. The run reported a
+conclusion it had not earned.
+
+Repeated with `addMessage -F u`, and with the script refusing to draw any
+conclusion unless the message was verifiably unread first:
+
+```
+unread before getMessage:  1
+unread after  getMessage:  0
+```
+
+Message detail in M2 cannot use `getMessage`.
+
+### 6.4 Still open
+
+| Question | What would settle it |
+|---|---|
+| Does `-l` expand COS-inherited values? | Read an account whose quota differs from its COS quota, in both modes. The source says it does expand in both; our own samples cannot distinguish. |
+
+## 7. Captured output formats
+
+Verbatim from TEST-C. These are the shapes M2 and M3 will parse; recording them
+now is the whole point of this file.
+
+### `zmmailbox search -t message`
+
+```
+num: 1, more: false
+
+     Id  Type   From                  Subject                                             Date
+   ----  ----   --------------------  --------------------------------------------------  --------------
+1.  257  mess   Gonderen              Deneme mesaji - okundu bayragi testi                07/29/26 21:00
+```
+
+Points that would have been guessed wrong:
+
+- A `num:` / `more:` header line precedes the table, then a blank line.
+- Rows are numbered `1.`, separately from the item `Id`.
+- **`From` is truncated to the column width** — the real sender was
+  `Gonderen Kisi <gonderen@sirket.lcl>`, and the table shows `Gonderen`. The
+  table cannot be used to recover an address.
+- Date is `MM/DD/YY HH:MM`, not the generalized time used in LDAP attributes.
+- There is no folder column.
+
+### `zmmailbox getAllFolders`
+
+```
+        Id  View      Unread   Msg Count  Path
+----------  ----  ----------  ----------  ----------
+         1  unkn           0           0  /
+        16  docu           0           0  /Briefcase
+         2  mess           0           1  /Inbox
+         4  mess           0           0  /Junk
+         5  mess           0           0  /Sent
+         3  unkn           0           0  /Trash
+```
+
+Right-aligned numeric columns, a four-character truncated `View`, and the path
+last — so a path containing spaces is unambiguous only because it is final.
+
+### `zmmailbox getMessage <id>`
+
+```
+Id: 257
+Conversation-Id: -257
+Folder: /Inbox
+Subject: Deneme mesaji - okundu bayragi testi
+From: Gonderen Kisi <gonderen@sirket.lcl>
+To: <zro-exp2@sirket.lcl>
+Date: Wed, 29 Jul 2026 21:00:00 +0300 (TRT)
+Size: 295 B
+
+Bu mesaj okunmamis bayraginin test edilmesi icin eklendi.
+```
+
+`name: value` lines, a blank line, then the body. `Conversation-Id` is negative
+for a single-message conversation. `Date` is RFC-822 with a trailing timezone
+name in parentheses. `Size` is already human-formatted, not bytes.
+
+**This command may not be used** — see 6.3. The format is recorded because
+whatever replaces it must present the same fields.
+
+### `zmmailbox addMessage` usage
+
+```
+addMessage(am)  [opts] {dest-folder-path} {filename-or-dir} [{filename-or-dir} ...]
+  -T/--tags <arg>    list of tag ids/names
+  -d/--date <arg>    received date (msecs since epoch)
+```
+
+`-F` sets flags and is what makes a test message unread (`-F u`).

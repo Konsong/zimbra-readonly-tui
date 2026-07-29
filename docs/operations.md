@@ -202,11 +202,17 @@ All three were answered on 2026-07-29 by reading the `zm-mailbox` source, and
 | Does `zmmailbox gm <id>` clear the unread flag? | **Yes.** `doGetMessage` hard-codes `params.setMarkRead(true)` and the client emits `read="1"` unconditionally. No CLI flag disables it. `GetMsg` is one of only two handlers in the service tree that declare themselves not read-only. | Message detail in M2 cannot use `gm`. |
 | Does `zmprov gmi` on an account with **no** mailbox provision one? | **Yes.** `GetMailbox.handle()` calls `getMailboxByAccount(account)`, the `AUTOCREATE` overload. It is the only read-named admin handler that does; every sibling passes `DO_NOT_AUTOCREATE` and throws `mailbox not found`. | **`zmprov gmi` was removed from the allowlist.** See below. |
 
-These are code-reading answers, not observations. They are believed but not yet
-seen: the experiments that would confirm them on a live server are listed in the
-research document's closing section. Confirming them is worthwhile — but the
-tool has already been changed to assume the unsafe answer, because that is the
-side to be wrong on.
+**All three have since been confirmed on a live Zimbra 9.0.0 server**, each by
+checking the `mailbox` table before and after and by Zimbra's own
+`Creating mailbox with id …` log lines. The runs are recorded in
+[`docs/research/2026-07-29-observed-on-our-servers.md`](research/2026-07-29-observed-on-our-servers.md)
+§6, including one attempt that was invalid and had to be repeated.
+
+One qualification worth knowing: an account that does **not** exist in Zimbra's
+directory is safe — `zmprov` fails at the account lookup and never reaches the
+mailbox code. An account present only in Active Directory and not synced into
+Zimbra is therefore also safe. The population at risk is accounts that exist in
+Zimbra's directory but have never logged in or received mail.
 
 ### Why usage is no longer shown
 
