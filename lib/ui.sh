@@ -72,6 +72,17 @@ zro_ui_msgbox() {
   zro_ui_whiptail_msgbox "$title" "$text"
 }
 
+# Draws and returns immediately, asking the operator for nothing. Used before a
+# command that takes seconds, so the screen is never blank while the tool works.
+zro_ui_notice() {
+  local title=$1 text=$2
+  if [ "$ZRO_UI_BACKEND" = stub ]; then
+    zro_ui_stub_show "NOTICE $title: $text"
+    return 0
+  fi
+  zro_ui_whiptail_notice "$title" "$text"
+}
+
 zro_ui_textbox() {
   local title=$1 file=$2
   if [ "$ZRO_UI_BACKEND" = stub ]; then
@@ -105,6 +116,7 @@ ZRO_WHIPTAIL_BIN="${ZRO_WHIPTAIL_BIN:-$(zro_first_existing /usr/bin/whiptail /bi
 # inherited, and overridable so the suite can prove the drawing arrived.
 ZRO_UI_TTY="${ZRO_UI_TTY:-/dev/tty}"
 ZRO_UI_HEIGHT="${ZRO_UI_HEIGHT:-20}"
+ZRO_UI_NOTICE_HEIGHT="${ZRO_UI_NOTICE_HEIGHT:-8}"
 ZRO_UI_WIDTH="${ZRO_UI_WIDTH:-78}"
 ZRO_UI_LISTHEIGHT="${ZRO_UI_LISTHEIGHT:-10}"
 ZRO_UI_BACKTITLE="Zimbra salt-okunur yonetim araci"
@@ -129,6 +141,7 @@ zro_ui_whiptail_build() {
     menu)    ZRO_UI_ARGV+=(--notags --menu "$text" "$ZRO_UI_HEIGHT" "$ZRO_UI_WIDTH" "$ZRO_UI_LISTHEIGHT" "$@") ;;
     input)   ZRO_UI_ARGV+=(--inputbox "$text" "$ZRO_UI_HEIGHT" "$ZRO_UI_WIDTH" "$@") ;;
     msgbox)  ZRO_UI_ARGV+=(--msgbox "$text" "$ZRO_UI_HEIGHT" "$ZRO_UI_WIDTH") ;;
+    infobox) ZRO_UI_ARGV+=(--infobox "$text" "$ZRO_UI_NOTICE_HEIGHT" "$ZRO_UI_WIDTH") ;;
     textbox) ZRO_UI_ARGV+=(--scrolltext --textbox "$text" "$ZRO_UI_HEIGHT" "$ZRO_UI_WIDTH") ;;
     yesno)   ZRO_UI_ARGV+=(--yesno "$text" "$ZRO_UI_HEIGHT" "$ZRO_UI_WIDTH") ;;
   esac
@@ -196,4 +209,9 @@ zro_ui_whiptail_textbox() {
 
 zro_ui_whiptail_yesno() {
   zro_ui_whiptail_run yesno "$1" "$2" >/dev/null
+}
+
+zro_ui_whiptail_notice() {
+  zro_ui_whiptail_run infobox "$1" "$2" >/dev/null
+  return 0
 }

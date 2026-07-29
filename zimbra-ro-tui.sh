@@ -37,6 +37,13 @@ zro_startup_check() {
     return "$ZRO_E_BADUSER"
   fi
 
+  # Every screen is drawn on the controlling terminal. Without one there is
+  # nowhere to draw, and whiptail would wait on input nobody can give.
+  if [ "$ZRO_UI_BACKEND" != stub ] && ! { : >>"$ZRO_UI_TTY"; } 2>/dev/null; then
+    zro_log error "Terminale yazilamiyor ($ZRO_UI_TTY); bu arac etkilesimli bir terminal gerektirir"
+    return "$ZRO_E_UNAVAILABLE"
+  fi
+
   local missing=""
   [ -n "$ZRO_TIMEOUT_BIN" ] || missing="$missing timeout"
   [ -n "$ZRO_ID_BIN" ] || missing="$missing id"
@@ -116,6 +123,13 @@ zro_menu_account() {
     rc=0
     acct=$(zro_prompt_account) || rc=$?
     [ "$rc" -eq 0 ] || continue
+
+    # Each zmprov call starts a JVM and takes seconds; these screens make two.
+    # Without this the terminal sits blank and looks frozen.
+    zro_ui_notice "Calisiyor" "Zimbra sorgulaniyor, lutfen bekleyin.
+
+Hesap: $acct
+Her sorgu birkac saniye surebilir."
 
     rc=0
     case $choice in

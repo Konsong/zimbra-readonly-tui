@@ -72,5 +72,15 @@ ZRO_MOCK_WHIPTAIL_RC=1 assert_status "$ZRO_E_CANCEL" zro_ui_menu "Ana menu" "Sec
 it "a refused confirmation is a no"
 ZRO_MOCK_WHIPTAIL_RC=1 assert_status 1 zro_ui_yesno "Onay" "Devam?"
 
+it "a notice reaches the terminal and asks whiptail not to wait"
+: >"$TTY_FILE"; : >"$ZRO_MOCK_LOG"
+zro_ui_notice "Calisiyor" "Zimbra sorgulaniyor" >/dev/null 2>&1
+assert_eq "$(drew)" "1"
+# --infobox is the flag that draws and returns immediately. Any of the waiting
+# box kinds here would reproduce the freeze this suite exists to prevent.
+line=$(cat "$ZRO_MOCK_LOG")
+assert_contains "$line" "--infobox"
+assert_not_contains "$line" "--msgbox"
+
 rm -f -- "$TTY_FILE" "$ZRO_MOCK_LOG"
 zro_t_report

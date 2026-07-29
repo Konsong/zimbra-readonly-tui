@@ -74,5 +74,13 @@ it "keeps a selection value containing spaces intact"
 queue "hesap ve kota"
 assert_out_eq "hesap ve kota" zro_ui_input "Hesap" "Adres"
 
+it "a notice is recorded and consumes no queued answer"
+queue "1"
+: >"$ZRO_UI_OUT"
+zro_ui_notice "Calisiyor" "Sorgulaniyor"
+assert_contains "$(cat "$ZRO_UI_OUT")" "Sorgulaniyor"
+# The queue must be untouched: a notice asks the operator for nothing.
+assert_out_eq "1" zro_ui_menu "Ana Menu" "Secim" 1 "Hesap"
+
 rm -f -- "$ZRO_UI_QUEUE" "$ZRO_UI_OUT"
 zro_t_report
