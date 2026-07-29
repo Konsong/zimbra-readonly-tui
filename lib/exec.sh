@@ -59,3 +59,62 @@ zro_identity_mode() {
     *)      return "$ZRO_E_BADUSER" ;;
   esac
 }
+
+zro_bin_available() {
+  local bin=${1-}
+  [ -n "$bin" ] || return 1
+  [ -x "$ZRO_ZIMBRA_BIN/$bin" ]
+}
+
+# The only path from this program to an external command.
+#
+#   $1  binary name, resolved under $ZRO_ZIMBRA_BIN
+#   $2  the token that follows it (subcommand or flag)
+#   $@  already-validated arguments, passed as separate argv elements
+#
+# Nothing here builds a string. There is no eval, no `sh -c`, and no path a
+# caller can take to run something the allowlist does not name.
+zro_exec() {
+  if [ $# -lt 2 ]; then
+    zro_log error "denied: zro_exec requires a binary and a token"
+    return "$ZRO_E_DENIED"
+  fi
+  local bin=$1 token=$2
+  shift 2
+
+  if ! zro_allowed "$bin" "$token"; then
+    zro_log error "denied by allowlist: $bin $token"
+    return "$ZRO_E_DENIED"
+  fi
+
+  if ! zro_bin_available "$bin"; then
+    zro_log error "not available on this host: $ZRO_ZIMBRA_BIN/$bin"
+    return "$ZRO_E_NOCAP"
+  fi
+
+  local mode
+  mode=$(zro_identity_mode "$(zro_current_user)") || return "$ZRO_E_BADUSER"
+
+  [ -n "$ZRO_TIMEOUT_BIN" ] || return "$ZRO_E_UNAVAILABLE"
+
+  local -a argv
+  argv=("$ZRO_TIMEOUT_BIN" -k 5 "$ZRO_TIMEOUT" "$ZRO_ZIMBRA_BIN/$bin" "$token" "$@")
+
+  if [ "$mode" = runuser ]; then
+    [ -n "$ZRO_RUNUSER" ] || return "$ZRO_E_UNAVAILABLE"
+    # timeout goes INSIDE the wrapper: killing runuser from outside would leave
+    # the Zimbra JVM running.
+    argv=("$ZRO_RUNUSER" -u zimbra -- "${argv[@]}")
+  fi
+
+  local rc=0
+  "${argv[@]}" || rc=$?
+  # GNU timeout reports expiry as 124; the operator sees our documented code.
+  # SC2153: ZRO_E_TIMEOUT comes from lib/core.sh, which the entry point sources
+  # before this module, so ShellCheck cannot see it from here.
+  # shellcheck disable=SC2153
+  if [ "$rc" -eq 124 ]; then
+    rc=$ZRO_E_TIMEOUT
+  fi
+  return "$rc"
+}
