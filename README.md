@@ -6,9 +6,13 @@ filters and service health — without changing any Zimbra data or configuration
 
 Bash + whiptail. No runtime dependencies beyond what a Zimbra host already has.
 
-> **Status: in development.** Milestone M1 (safety spine + account/quota menu) is
-> being built. See the [design spec](docs/superpowers/specs/2026-07-29-zimbra-readonly-tui-design.md)
-> for the full plan.
+> **Status: M1 complete, pending verification on a real server.** The safety
+> spine and the account/quota menu are built and tested: account summary, quota
+> usage and distribution-list membership. Before using it against real accounts,
+> work through the acceptance steps in the [operator guide](docs/operations.md) —
+> three questions about Zimbra's own side effects are still open and are recorded
+> there. Message search arrives in M2; see the
+> [design spec](docs/superpowers/specs/2026-07-29-zimbra-readonly-tui-design.md).
 
 ## Why "read-only" is a structural claim, not a promise
 
@@ -59,8 +63,13 @@ External Zimbra binaries are replaced by mocks that record the exact argument
 vector they received, so tests assert on what would have been executed, not
 merely on printed output. Nothing in the suite contacts a real server.
 
+The suite also enforces the Bash 4.2 floor by scanning for constructs that only
+exist in later versions — development happens on 5.x, where they would pass
+silently and fail only on an older Zimbra host.
+
 ## Documentation
 
+- [Operator guide](docs/operations.md) — installation, failure messages, exit codes, and the production acceptance procedure
 - [Design spec](docs/superpowers/specs/2026-07-29-zimbra-readonly-tui-design.md) — architecture, security model, milestones
+- [Implementation plan](docs/superpowers/plans/2026-07-29-m1-safety-spine-account.md) — the M1 task breakdown
 - [Original design draft](docs/superpowers/specs/2026-07-28-zimbra-readonly-tui-design.md) — superseded, kept for history
-- `docs/operations.md` — operator guide and verification records (arrives with M1)
