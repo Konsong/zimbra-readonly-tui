@@ -101,6 +101,9 @@ zro_ui_yesno() {
 # ---------------------------------------------------------------- whiptail --
 
 ZRO_WHIPTAIL_BIN="${ZRO_WHIPTAIL_BIN:-$(zro_first_existing /usr/bin/whiptail /bin/whiptail)}"
+# Where dialogs are drawn. Pinned to the controlling terminal rather than
+# inherited, and overridable so the suite can prove the drawing arrived.
+ZRO_UI_TTY="${ZRO_UI_TTY:-/dev/tty}"
 ZRO_UI_HEIGHT="${ZRO_UI_HEIGHT:-20}"
 ZRO_UI_WIDTH="${ZRO_UI_WIDTH:-78}"
 ZRO_UI_LISTHEIGHT="${ZRO_UI_LISTHEIGHT:-10}"
@@ -144,8 +147,22 @@ zro_ui_whiptail_argv() {
 
 zro_ui_whiptail_run() {
   zro_ui_whiptail_build "$@"
-  # whiptail writes its result to stderr and its chrome to the terminal.
-  "${ZRO_UI_ARGV[@]}" 3>&1 1>&2 2>&3
+  # whiptail DRAWS on stdout and returns the operator's answer on stderr.
+  #
+  # Both were previously left as the caller found them, which broke twice over:
+  # callers read prompts inside command substitution, making stdout a pipe, and
+  # the msgbox wrapper discarded stdout outright. The dialog went to /dev/null
+  # while whiptail still waited on stdin — the terminal looked frozen.
+  #
+  # So drawing is pinned to the terminal and the answer travels out on whatever
+  # stdout the caller has. Order matters: fd2 is aimed at the caller's stdout
+  # first, then fd1 is moved to the terminal.
+  #
+  # SC2069 flags `2>&1` before a stdout redirect because it is usually a
+  # mistake. Here it is the point: this swaps the two streams rather than
+  # merging them.
+  # shellcheck disable=SC2069
+  "${ZRO_UI_ARGV[@]}" 2>&1 1>"$ZRO_UI_TTY"
 }
 
 zro_ui_whiptail_menu() {
@@ -165,16 +182,18 @@ zro_ui_whiptail_input() {
   printf '%s' "$out"
 }
 
+# These three discard the ANSWER stream only. Redirecting stderr here as well
+# would send the drawing back into the void, which is the bug this shape fixes.
 zro_ui_whiptail_msgbox() {
-  zro_ui_whiptail_run msgbox "$1" "$2" >/dev/null 2>&1
+  zro_ui_whiptail_run msgbox "$1" "$2" >/dev/null
   return 0
 }
 
 zro_ui_whiptail_textbox() {
-  zro_ui_whiptail_run textbox "$1" "$2" >/dev/null 2>&1
+  zro_ui_whiptail_run textbox "$1" "$2" >/dev/null
   return 0
 }
 
 zro_ui_whiptail_yesno() {
-  zro_ui_whiptail_run yesno "$1" "$2" >/dev/null 2>&1
+  zro_ui_whiptail_run yesno "$1" "$2" >/dev/null
 }
