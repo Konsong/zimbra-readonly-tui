@@ -97,3 +97,84 @@ zro_ui_yesno() {
   fi
   zro_ui_whiptail_yesno "$title" "$text"
 }
+
+# ---------------------------------------------------------------- whiptail --
+
+ZRO_WHIPTAIL_BIN="${ZRO_WHIPTAIL_BIN:-$(zro_first_existing /usr/bin/whiptail /bin/whiptail)}"
+ZRO_UI_HEIGHT="${ZRO_UI_HEIGHT:-20}"
+ZRO_UI_WIDTH="${ZRO_UI_WIDTH:-78}"
+ZRO_UI_LISTHEIGHT="${ZRO_UI_LISTHEIGHT:-10}"
+ZRO_UI_BACKTITLE="Zimbra salt-okunur yonetim araci"
+
+# The menu labels are Turkish. Without a UTF-8 locale whiptail miscounts
+# character widths and the boxes break, so this is checked at startup.
+zro_ui_locale_ok() {
+  case ${1-} in
+    *.UTF-8|*.utf8|*.UTF8|*.utf-8) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+# Builds ZRO_UI_ARGV. Bash 4.2 has no namerefs, so the vector is handed back
+# through a global rather than returned. Both the run path and the test-facing
+# printer go through here, so what the suite asserts on is what actually runs.
+zro_ui_whiptail_build() {
+  local kind=$1 title=$2 text=$3
+  shift 3
+  ZRO_UI_ARGV=("$ZRO_WHIPTAIL_BIN" --backtitle "$ZRO_UI_BACKTITLE" --title "$title")
+  case $kind in
+    menu)    ZRO_UI_ARGV+=(--notags --menu "$text" "$ZRO_UI_HEIGHT" "$ZRO_UI_WIDTH" "$ZRO_UI_LISTHEIGHT" "$@") ;;
+    input)   ZRO_UI_ARGV+=(--inputbox "$text" "$ZRO_UI_HEIGHT" "$ZRO_UI_WIDTH" "$@") ;;
+    msgbox)  ZRO_UI_ARGV+=(--msgbox "$text" "$ZRO_UI_HEIGHT" "$ZRO_UI_WIDTH") ;;
+    textbox) ZRO_UI_ARGV+=(--scrolltext --textbox "$text" "$ZRO_UI_HEIGHT" "$ZRO_UI_WIDTH") ;;
+    yesno)   ZRO_UI_ARGV+=(--yesno "$text" "$ZRO_UI_HEIGHT" "$ZRO_UI_WIDTH") ;;
+  esac
+}
+
+# TAB-joined rendering of the vector, so tests can assert that an operator
+# string stayed a single argument instead of splitting into flags.
+zro_ui_whiptail_argv() {
+  zro_ui_whiptail_build "$@"
+  local a out=""
+  for a in "${ZRO_UI_ARGV[@]}"; do
+    out="$out	$a"
+  done
+  printf '%s' "${out#	}"
+}
+
+zro_ui_whiptail_run() {
+  zro_ui_whiptail_build "$@"
+  # whiptail writes its result to stderr and its chrome to the terminal.
+  "${ZRO_UI_ARGV[@]}" 3>&1 1>&2 2>&3
+}
+
+zro_ui_whiptail_menu() {
+  local title=$1 text=$2
+  shift 2
+  local out rc=0
+  out=$(zro_ui_whiptail_run menu "$title" "$text" "$@") || rc=$?
+  [ "$rc" -eq 0 ] || return "$ZRO_E_CANCEL"
+  printf '%s' "$out"
+}
+
+zro_ui_whiptail_input() {
+  local title=$1 text=$2 default=${3-}
+  local out rc=0
+  out=$(zro_ui_whiptail_run input "$title" "$text" "$default") || rc=$?
+  [ "$rc" -eq 0 ] || return "$ZRO_E_CANCEL"
+  printf '%s' "$out"
+}
+
+zro_ui_whiptail_msgbox() {
+  zro_ui_whiptail_run msgbox "$1" "$2" >/dev/null 2>&1
+  return 0
+}
+
+zro_ui_whiptail_textbox() {
+  zro_ui_whiptail_run textbox "$1" "$2" >/dev/null 2>&1
+  return 0
+}
+
+zro_ui_whiptail_yesno() {
+  zro_ui_whiptail_run yesno "$1" "$2" >/dev/null 2>&1
+}
