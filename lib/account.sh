@@ -237,7 +237,10 @@ zro_account_summary() {
   printf 'Mailbox host : %s\n' "$host"
   printf 'Kota limiti  : %s\n' "$quota_h"
   printf 'COS          : %s\n' "$cos_name"
-  printf 'Son giris    : %s  (yaklasik; Zimbra bu alani gunde bir kez yeniler)\n' "$logon_h"
+  # The caveat goes on its own line: joined to the value it runs past the box
+  # edge, and whiptail wraps mid-sentence.
+  printf 'Son giris    : %s\n' "$logon_h"
+  printf '               (yaklasik: Zimbra bu alani gunde bir kez yeniler)\n'
 
   local aliases
   aliases=$(zro_attr_all "$raw" zimbraMailAlias)

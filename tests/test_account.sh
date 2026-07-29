@@ -158,6 +158,14 @@ out=$(ZRO_MOCK_ZMPROV_GA_OUT="$FIX/zmprov_ga_active.txt" \
       zro_account_summary 'ahmet.yilmaz@example.com')
 assert_contains "$out" "yaklasik"
 
+# whiptail wraps anything wider than the box, and it wraps mid-sentence. The
+# last-logon caveat used to run past the edge and break across two lines.
+it "keeps every line of the summary inside the box"
+out=$(ZRO_MOCK_ZMPROV_GA_OUT="$FIX/zmprov_ga_active.txt" \
+      zro_account_summary 'ahmet.yilmaz@example.com')
+too_long=$(printf '%s\n' "$out" | awk 'length($0) > 72 { print length($0)": "$0 }')
+assert_eq "$too_long" ""
+
 it "lists the aliases it found"
 out=$(ZRO_MOCK_ZMPROV_GA_OUT="$FIX/zmprov_ga_active.txt" \
       zro_account_summary 'ahmet.yilmaz@example.com')
