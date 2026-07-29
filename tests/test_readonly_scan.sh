@@ -125,7 +125,13 @@ declared=$(printf '%s\n' "$raw_code" | sed -n "s/^ZRO_PROV_READS='\(.*\)'/\1/p")
 assert_contains "$declared" "ga"
 assert_contains "$declared" "gam"
 assert_contains "$declared" "gc"
-assert_contains "$declared" "gmi"
+
+# gmi is the only read-named admin handler that auto-creates a mailbox, so it
+# may not be declared a read anywhere in the tree.
+it "declares no subcommand that creates a mailbox"
+assert_not_contains "$declared" "gmi"
+assert_not_contains "$code" "zro_exec zmprov gmi"
+assert_not_contains "$code" "getMailboxInfo"
 
 it "every declared read subcommand is on the allowlist"
 for sub in $declared; do
@@ -164,7 +170,7 @@ $prov_calls
 EOF
 assert_eq "$bad" ""
 assert_contains "$prov_calls" "ga"
-assert_contains "$prov_calls" "gmi"
+assert_contains "$prov_calls" "gam"
 
 it "the allowlist itself names no write verb"
 for verb in create modify delete remove move mark flag tag empty import post recover sync; do

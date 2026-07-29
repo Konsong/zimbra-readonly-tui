@@ -93,10 +93,13 @@ assert_eq "$([ "$notice_line" -lt "$result_line" ] && printf yes || printf no)" 
 
 it "the quota screen is reachable and rendered"
 queue "2" "ahmet.yilmaz@example.com" "__CANCEL__" "__CANCEL__"
-: >"$ZRO_UI_OUT"
-ZRO_MOCK_ZMPROV_GA_OUT="$FIX/zmprov_ga_active.txt" \
-ZRO_MOCK_ZMPROV_GMI_OUT="$FIX/zmprov_gmi_ok.txt" zro_menu_account
-assert_contains "$(cat "$ZRO_UI_OUT")" "20%"
+: >"$ZRO_UI_OUT"; : >"$ZRO_MOCK_LOG"
+ZRO_MOCK_ZMPROV_GA_OUT="$FIX/zmprov_ga_active.txt" zro_menu_account
+transcript=$(cat "$ZRO_UI_OUT")
+assert_contains "$transcript" "5.0 GB"
+assert_contains "$transcript" "gosterilmiyor"
+# Reaching this screen must not run the command that creates mailboxes.
+assert_not_contains "$(cat "$ZRO_MOCK_LOG")" "$(printf '\tgmi')"
 
 it "the membership screen is reachable and rendered"
 queue "3" "ahmet.yilmaz@example.com" "__CANCEL__" "__CANCEL__"
