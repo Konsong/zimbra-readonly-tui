@@ -25,6 +25,40 @@ for sub in ca ma da dm mm mmr ef df createAccount modifyAccount deleteAccount \
   assert_fail zro_allowed zmmailbox "$sub"
 done
 
+it "allows the LDAP-mode reads as three-token prefixes"
+assert_ok zro_allowed zmprov -l ga
+assert_ok zro_allowed zmprov -l gam
+assert_ok zro_allowed zmprov -l gc
+
+it "a mode flag alone approves nothing"
+# This is the whole reason entries can be three tokens. If -l were approvable
+# on its own, every subcommand behind it would ride in free.
+assert_fail zro_allowed zmprov -l
+assert_fail zro_allowed zmprov -l ma
+assert_fail zro_allowed zmprov -l da
+assert_fail zro_allowed zmprov -l deleteAccount
+assert_fail zro_allowed zmprov -l gmi
+
+it "the allowlist contains no bare mode-flag entry"
+entries=$(zro_allow_entries)
+while IFS= read -r entry; do
+  [ -n "$entry" ] || continue
+  case $entry in
+    zmprov:-*)
+      case $entry in
+        zmprov:-*:*) zro_t_pass ;;
+        *) zro_t_fail "bare mode flag would approve everything behind it: $entry" ;;
+      esac
+      ;;
+  esac
+done <<EOF
+$entries
+EOF
+
+it "a two-token entry still matches when a third argument follows"
+assert_ok zro_allowed zmprov ga 'melda.kocaman@diyanet.gov.tr'
+assert_ok zro_allowed zmprov gmi 'melda.kocaman@diyanet.gov.tr'
+
 it "denies a binary that is not on the list at all"
 assert_fail zro_allowed zmmailbox search
 assert_fail zro_allowed bash -c

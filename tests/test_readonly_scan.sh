@@ -81,17 +81,33 @@ assert_not_contains "$code" '`'
 it "every zro_exec call site is covered by the allowlist"
 allow=$(zro_allow_entries)
 calls=$(printf '%s\n' "$code" \
-        | grep -oE 'zro_exec[[:space:]]+[A-Za-z0-9_-]+[[:space:]]+[^[:space:]"]+' \
+        | grep -oE 'zro_exec[[:space:]]+[A-Za-z0-9_-]+[[:space:]]+[^[:space:]"]+([[:space:]]+[^[:space:]"]+)?' \
         | sort -u)
 uncovered=""
 while IFS= read -r call; do
   [ -n "$call" ] || continue
   bin=$(printf '%s' "$call" | awk '{print $2}')
-  token=$(printf '%s' "$call" | awk '{print $3}')
-  case $token in
+  t1=$(printf '%s' "$call" | awk '{print $3}')
+  t2=$(printf '%s' "$call" | awk '{print $4}')
+  case $t1 in
     '$'*) continue ;;   # only literal call sites are decidable here
   esac
-  printf '%s\n' "$allow" | grep -qxF -- "$bin:$token" || uncovered="$uncovered $bin:$token"
+  # Only an alphabetic word can be a subcommand. A redirection such as
+  # `2>/dev/null` is not one, and anything else — a variable, an operator —
+  # falls back to the two-token key, which is the safe direction: a dynamic
+  # subcommand behind a mode flag then shows up as uncovered.
+  case $t2 in
+    [A-Za-z]*) ;;
+    *) t2="" ;;
+  esac
+
+  # A mode flag is only ever approved together with the subcommand behind it,
+  # so the key the gate will use is the key checked here.
+  key="$bin:$t1"
+  case $t1 in
+    -*) [ -n "$t2" ] && key="$bin:$t1:$t2" ;;
+  esac
+  printf '%s\n' "$allow" | grep -qxF -- "$key" || uncovered="$uncovered $key"
 done <<EOF
 $calls
 EOF

@@ -96,6 +96,24 @@ ZRO_MOCK_ID_USER=zimbra ZRO_MOCK_ZMPROV_GA_OUT="$fixture" \
   assert_out_eq "zimbraAccountStatus: active" zro_exec zmprov ga 'a@b.com'
 rm -f -- "$fixture"
 
+it "runs an approved LDAP-mode read and passes the flag through"
+: >"$ZRO_MOCK_LOG"
+ZRO_MOCK_ID_USER=zimbra zro_exec zmprov -l ga 'a@b.com' >/dev/null 2>&1
+assert_contains "$(cat "$ZRO_MOCK_LOG")" "$(printf 'zmprov\t-l\tga\ta@b.com')"
+
+it "denies a write subcommand hiding behind the mode flag"
+: >"$ZRO_MOCK_LOG"
+ZRO_MOCK_ID_USER=zimbra assert_status "$ZRO_E_DENIED" zro_exec zmprov -l ma 'a@b.com'
+assert_not_contains "$(cat "$ZRO_MOCK_LOG")" "zmprov"
+
+it "denies an unapproved read behind the mode flag"
+ZRO_MOCK_ID_USER=zimbra assert_status "$ZRO_E_DENIED" zro_exec zmprov -l gmi 'a@b.com'
+
+it "still runs the plain two-token form"
+: >"$ZRO_MOCK_LOG"
+ZRO_MOCK_ID_USER=zimbra zro_exec zmcontrol -v >/dev/null 2>&1
+assert_contains "$(cat "$ZRO_MOCK_LOG")" "$(printf 'zmcontrol\t-v')"
+
 it "zro_bin_available reflects the filesystem"
 assert_ok zro_bin_available zmprov
 assert_fail zro_bin_available zmmailbox

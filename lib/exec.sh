@@ -11,6 +11,11 @@ ZRO_LIB_EXEC_LOADED=1
 # Adding an entry here is the second of two deliberate edits required to give
 # this program a new capability. Nothing outside this list can be executed, and
 # tests/test_readonly_scan.sh fails the build if a call site is not covered.
+# An entry may be three tokens when the second one only selects a mode.
+# `zmprov -l` reads straight from LDAP instead of talking SOAP to mailboxd,
+# which is what lets this tool keep working when the mailbox service is down —
+# but the flag itself decides nothing about reading or writing, so it is never
+# approved alone. `zmprov:-l` would let every subcommand behind it ride in free.
 ZRO_ALLOW='
 zmprov:ga
 zmprov:getAccount
@@ -20,6 +25,12 @@ zmprov:gam
 zmprov:getAccountMembership
 zmprov:gc
 zmprov:getCos
+zmprov:-l:ga
+zmprov:-l:getAccount
+zmprov:-l:gam
+zmprov:-l:getAccountMembership
+zmprov:-l:gc
+zmprov:-l:getCos
 zmcontrol:-v
 '
 
@@ -28,12 +39,30 @@ zro_allow_entries() {
 }
 
 zro_allowed() {
-  local bin=${1-} token=${2-}
+  local bin=${1-} t1=${2-} t2=${3-}
   [ -n "$bin" ] || return 1
-  [ -n "$token" ] || return 1
+  [ -n "$t1" ] || return 1
+
   # -x anchors to the whole line and -F takes the needle literally, so a token
   # containing a regex metacharacter cannot widen the match.
-  printf '%s' "$ZRO_ALLOW" | grep -qxF -- "$bin:$token"
+  #
+  # A token shaped like a flag is only ever approved together with the
+  # subcommand behind it, because the subcommand is what decides whether the
+  # command reads or writes. Everything else matches on two tokens, where any
+  # further arguments are the caller's already-validated data.
+  case $t1 in
+    -*)
+      if [ -n "$t2" ] && printf '%s' "$ZRO_ALLOW" | grep -qxF -- "$bin:$t1:$t2"; then
+        return 0
+      fi
+      # Falls back to the two-token form for a flag that IS the whole
+      # operation, such as `zmcontrol -v`. A mode-selecting flag like
+      # `zmprov -l` is kept out of the list, and a test enforces that.
+      printf '%s' "$ZRO_ALLOW" | grep -qxF -- "$bin:$t1"
+      return $?
+      ;;
+  esac
+  printf '%s' "$ZRO_ALLOW" | grep -qxF -- "$bin:$t1"
 }
 
 # Binary locations. Production defaults, overridable so the suite can point at
@@ -85,8 +114,11 @@ zro_exec() {
   local bin=$1 token=$2
   shift 2
 
-  if ! zro_allowed "$bin" "$token"; then
-    zro_log error "denied by allowlist: $bin $token"
+  # The third token matters when the second one only selects a mode, so the
+  # gate sees it too. For everything else it is the caller's validated data and
+  # the two-token entry decides.
+  if ! zro_allowed "$bin" "$token" "${1-}"; then
+    zro_log error "denied by allowlist: $bin $token ${1-}"
     return "$ZRO_E_DENIED"
   fi
 
