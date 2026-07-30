@@ -50,6 +50,11 @@ mk "$SYS.old.gz"        '2026-07-26 03:20'
 mk "$TREE/var/log/nginx.log" '2026-07-30 10:00'
 mkdir -p "$SYS.8"
 ln -sfn /etc/passwd "$SYS.9.gz"
+# A neighbour the globs reach whose NAME fails admission. The quote is the one
+# character that matters: the tracer opens compressed input through a /bin/sh
+# command line with the filename interpolated inside single quotes, unescaped.
+ODD="$SYS.4'x.gz"
+mk "$ODD" '2026-07-26 03:20'
 
 # The mailbox log rotates by log4j2 at midnight and is compressed by a separate
 # cron at 02:50, so for part of every day both forms of one rotated file are on
@@ -91,6 +96,12 @@ assert_eq "$(found audit)" "$(printf '%s\n' "$AUDIT.1.gz" "$AUDIT")"
 it "leaves out a compression format the tracer cannot read, and says so"
 assert_not_line "$(found syslog)" "$SYS.3.xz"
 assert_contains "$(logged syslog)" "$SYS.3.xz"
+
+it "refuses a candidate whose name fails admission, and logs it"
+# Refused rather than merely unrecognised, and said out loud: this is the check
+# standing between the inventory and a filename reaching a shell.
+assert_not_line "$(found syslog)" "$ODD"
+assert_contains "$(logged syslog)" "$ODD"
 
 it "leaves out a neighbour that is not a rotation of the base, quietly"
 # An operator's own copy is ordinary and not worth a line on stderr.

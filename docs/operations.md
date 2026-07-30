@@ -78,7 +78,7 @@ accommodated. They are not needed on a standard host.
 | `ZRO_LOG_DIR` | `/opt/zimbra/log` | where Zimbra's own logs live |
 | `ZRO_TIMEOUT` | `60` | seconds before a command is killed |
 | `ZRO_LOG_FILE` | unset | when set, **this tool's** activity is appended here — unrelated to the two above |
-| `ZRO_RUNUSER`, `ZRO_TIMEOUT_BIN`, `ZRO_ID_BIN`, `ZRO_STAT_BIN` | resolved by path | system binaries |
+| `ZRO_RUNUSER`, `ZRO_TIMEOUT_BIN`, `ZRO_ID_BIN`, `ZRO_STAT_BIN`, `ZRO_DATE_BIN` | resolved by path | system binaries |
 
 The two log variables decide **where** the logs are, never **which** ones are
 read. The base names — the mail log, `mailbox.log` and `audit.log` — are declared

@@ -1,15 +1,17 @@
 # shellcheck shell=bash
-# The log inventory: which log files exist, and which of them an arrival window
-# covers. Reads no log content and runs no Zimbra binary.
+# The log inventory: which of this host's logs are readable by this tool, and
+# which of them an arrival window covers. Reads no log content, runs no Zimbra
+# binary, and opens no mailbox.
 [ -n "${ZRO_LIB_INVENTORY_LOADED:-}" ] && return 0
 ZRO_LIB_INVENTORY_LOADED=1
 
 # Two parts, deliberately split.
 #
 # SELECTION is pure: path-and-timestamp pairs and an arrival window in, the files
-# to read and the year to stamp on each out. It opens nothing and reads no clock,
-# which is what makes the off-by-one this module exists to prevent testable for
-# the price of a string.
+# to read and the year to stamp on each out. It opens no file and asks nothing
+# what time it is now — the only clock it consults is the one in its input — which
+# is what makes the off-by-one this module exists to prevent testable for the
+# price of a string rather than a fixture tree.
 #
 # DISCOVERY is a thin shell around a glob. It stats what is on disk and emits the
 # same shape, and it decides nothing.
@@ -182,6 +184,19 @@ ZRO_INV_OPEN_END=99999999999
 
 ZRO_INV_TAB=$'\t'
 
+# The year a timestamp falls in, as local wall clock.
+#
+# Behind a variable like every other binary path, and for the reason CLAUDE.md
+# gives: that is what makes it mockable. lib/core.sh calls date bare, but that
+# call only stamps a log line, while this one produces a value that reaches a
+# command line and decides whether a trace finds anything at all.
+ZRO_DATE_BIN="${ZRO_DATE_BIN:-$(zro_first_existing /usr/bin/date /bin/date)}"
+
+zro_inv_year() {
+  [ -n "$ZRO_DATE_BIN" ] || return 1
+  "$ZRO_DATE_BIN" -d "@${1-}" '+%Y' 2>/dev/null
+}
+
 # Oldest first, and for one timestamp the longest path first.
 #
 # The tie-break is not cosmetic. logrotate creates the replacement file in the
@@ -231,12 +246,17 @@ zro_inv_select() {
   sorted=$(zro_inv_sort_pairs)
 
   local -a mtimes=() paths=()
-  local mtime path
-  while IFS="$ZRO_INV_TAB" read -r mtime path; do
-    [ -n "$mtime" ] || continue
+  local line mtime path
+  # The line is read whole and split here rather than by IFS, so that a pair
+  # arriving with no timestamp at all is refused BY NAME below instead of being
+  # dropped as though it were the blank line this heredoc always ends with.
+  while IFS= read -r line; do
+    [ -n "$line" ] || continue
+    mtime=${line%%"$ZRO_INV_TAB"*}
+    path=${line#*"$ZRO_INV_TAB"}
     case $mtime in
       ''|*[!0-9]*)
-        zro_log error "denied, log timestamp is not a number: $path"
+        zro_log error "denied, log timestamp is not a number: $line"
         continue ;;
     esac
     if ! zro_inv_path_ok "$path"; then
@@ -252,7 +272,7 @@ EOF
   local n=${#paths[@]}
   [ "$n" -gt 0 ] || return 0
 
-  local i lo=0 hi
+  local i lo=0 hi year
   for (( i = 0; i < n; i++ )); do
     if [ $(( i + 1 )) -eq "$n" ]; then
       hi=$ZRO_INV_OPEN_END
@@ -262,11 +282,25 @@ EOF
 
     # An interval of zero width holds no line. Two files can only share a
     # timestamp by being the same rotation instant — the compressed and plain
-    # forms of one file — and reading both would report every message twice.
+    # forms of one file, which exist together for part of every day — and reading
+    # both would report every message twice.
+    #
+    # That rests on compression preserving the modification time, which is what
+    # gzip does. Where it did not, both forms would be selected and each message
+    # would appear twice in one report. The residual runs in the visible
+    # direction: a doubled report reads as a doubled report, while a file dropped
+    # by a name-based rule would read as a message that never arrived.
     if [ "$lo" -lt "$hi" ] &&
        [ "$ws" -le "$hi" ] &&
        [ "$we" -gt "$lo" ]; then
-      printf '%s\t%s\n' "$(date -d "@${mtimes[i]}" '+%Y')" "${paths[i]}"
+      # A year that could not be derived must never be printed. The tracer would
+      # take an empty one and answer nothing found, which is precisely the defect
+      # deriving it per file exists to remove.
+      year=$(zro_inv_year "${mtimes[i]}")
+      case $year in
+        [0-9][0-9][0-9][0-9]) printf '%s\t%s\n' "$year" "${paths[i]}" ;;
+        *) zro_log error "denied, cannot derive the year of: ${paths[i]}" ;;
+      esac
     fi
     lo=${mtimes[i]}
   done
@@ -320,14 +354,20 @@ zro_inv_discover() {
 
   local c mtime
   for c in ${candidates[@]+"${candidates[@]}"}; do
+    # Admission comes FIRST, before the name is judged as a rotation. Both globs
+    # above can match a neighbour carrying a quote or a space, and a refusal is
+    # worth saying out loud: it is the one thing standing between this list and a
+    # filename reaching the /bin/sh command line the tracer builds. Judging the
+    # rotation shape first would drop that file as a merely unrecognised name and
+    # say nothing.
+    if ! zro_inv_path_ok "$c"; then
+      zro_log error "denied, log path outside the permitted set: $c"
+      continue
+    fi
     if ! zro_inv_variant_ok "$base" "$c"; then
       if zro_inv_unsupported_compression "$c"; then
         zro_log warn "log skipped, compression the tracer cannot read: $c"
       fi
-      continue
-    fi
-    if ! zro_inv_path_ok "$c"; then
-      zro_log error "denied, log path outside the permitted set: $c"
       continue
     fi
     # Tested before -f, which follows a link. A link is refused rather than

@@ -141,8 +141,25 @@ err=$( { printf '%s\t%s\n' "$R1" "$bad" \
          | zro_inv_select "$W28_NOON" "$W28_EVENING" >/dev/null; } 2>&1 )
 assert_contains "$err" "$bad"
 
+it "a year that cannot be derived is refused, never printed empty"
+# The tracer takes an empty year and answers "nothing found", which is the exact
+# defect deriving the year per file exists to remove. So no line is better than a
+# line without one.
+out=$( { ( ZRO_DATE_BIN=/nonexistent/date
+           family | zro_inv_select "$W28_NOON" "$W28_EVENING" ); } 2>/dev/null )
+assert_eq "$out" ""
+err=$( { ( ZRO_DATE_BIN=/nonexistent/date
+           family | zro_inv_select "$W28_NOON" "$W28_EVENING" ) >/dev/null; } 2>&1 )
+assert_contains "$err" "$P1"
+
 it "a pair with a timestamp that is not a number is refused and logged"
 err=$( { printf '%s\t%s\n' 'now' "$PLIVE" \
+         | zro_inv_select "$W28_NOON" "$W28_EVENING" >/dev/null; } 2>&1 )
+assert_contains "$err" "$PLIVE"
+
+it "a pair with no timestamp at all is refused and logged, not quietly dropped"
+# A blank field must not read as the blank line that ends every heredoc.
+err=$( { printf '\t%s\n' "$PLIVE" \
          | zro_inv_select "$W28_NOON" "$W28_EVENING" >/dev/null; } 2>&1 )
 assert_contains "$err" "$PLIVE"
 
