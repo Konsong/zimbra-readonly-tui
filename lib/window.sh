@@ -22,15 +22,20 @@ ZRO_LIB_WINDOW_LOADED=1
 # daylight-saving change is an hour wider or narrower than its label; that is
 # documented in docs/operations.md rather than corrected.
 
-# Pairs travel as one TAB-separated line, as they do out of the log inventory:
-# a function returns a status, so two numbers have to share one line of output.
-ZRO_WIN_TAB=$'\t'
+# A window travels as one $ZRO_TAB-separated line, the way the log inventory's
+# pairs do: a function answers with a status, so two numbers have to share one
+# line of output.
 
 # The presets, as ids. Their labels are the screen's business and are Turkish;
 # their arithmetic is here and is a name.
 #
-# SC2034: read by the screen that offers them and by the suite that walks them,
-# neither of which ShellCheck can see from this file.
+# This is one half of a contract. Nothing in lib/ reads it — the screen builds its
+# menu from its own table of ids and labels — but tests/test_delivery_screen.sh
+# holds the two sets equal, so a preset added here and not offered, or offered and
+# not implemented, fails the build. That is the same shape as the allowlist and the
+# binary-root table in lib/exec.sh, which a test also holds equal.
+#
+# SC2034: read by the suite, which ShellCheck cannot see from this file.
 # shellcheck disable=SC2034
 ZRO_WIN_PRESETS='hour day yesterday week'
 
@@ -64,7 +69,7 @@ zro_win_preset() {
   # A window reaching before the epoch is a clock this program cannot reason
   # about, not a search worth running.
   [ "$start" -ge 0 ] || return "$ZRO_E_INPUT"
-  printf '%s%s%s' "$start" "$ZRO_WIN_TAB" "$end"
+  printf '%s%s%s' "$start" "$ZRO_TAB" "$end"
 }
 
 # --- the clock: thin ------------------------------------------------------
@@ -85,10 +90,7 @@ zro_win_now() {
 # of local midnight — see the note at the top of this file.
 zro_win_day_start() {
   local ts=${1-} hms h m s rest
-  case $ts in ''|*[!0-9]*) return "$ZRO_E_INPUT" ;; esac
-  [ -n "$ZRO_DATE_BIN" ] || return "$ZRO_E_UNAVAILABLE"
-
-  hms=$("$ZRO_DATE_BIN" -d "@$ts" '+%H %M %S' 2>/dev/null) || return "$ZRO_E_UNAVAILABLE"
+  hms=$(zro_clock_fmt '%H %M %S' "$ts") || return $?
   h=${hms%% *}
   rest=${hms#* }
   m=${rest%% *}
@@ -103,10 +105,7 @@ zro_win_day_start() {
 # A timestamp as an operator reads it. Used in the report header, so that the
 # window an answer was found in is on the screen next to the answer.
 zro_win_human() {
-  local ts=${1-}
-  case $ts in ''|*[!0-9]*) return "$ZRO_E_INPUT" ;; esac
-  [ -n "$ZRO_DATE_BIN" ] || return "$ZRO_E_UNAVAILABLE"
-  "$ZRO_DATE_BIN" -d "@$ts" '+%Y-%m-%d %H:%M:%S' 2>/dev/null
+  zro_clock_fmt '%Y-%m-%d %H:%M:%S' "${1-}"
 }
 
 # One end of an explicit range, as an absolute timestamp.
@@ -141,5 +140,5 @@ zro_win_explicit() {
   # operator who typed the ends the wrong way round has to be told, or the
   # answer they read belongs to a window they did not ask for.
   [ "$ss" -le "$ee" ] || return "$ZRO_E_INPUT"
-  printf '%s%s%s' "$ss" "$ZRO_WIN_TAB" "$ee"
+  printf '%s%s%s' "$ss" "$ZRO_TAB" "$ee"
 }

@@ -17,6 +17,14 @@ export ZRO_UI_BACKEND=stub
 export ZRO_SOURCED_ONLY=1
 chmod +x "$ZRO_TEST_ROOT"/mocks/bin/* "$ZRO_TEST_ROOT"/mocks/libexec/* 2>/dev/null || true
 
+# Local wall clock is this tool's only time model, and these cases read the real
+# clock rather than a fixed moment. The ZONE is pinned all the same, as it is in
+# every other clock-dependent file here: a zone that observes daylight saving makes
+# one local hour a year ambiguous, and a case that reads a timestamp back would
+# fail in it once a year. Nothing is lost — the tool documents that it does no
+# daylight-saving arithmetic, so there is no behaviour in that hour to assert.
+export TZ=UTC
+
 # The log tree the presets select from. Its timestamps are RELATIVE TO THE REAL
 # CLOCK, unlike the fixed tree the pure cases use: these screens ask the clock
 # what "the last hour" and "yesterday" mean, so the files have to sit where those
@@ -58,7 +66,7 @@ export ZRO_MOCK_ID_USER=zimbra
 queue() { printf '%s\n' "$@" >"$ZRO_UI_QUEUE"; zro_ui_reset; }
 
 # The common path: trace by recipient, over the last hour.
-HOUR=("1" "ahmet.yilmaz@example.com" "1" "__CANCEL__" "__CANCEL__")
+HOUR=("1" "ahmet.yilmaz@example.com" "hour" "__CANCEL__" "__CANCEL__")
 
 it "the delivery trace is reachable from the main menu"
 queue "2" "__CANCEL__" "__CANCEL__"
@@ -109,14 +117,14 @@ it "each rolling preset searches the span its label names"
 # The menu's entries are checked by what they SEARCH, not by their text: an entry
 # wired to the wrong preset would show the right label and answer another
 # question, which is the one failure a label cannot reveal.
-for pair in "1 3600" "2 86400" "4 604800"; do
+for pair in "hour 3600" "day 86400" "week 604800"; do
   run_preset "${pair%% *}"
   w=$(searched)
   assert_eq "$(( ${w##* } - ${w%% *} ))" "${pair##* }"
 done
 
 it "the yesterday entry searches the calendar day, midnight to its last second"
-run_preset 3
+run_preset yesterday
 today=$("$ZRO_DATE_BIN" -d 'today 00:00:00' '+%s')
 w=$(searched)
 assert_eq "${w%% *}" "$((today - 86400))"
@@ -145,54 +153,71 @@ it "yesterday reaches a rotated file, whatever hour it is asked at"
 # file rotated yesterday morning and the one rotated this morning. The window has
 # to reach the rotated file at every hour of the day, or an operator asking about
 # yesterday is answered from today's log alone.
-queue "1" "ahmet.yilmaz@example.com" "3" "__CANCEL__" "__CANCEL__"
+queue "1" "ahmet.yilmaz@example.com" "yesterday" "__CANCEL__" "__CANCEL__"
 : >"$ZRO_MOCK_LOG"
 ZRO_MOCK_ZMMSGTRACE___RECIPIENT_OUT="$ONE" zro_menu_delivery
 assert_contains "$(grep '^zmmsgtrace' "$ZRO_MOCK_LOG")" "$SYS.1.gz"
 
-it "each file is traced once, with the year of its own modification time"
-# The defect this removes: the tracer guesses one year from the local clock, so a
-# time-bounded search of a log rotated in another year silently finds nothing.
-# The year is compared against each file's own timestamp rather than against
-# today's, so this case still holds on the first of January.
-queue "1" "ahmet.yilmaz@example.com" "4" "__CANCEL__" "__CANCEL__"
+it "a wide window is one invocation per file, each with a year and a file of its own"
+# Three files, three invocations, three distinct paths, each carrying a four-digit
+# year. That the year is DERIVED FROM EACH FILE rather than guessed once cannot be
+# shown here — every file in this tree falls in the same year, because no preset
+# reaches back further than seven days. tests/test_delivery.sh proves it against a
+# tree that straddles a new year, which is the only place it can be proved.
+queue "1" "ahmet.yilmaz@example.com" "week" "__CANCEL__" "__CANCEL__"
 : >"$ZRO_MOCK_LOG"
 ZRO_MOCK_ZMMSGTRACE___RECIPIENT_OUT="$ONE" zro_menu_delivery
 traced=$(grep '^zmmsgtrace' "$ZRO_MOCK_LOG")
 assert_eq "$(printf '%s\n' "$traced" | wc -l | tr -d ' ')" "3"
 assert_eq "$(printf '%s\n' "$traced" | cut -f8 | sort -u | wc -l | tr -d ' ')" "3"
-wrong=""
+malformed=""
 while IFS= read -r line; do
   [ -n "$line" ] || continue
-  year=$(printf '%s' "$line" | cut -f7)
-  path=$(printf '%s' "$line" | cut -f8)
-  want=$(date -d "@$(stat -c '%Y' -- "$path")" '+%Y')
-  [ "$year" = "$want" ] || wrong="$wrong [$path: $year, not $want]"
+  case $(printf '%s' "$line" | cut -f7) in
+    [0-9][0-9][0-9][0-9]) ;;
+    *) malformed="$malformed [$line]" ;;
+  esac
 done <<EOF
 $traced
 EOF
-assert_eq "$wrong" ""
+assert_eq "$malformed" ""
+
+it "the total is shown as the sum over the files it came from"
+# The tracer re-initialises per file, so a message whose hops straddle a rotation
+# is introduced once in each file and counted twice. Telling those apart would mean
+# parsing the report further, against output nobody has captured — so the count is
+# presented as what it is: per file, and summed.
+queue "1" "ahmet.yilmaz@example.com" "week" "__CANCEL__" "__CANCEL__"
+: >"$ZRO_UI_OUT"
+ZRO_MOCK_ZMMSGTRACE___RECIPIENT_OUT="$ONE" zro_menu_delivery
+transcript=$(cat "$ZRO_UI_OUT")
+assert_contains "$transcript" "Bulunan ileti  : 3"
+assert_contains "$transcript" "3 dosya"
+assert_contains "$transcript" "toplam, dosya basina bulunanlarin toplamidir"
+
+it "and carries no such caveat when one file answered the question"
+queue "${HOUR[@]}"
+: >"$ZRO_UI_OUT"
+ZRO_MOCK_ZMMSGTRACE___RECIPIENT_OUT="$ONE" zro_menu_delivery
+assert_not_contains "$(cat "$ZRO_UI_OUT")" "toplam, dosya basina"
 
 it "an explicit range is accepted and reaches the tracer as the window it names"
-queue "1" "ahmet.yilmaz@example.com" "5" "2026-07-28 08:00" "2026-07-28 09:30" \
+queue "1" "ahmet.yilmaz@example.com" "explicit" "2026-07-28 08:00" "2026-07-28 09:30" \
       "__CANCEL__" "__CANCEL__"
 : >"$ZRO_MOCK_LOG"; : >"$ZRO_UI_OUT"
-# The zone is pinned inside a subshell: a temporary assignment in front of a
-# function call persists after it returns in bash, and every case below reads the
-# clock.
-( export TZ=UTC; ZRO_MOCK_ZMMSGTRACE___RECIPIENT_OUT="$ONE" zro_menu_delivery )
+ZRO_MOCK_ZMMSGTRACE___RECIPIENT_OUT="$ONE" zro_menu_delivery
 assert_contains "$(cat "$ZRO_MOCK_LOG")" \
   "$(printf '\t--time\t20260728080000,20260728093000\t')"
 
 it "a malformed explicit range is refused and nothing is run"
-queue "1" "ahmet.yilmaz@example.com" "5" "dun" "bugun" "__CANCEL__" "__CANCEL__"
+queue "1" "ahmet.yilmaz@example.com" "explicit" "dun" "bugun" "__CANCEL__" "__CANCEL__"
 : >"$ZRO_MOCK_LOG"; : >"$ZRO_UI_OUT"
 zro_menu_delivery
 assert_contains "$(cat "$ZRO_UI_OUT")" "Gecersiz"
 assert_eq "$(cat "$ZRO_MOCK_LOG")" ""
 
 it "an explicit range that ends before it starts is refused, not swapped"
-queue "1" "ahmet.yilmaz@example.com" "5" "2026-07-28 09:00" "2026-07-28 08:00" \
+queue "1" "ahmet.yilmaz@example.com" "explicit" "2026-07-28 09:00" "2026-07-28 08:00" \
       "__CANCEL__" "__CANCEL__"
 : >"$ZRO_MOCK_LOG"; : >"$ZRO_UI_OUT"
 zro_menu_delivery
@@ -253,11 +278,11 @@ assert_eq "$(grep -c 'MENU Teslim takibi' "$ZRO_UI_OUT")" "2"
 assert_eq "$(cat "$ZRO_MOCK_LOG")" ""
 
 it "cancelling either end of an explicit range returns to the trace menu"
-queue "1" "ahmet.yilmaz@example.com" "5" "__CANCEL__" "__CANCEL__"
+queue "1" "ahmet.yilmaz@example.com" "explicit" "__CANCEL__" "__CANCEL__"
 : >"$ZRO_UI_OUT"
 assert_ok zro_menu_delivery
 assert_eq "$(grep -c 'MENU Teslim takibi' "$ZRO_UI_OUT")" "2"
-queue "1" "ahmet.yilmaz@example.com" "5" "2026-07-28 08:00" "__CANCEL__" "__CANCEL__"
+queue "1" "ahmet.yilmaz@example.com" "explicit" "2026-07-28 08:00" "__CANCEL__" "__CANCEL__"
 : >"$ZRO_UI_OUT"; : >"$ZRO_MOCK_LOG"
 assert_ok zro_menu_delivery
 assert_eq "$(grep -c 'MENU Teslim takibi' "$ZRO_UI_OUT")" "2"
@@ -280,7 +305,7 @@ assert_contains "$transcript" "DEGILDIR"
 it "one unreadable file among several refuses the whole search"
 # Two files, one of them unreadable: no half-answer is shown. A report assembled
 # from one of two files reads exactly like a complete one.
-queue "1" "ahmet.yilmaz@example.com" "4" "__CANCEL__" "__CANCEL__"
+queue "1" "ahmet.yilmaz@example.com" "week" "__CANCEL__" "__CANCEL__"
 : >"$ZRO_UI_OUT"
 ZRO_MOCK_ZMMSGTRACE___RECIPIENT_OUT="$ONE" \
 ZRO_MOCK_ZMMSGTRACE_UNREADABLE="$SYS" \
@@ -288,6 +313,43 @@ ZRO_MOCK_ZMMSGTRACE_UNREADABLE="$SYS" \
 transcript=$(cat "$ZRO_UI_OUT")
 assert_contains "$transcript" "okunamadi"
 assert_not_contains "$transcript" "Bulunan ileti"
+
+it "the window screen offers exactly the presets the window module implements"
+# Two declarations, held equal here because neither can check the other at run
+# time without reaching into its business: the screen owns the labels, the module
+# owns the arithmetic. Same shape as the allowlist and the binary-root table.
+offered=""
+while IFS= read -r entry; do
+  [ -n "$entry" ] || continue
+  case ${entry%%:*} in
+    explicit) ;;   # not a preset: it asks for a range instead of computing one
+    *) offered="$offered ${entry%%:*}" ;;
+  esac
+done <<EOF
+$ZRO_WINDOW_CHOICES
+EOF
+implemented=""
+for preset in $ZRO_WIN_PRESETS; do
+  implemented="$implemented $preset"
+done
+assert_eq "$offered" "$implemented"
+
+it "and offers a way to type a range that is not one of them"
+assert_contains "$ZRO_WINDOW_CHOICES" "explicit:"
+
+it "a clock this host cannot run is reported, not answered with a shrug"
+# The preset path asks the clock for two readings. Without them there is no window
+# at all, and returning quietly to the menu would read as the tool ignoring the
+# operator. Refused at startup as well, which is where a host like this stops.
+queue "${HOUR[@]}"
+: >"$ZRO_UI_OUT"; : >"$ZRO_MOCK_LOG"
+( ZRO_DATE_BIN=/nonexistent/date
+  ZRO_MOCK_ZMMSGTRACE___RECIPIENT_OUT="$ONE" zro_menu_delivery )
+transcript=$(cat "$ZRO_UI_OUT")
+assert_contains "$transcript" "Saat okunamadi"
+# And the cause is named, not dressed up as the mailbox service being down.
+assert_not_contains "$transcript" "mailboxd"
+assert_eq "$(cat "$ZRO_MOCK_LOG")" ""
 
 it "a tracing binary this host does not have is reported, not crashed into"
 queue "${HOUR[@]}"
@@ -307,7 +369,7 @@ assert_not_contains "$log" "zmprov"
 it "no screen ever hands the tracer a path an operator typed"
 # The file list comes from the inventory. Whatever an operator types is an
 # address or a date, and every path in the vector is under the declared root.
-queue "1" "ahmet.yilmaz@example.com" "4" "__CANCEL__" "__CANCEL__"
+queue "1" "ahmet.yilmaz@example.com" "week" "__CANCEL__" "__CANCEL__"
 : >"$ZRO_MOCK_LOG"
 ZRO_MOCK_ZMMSGTRACE___RECIPIENT_OUT="$ONE" zro_menu_delivery
 outside=""

@@ -53,7 +53,7 @@ screen.
 |---|---|---|
 | `Bash 4.2 veya uzeri gerekiyor` | interpreter below the supported floor | run with a newer bash |
 | `Bu arac yalnizca zimbra veya root ile calisir` | started as some other user | `su - zimbra`, or run as root |
-| `Gerekli sistem komutlari bulunamadi` | `timeout`, `id` or `runuser` missing | install `coreutils` / `util-linux` |
+| `Gerekli sistem komutlari bulunamadi` | one of `timeout`, `id`, `runuser`, `date`, `stat` is missing — the message names it. Without `date` there is no arrival window and no year for a rotated log; without `stat` there is no log inventory | install `coreutils` / `util-linux` |
 | `Zimbra kurulumu bulunamadi` | no Zimbra binaries at the expected path | set `ZRO_ZIMBRA_BIN` if Zimbra is installed elsewhere |
 | `Zimbra servisine erisilemedi` | `zmcontrol -v` returned nothing | check `zmcontrol status`; the mailbox service may be down |
 | `UTF-8 olmayan locale` | warning only | set `LANG=tr_TR.UTF-8` or `en_US.UTF-8` so the Turkish labels render at the right width |
@@ -136,6 +136,14 @@ tool guesses the year once from the local clock, which makes a time-bounded sear
 of a rotated log return nothing at all, silently. Deriving it per file removes
 that. One residual is inherent and remains: a file rotated on 1 January carries
 the new year for lines written on 31 December.
+
+**The count is per file, and summed.** The report lists every file it read with how
+many messages were found in it, and the total is the sum. It cannot be the number
+of distinct messages: `zmmsgtrace` re-initialises per file, so a message whose hops
+straddle a rotation is introduced once in each file and counted in both. The screen
+says so whenever more than one file was read. Telling those apart would mean
+parsing the report further, and no output from a real server has been captured to
+parse against.
 
 **If any file the window selected cannot be read, the whole search is refused**
 with `Log okunamiyor` (exit 23) and no partial report. Finding nothing must never

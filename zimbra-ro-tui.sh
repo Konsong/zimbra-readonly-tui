@@ -53,6 +53,12 @@ zro_startup_check() {
   local missing=""
   [ -n "$ZRO_TIMEOUT_BIN" ] || missing="$missing timeout"
   [ -n "$ZRO_ID_BIN" ] || missing="$missing id"
+  # Without a clock there is no arrival window and no year for a rotated log, so
+  # the delivery trace cannot be answered at all. Refused here with the others
+  # rather than from inside a screen, where it would arrive as a failure the
+  # operator would have to work back from.
+  [ -n "$ZRO_DATE_BIN" ] || missing="$missing date"
+  [ -n "$ZRO_STAT_BIN" ] || missing="$missing stat"
   if [ "$(zro_identity_mode "$user")" = runuser ] && [ -z "$ZRO_RUNUSER" ]; then
     missing="$missing runuser"
   fi
@@ -129,6 +135,22 @@ ZRO_TXT_DATETIME='Tarih ve saat (ornek: 2026-07-28 08:00)
 
 Saat zorunludur; yerel saat olarak okunur.'
 
+# What the window screen offers, as "<preset id>:<label>". The id is the tag
+# whiptail hands back — the menu is drawn with --notags, so an operator never sees
+# it — which means there is no second table mapping a number onto a preset and no
+# way for the two to disagree.
+#
+# Every id here except 'explicit' must be one lib/window.sh implements, and every
+# preset it implements must appear here. Neither half can check the other at run
+# time without one of them reaching into the other's business, so the suite holds
+# the two sets equal instead, the way it holds the allowlist and the binary-root
+# table equal.
+ZRO_WINDOW_CHOICES='hour:Son 1 saat
+day:Son 24 saat
+yesterday:Dun (tam gun)
+week:Son 7 gun
+explicit:Belirli aralik gir'
+
 # Asks which arrival window to search and answers with two absolute local
 # timestamps, TAB-separated.
 #
@@ -137,30 +159,31 @@ Saat zorunludur; yerel saat olarak okunur.'
 # range is the only path that takes a date as text, and therefore the only one
 # that can be refused as invalid input.
 zro_prompt_window() {
-  local choice rc=0 preset now day_start
-  choice=$(zro_ui_menu "Varis araligi" "$ZRO_TXT_ARRIVAL" \
-    1 "Son 1 saat" \
-    2 "Son 24 saat" \
-    3 "Dun (tam gun)" \
-    4 "Son 7 gun" \
-    5 "Belirli aralik gir") || rc=$?
+  local choice rc=0 now day_start entry
+  local -a items=()
+  while IFS= read -r entry; do
+    [ -n "$entry" ] || continue
+    items+=("${entry%%:*}" "${entry#*:}")
+  done <<EOF
+$ZRO_WINDOW_CHOICES
+EOF
+
+  choice=$(zro_ui_menu "Varis araligi" "$ZRO_TXT_ARRIVAL" "${items[@]}") || rc=$?
   [ "$rc" -eq 0 ] || return "$ZRO_E_CANCEL"
 
-  case $choice in
-    1) preset=hour ;;
-    2) preset=day ;;
-    3) preset=yesterday ;;
-    4) preset=week ;;
-    5) zro_prompt_window_explicit; return $? ;;
-    *) return "$ZRO_E_INPUT" ;;
-  esac
+  if [ "$choice" = explicit ]; then
+    zro_prompt_window_explicit
+    return $?
+  fi
 
   # Both readings are taken once, here, and handed to a pure function. Asking the
   # clock twice inside the arithmetic would let a window straddle midnight while
   # it was being computed.
   now=$(zro_win_now) || return "$ZRO_E_UNAVAILABLE"
   day_start=$(zro_win_day_start "$now") || return "$ZRO_E_UNAVAILABLE"
-  zro_win_preset "$preset" "$now" "$day_start" || return "$ZRO_E_INPUT"
+  # An id the window module does not implement is refused by it, not by a second
+  # list here that would have to be kept in step with the first.
+  zro_win_preset "$choice" "$now" "$day_start" || return "$ZRO_E_INPUT"
 }
 
 zro_prompt_window_explicit() {
@@ -295,9 +318,27 @@ zro_menu_delivery() {
 
     rc=0
     window=$(zro_prompt_window) || rc=$?
-    [ "$rc" -eq 0 ] || continue
-    ws=${window%%"$ZRO_WIN_TAB"*}
-    we=${window#*"$ZRO_WIN_TAB"}
+    if [ "$rc" -ne 0 ]; then
+      # Cancel is navigation, and a rejected date has already been shown on its
+      # own screen. Anything else would otherwise reach the operator as the menu
+      # simply reappearing, which reads like the tool ignoring them.
+      #
+      # The clock is named rather than passed to the shared reporter, because the
+      # only thing in that prompt which can be unavailable is the clock, and the
+      # shared message for that code talks about the mailbox service.
+      case $rc in
+        "$ZRO_E_CANCEL"|"$ZRO_E_INPUT") ;;
+        "$ZRO_E_UNAVAILABLE")
+          zro_ui_msgbox "Saat okunamadi" \
+"Sistem saati okunamadi, bu nedenle varis araligi hesaplanamadi.
+
+'date' komutu bu sunucuda calismiyor olabilir." ;;
+        *) zro_report_error "$rc" ;;
+      esac
+      continue
+    fi
+    ws=${window%%"$ZRO_TAB"*}
+    we=${window#*"$ZRO_TAB"}
 
     # Reading a whole log takes seconds, and longer on a busy server — and a wide
     # window reads several files, one invocation each.

@@ -66,6 +66,33 @@ zro_first_existing() {
 # an arrival window — so those go through this.
 ZRO_DATE_BIN="${ZRO_DATE_BIN:-$(zro_first_existing /usr/bin/date /bin/date)}"
 
+# What an absolute timestamp looks like in a given format, as LOCAL WALL CLOCK.
+# The one place this program asks the clock about a moment: the log inventory
+# derives a file's year through it, the arrival window renders its bounds, and the
+# delivery trace builds the tracer's own time option. Each caller still judges the
+# answer it got — a year is four digits, a trace bound is fourteen — because those
+# are different guarantees, but none of them repeats how to reach the clock or how
+# to refuse a timestamp that is not one.
+#
+#   $1  a date format, without its leading '+'
+#   $2  an absolute timestamp in seconds
+zro_clock_fmt() {
+  local fmt=${1-} ts=${2-} out
+  [ -n "$fmt" ] || return "$ZRO_E_INPUT"
+  case $ts in ''|*[!0-9]*) return "$ZRO_E_INPUT" ;; esac
+  [ -n "$ZRO_DATE_BIN" ] || return "$ZRO_E_UNAVAILABLE"
+  out=$("$ZRO_DATE_BIN" -d "@$ts" "+$fmt" 2>/dev/null) || return "$ZRO_E_UNAVAILABLE"
+  [ -n "$out" ] || return "$ZRO_E_UNAVAILABLE"
+  printf '%s' "$out"
+}
+
+# The separator every pair this program passes between functions travels on. A
+# function answers with a status, so two values have to share one line — the log
+# inventory's timestamp-and-path pairs and the arrival window's two bounds alike.
+# One constant rather than one per module: two names for one character is how a
+# producer and a consumer end up splitting on different things.
+ZRO_TAB=$'\t'
+
 # The last underlying failure message, kept in a file rather than a variable.
 # Menu code runs operations inside command substitution, so a variable set in
 # that subshell would never reach the caller — the operator would be left with

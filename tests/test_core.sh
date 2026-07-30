@@ -27,6 +27,37 @@ assert_out_eq "/bin/sh" zro_first_existing /nonexistent/zzz /bin/sh
 it "zro_first_existing fails when nothing exists"
 assert_fail zro_first_existing /nonexistent/aaa /nonexistent/bbb
 
+# The one place this program asks the clock about a moment. The log inventory's
+# year, the arrival window's bounds and the tracer's own time option all come
+# through here, and each of them decides whether a trace finds anything at all.
+it "zro_clock_fmt renders a timestamp as local wall clock"
+export TZ=UTC
+assert_out_eq "2026-07-30" zro_clock_fmt '%Y-%m-%d' 1785405600
+assert_out_eq "2026" zro_clock_fmt '%Y' 1785405600
+assert_out_eq "20260730100000" zro_clock_fmt '%Y%m%d%H%M%S' 1785405600
+# The zone decides the answer, and there is no arithmetic here that pretends
+# otherwise: this tool's only time model is the local wall clock.
+assert_eq "$( TZ=Europe/Istanbul; zro_clock_fmt '%H:%M' 1785405600 )" "13:00"
+
+it "zro_clock_fmt refuses a timestamp that is not one"
+assert_status "$ZRO_E_INPUT" zro_clock_fmt '%Y' 'now'
+assert_status "$ZRO_E_INPUT" zro_clock_fmt '%Y' '2026-07-30'
+assert_status "$ZRO_E_INPUT" zro_clock_fmt '%Y' ''
+assert_status "$ZRO_E_INPUT" zro_clock_fmt '%Y'
+assert_status "$ZRO_E_INPUT" zro_clock_fmt '' 1785405600
+assert_status "$ZRO_E_INPUT" zro_clock_fmt
+
+it "zro_clock_fmt reports a clock it cannot run rather than answering empty"
+# An empty answer would reach a command line as a missing year or a missing
+# window bound, and the tracer reads either as a wider search that found nothing.
+rc=0; ( ZRO_DATE_BIN=/nonexistent/date; zro_clock_fmt '%Y' 1785405600 ) >/dev/null 2>&1 || rc=$?
+assert_eq "$rc" "$ZRO_E_UNAVAILABLE"
+rc=0; ( ZRO_DATE_BIN=''; zro_clock_fmt '%Y' 1785405600 ) >/dev/null 2>&1 || rc=$?
+assert_eq "$rc" "$ZRO_E_UNAVAILABLE"
+
+it "one separator carries every pair this program passes between functions"
+assert_eq "$ZRO_TAB" "$(printf '\t')"
+
 it "zro_tmpfile creates a file readable only by the owner"
 tmp=$(zro_tmpfile)
 assert_eq "$(stat -c '%a' "$tmp")" "600"

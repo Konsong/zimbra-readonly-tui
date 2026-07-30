@@ -61,11 +61,14 @@ zro_trace_fail_code() {
 # timestamp it built from a syslog line carrying no zone and the year we hand it,
 # so any conversion on this side would be inventing a precision the other side
 # does not have.
+#
+# It stays here rather than in lib/window.sh, where the rest of the clock lives,
+# because what it encodes is the TRACER's option format read out of that tool's
+# POD — knowledge that belongs with the tool it is for. The window module knows
+# what an arrival window is; it should not have to know what zmmsgtrace wants.
 zro_trace_stamp() {
-  local ts=${1-} out
-  case $ts in ''|*[!0-9]*) return "$ZRO_E_INPUT" ;; esac
-  [ -n "$ZRO_DATE_BIN" ] || return "$ZRO_E_UNAVAILABLE"
-  out=$("$ZRO_DATE_BIN" -d "@$ts" '+%Y%m%d%H%M%S' 2>/dev/null) || return "$ZRO_E_UNAVAILABLE"
+  local out
+  out=$(zro_clock_fmt '%Y%m%d%H%M%S' "${1-}") || return $?
   # Fourteen digits or nothing. A short or empty bound would be read by the
   # tracer as a different, wider window, and the trace would answer a question
   # the operator did not ask.
@@ -117,10 +120,17 @@ zro_trace_recipient() {
   # an address that is a substring of another can pull in a neighbour's message,
   # and the report shown below names every recipient it matched. Anchoring waits
   # on the same capture as the table view.
-  local pattern from to
+  local pattern from to from_h to_h
   pattern=$(zro_regex_quote "$addr")
   from=$(zro_trace_stamp "$ws") || return "$ZRO_E_UNAVAILABLE"
   to=$(zro_trace_stamp "$we") || return "$ZRO_E_UNAVAILABLE"
+  # The window as the operator will read it, resolved BEFORE any file is opened.
+  # Interpolating these into the header instead would let a clock that stopped
+  # answering print a report headed by a blank range — in a report whose whole
+  # purpose is stating which window was searched. Better to refuse than to answer
+  # about a window nobody can see.
+  from_h=$(zro_win_human "$ws") || return "$ZRO_E_UNAVAILABLE"
+  to_h=$(zro_win_human "$we") || return "$ZRO_E_UNAVAILABLE"
 
   # Which files the window covers. The syslog family only: the tracer parses
   # postfix and amavis lines, and those land in no other log in the inventory.
@@ -152,11 +162,9 @@ zro_trace_recipient() {
   while IFS= read -r line; do
     [ -n "$line" ] || continue
     # The shape zro_inv_select emits: the year it derived, then the path.
-    year=${line%%"$ZRO_INV_TAB"*}
-    path=${line#*"$ZRO_INV_TAB"}
+    year=${line%%"$ZRO_TAB"*}
+    path=${line#*"$ZRO_TAB"}
     files=$((files + 1))
-    scanned="$scanned
-                 $path"
 
     rc=0
     : >"$err"
@@ -184,6 +192,14 @@ zro_trace_recipient() {
 
     count=$(zro_trace_message_count "$out")
     total=$((total + count))
+    # Each file with what was found in it, so the total below is visibly a sum
+    # rather than a claim about distinct messages. It cannot be a claim about
+    # distinct messages: the tracer re-initialises per file, so a message whose
+    # hops straddle a rotation is introduced once in each file and counted twice.
+    # Telling them apart would mean parsing the report further, and no output from
+    # a real server has been captured to parse against.
+    scanned="$scanned
+                 $path ($count)"
     # Each file's report is rendered as it arrived, under a line naming the file
     # it came from. That heading is not decoration: the tracer re-initialises per
     # file, so a message whose hops straddle a rotation is reported as fragments,
@@ -201,13 +217,23 @@ EOF
 
   [ "$total" -gt 0 ] || return "$ZRO_E_NO_RESULT"
 
+  # Said out loud whenever more than one file was read, because that is when the
+  # total stops being the number of distinct messages. Not said when one file was
+  # read, where it would be a caveat about nothing.
+  local caveat=''
+  if [ "$files" -gt 1 ]; then
+    caveat='
+                 (toplam, dosya basina bulunanlarin toplamidir: rotasyon
+                  sinirini asan bir ileti her iki dosyada birer kez gorunur)'
+  fi
+
   printf 'Alici          : %s\n' "$addr"
-  printf 'Varis araligi  : %s - %s\n' "$(zro_win_human "$ws")" "$(zro_win_human "$we")"
+  printf 'Varis araligi  : %s - %s\n' "$from_h" "$to_h"
   printf '                 (aralik iletinin sunucuya VARIS zamanina gore\n'
   printf '                  uygulanir; aralik oncesinde varip aralik icinde\n'
   printf '                  teslim edilen bir ileti bu listede yer almaz)\n'
   printf 'Bulunan ileti  : %s\n' "$total"
-  printf 'Taranan log    : %s dosya%s\n' "$files" "$scanned"
+  printf 'Taranan log    : %s dosya%s%s\n' "$files" "$scanned" "$caveat"
   # Unmodified, on purpose: what follows is what the server said. Reformatting it
   # would risk dropping something nobody has looked at yet.
   printf '%s\n' "$bodies"

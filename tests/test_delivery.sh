@@ -181,18 +181,34 @@ OUT="$ONE" out=$(trace 'ahmet.yilmaz@example.com' "$W_LIVE_FROM" "$W_LIVE_TO")
 assert_contains "$out" "$(cat "$ONE")"
 
 it "presents several files as one answer with a total count"
-# Two files, one message each: the operator is told three things — how many were
-# found altogether, how many files were read, and which ones.
+# Two files, one message each: the operator is told four things — how many were
+# found altogether, how many files were read, which ones, and how many came from
+# each. The last of those is what keeps the total honest, below.
 OUT="$ONE" out=$(trace 'ahmet.yilmaz@example.com' "$W_28_DAY_FROM" "$W_28_DAY_TO")
 assert_contains "$out" "Bulunan ileti  : 2"
 assert_contains "$out" "2 dosya"
-assert_contains "$out" "$SYS.2.gz"
-assert_contains "$out" "$SYS.1.gz"
+assert_contains "$out" "$SYS.2.gz (1)"
+assert_contains "$out" "$SYS.1.gz (1)"
 
-it "counts every message in every file it read"
+it "counts every message in every file it read, and says the total is a sum"
+# The total cannot be the number of DISTINCT messages: the tracer re-initialises
+# per file, so a message whose hops straddle a rotation is introduced once in each
+# file and counted in both. Telling those apart would mean parsing the report
+# further, against output nobody has captured from a server — so the count is
+# presented as what it is, per file and summed, rather than as a claim it cannot
+# support.
 OUT="$TWO" out=$(trace 'ahmet.yilmaz@example.com' "$W_28_DAY_FROM" "$W_28_DAY_TO")
 assert_contains "$out" "Bulunan ileti  : 4"
+assert_contains "$out" "$SYS.1.gz (2)"
+assert_contains "$out" "toplam, dosya basina bulunanlarin toplamidir"
 assert_contains "$out" "$(cat "$TWO")"
+
+it "says nothing of the sort when one file answered the question"
+# A caveat about a rotation boundary that was not crossed is noise, and noise is
+# how a real disclosure stops being read.
+OUT="$TWO" out=$(trace 'ahmet.yilmaz@example.com' "$W_28_FROM" "$W_28_TO")
+assert_contains "$out" "1 dosya"
+assert_not_contains "$out" "toplam, dosya basina"
 
 it "names the file each report came from"
 # Not decoration: the tracer re-initialises per file, so a message whose hops
