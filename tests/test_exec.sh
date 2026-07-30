@@ -155,12 +155,25 @@ ZRO_ZIMBRA_BIN=/nonexistent ZRO_MOCK_ID_USER=zimbra \
 assert_contains "$(cat "$ZRO_MOCK_LOG")" \
   "$(printf -- '%s/mocks/libexec/zmmsgtrace\t--recipient\tahmet.yilmaz@example.com' "$ZRO_TEST_ROOT")"
 
+it "runs each approved filter of the tracing binary under the same root"
+: >"$ZRO_MOCK_LOG"
+ZRO_MOCK_ID_USER=zimbra assert_ok zro_exec zmmsgtrace --sender 'ahmet.yilmaz@example.com'
+ZRO_MOCK_ID_USER=zimbra assert_ok zro_exec zmmsgtrace --id 'CAabc123@example.com'
+assert_contains "$(cat "$ZRO_MOCK_LOG")" \
+  "$(printf -- '%s/mocks/libexec/zmmsgtrace\t--sender\tahmet.yilmaz@example.com' "$ZRO_TEST_ROOT")"
+assert_contains "$(cat "$ZRO_MOCK_LOG")" \
+  "$(printf -- '%s/mocks/libexec/zmmsgtrace\t--id\tCAabc123@example.com' "$ZRO_TEST_ROOT")"
+
 it "refuses a filter of the tracing binary that nobody approved, and runs nothing"
+# The short forms of the approved filters are here too: an operation reaches the
+# gate in one spelling, so `-s` is refused although `--sender` is approved.
 : >"$ZRO_MOCK_LOG"
 ZRO_MOCK_ID_USER=zimbra assert_status "$ZRO_E_DENIED" \
-  zro_exec zmmsgtrace --sender 'ahmet.yilmaz@example.com'
+  zro_exec zmmsgtrace -s 'ahmet.yilmaz@example.com'
 ZRO_MOCK_ID_USER=zimbra assert_status "$ZRO_E_DENIED" \
-  zro_exec zmmsgtrace --id 'CAabc123@example.com'
+  zro_exec zmmsgtrace -i 'CAabc123@example.com'
+ZRO_MOCK_ID_USER=zimbra assert_status "$ZRO_E_DENIED" \
+  zro_exec zmmsgtrace --srchost 'mail.example.com'
 ZRO_MOCK_ID_USER=zimbra assert_status "$ZRO_E_DENIED" \
   zro_exec zmmsgtrace --time '20260729,20260730'
 ZRO_MOCK_ID_USER=zimbra assert_status "$ZRO_E_DENIED" zro_exec zmmsgtrace --man

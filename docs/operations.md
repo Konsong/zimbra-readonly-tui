@@ -109,6 +109,26 @@ Menu 2, *Teslim takibi (mail loglari)*:
   window, then shows what the mail transfer agent's log says about messages for
   that address. No mailbox is opened, so this is safe on an account that has
   never logged in.
+- **Gonderen adresine gore izle** — the same trace, filtered by sender: whether a
+  user's outbound message actually left.
+- **Ileti kimligine gore izle** — the same trace, filtered by message-id, for when
+  you are holding a bounce report or a forwarded header and an address is too
+  broad a question.
+
+All three ask for an arrival window next and answer in the same report. The only
+differences are the filter, the label on the report's first line, and the two
+notes below.
+
+**The message-id match is case-sensitive; the other two are not.** That is
+`zmmsgtrace`'s own rule, and it is stated on the prompt and repeated on the
+`Sonuc yok` screen, because an identifier retyped in the wrong case produces an
+empty result that reads as proof the message never arrived.
+
+**The angle brackets a header carries are removed before the search.** What you
+have in hand reads `Message-ID: <CAabc123@example.com>`; `zmmsgtrace` records the
+identifier without its delimiters, so a filter carrying them would match nothing.
+Paste either form of the identifier — but only the identifier: the whole header
+line is refused as invalid input rather than searched for and never found.
 
 Cancel and ESC return to the previous screen from every prompt. Nothing exits
 the tool except the explicit *Cikis* entry.
@@ -223,16 +243,22 @@ zmprov gam       getAccountMembership       zmprov -l gam   same, from LDAP
 zmprov gc        getCos                     zmprov -l gc    same, from LDAP
 zmcontrol -v     version
 zmmsgtrace --recipient                      delivery trace by recipient
+zmmsgtrace --sender                         delivery trace by sender
+zmmsgtrace --id                             delivery trace by message-id
 ```
 
 `zmmsgtrace` is installed in `/opt/zimbra/libexec`, not in `bin` — an upstream
 mapping still names the `bin` path and it is stale. That is why each allowlisted
 binary declares the directory it resolves under instead of sharing one root.
 
-Only the recipient filter is listed. The short form `-r`, the sender and
-message-id filters and the `--debug`, `--nosort` and `--man` flags are absent and
-therefore refused: each is an operation of its own and arrives with the ticket
-that exposes it, not because the binary is already reachable.
+**One entry per filter**, because recipient, sender and message-id are three
+different questions and approving one may not approve another. The short forms
+`-r`, `-s` and `-i` are absent although they name approved operations: an
+operation reaches the gate in exactly one spelling, so reading a call site tells
+you which entry approves it. The `--srchost` and `--desthost` filters and the
+`--debug`, `--nosort` and `--man` flags are absent and therefore refused: each is
+an operation of its own and arrives with the ticket that exposes it, not because
+the binary is already reachable.
 
 The arrival window (`--time`), the year (`--year`) and the log file follow the
 filter as **data**, exactly as an account name follows `zmprov ga`. All three are
@@ -242,10 +268,12 @@ listing them would be worse than pointless: an entry for `zmmsgtrace:--time` wou
 approve a trace with no filter at all. Put any of them in the leading position and
 the gate refuses it.
 
-Every filter that binary takes is a **Perl regular expression**, so the address is
-escaped before it is passed. Without that, `ali+fatura@example.com` — a valid
-address — would be read as a pattern and fail to match itself, reporting no
-delivery record for a message that has one.
+Every filter that binary takes is a **Perl regular expression**, so every value is
+escaped before it is passed — not just the recipient. Without that,
+`ali+fatura@example.com` — a valid address — would be read as a pattern and fail
+to match itself, reporting no delivery record for a message that has one. A
+message-id carries more metacharacters than an address does, so it needs this
+more, not less.
 
 The trace reads the log files the operator's arrival window covers — the file
 being written and the rotated files behind it — one invocation per file. See *The

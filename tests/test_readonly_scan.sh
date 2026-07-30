@@ -209,14 +209,23 @@ it "the allowlist exposes no mailbox binary at all"
 assert_not_contains "$allow" "zmmailbox"
 
 # The delivery trace hands the gate a literal filter followed by a variable
-# holding the operator's address. The generic extraction above cannot decide a
-# call site whose token after a flag is dynamic, so the filter is checked here
-# instead: every tracing call site must name a filter the allowlist approves.
+# holding the operator's already-validated value. The generic extraction above
+# cannot decide a call site whose token after a flag is dynamic, so the filter is
+# checked here instead: every tracing call site must name a filter the allowlist
+# approves.
+#
+# This is why the three filters are written out one per line in lib/delivery.sh
+# instead of reaching the gate through a variable. A single dynamic call site
+# would be undecidable to this reader, and what it decides is the whole point:
+# reading the source proves that nothing can ask the tracer a question nobody
+# approved.
 it "every delivery trace call site names an approved filter"
 trace_calls=$(printf '%s\n' "$raw_code" \
               | grep -oE 'zro_exec[[:space:]]+zmmsgtrace[[:space:]]+[^[:space:]]+' \
               | sort -u)
 assert_contains "$trace_calls" "zro_exec zmmsgtrace --recipient"
+assert_contains "$trace_calls" "zro_exec zmmsgtrace --sender"
+assert_contains "$trace_calls" "zro_exec zmmsgtrace --id"
 unapproved=""
 while IFS= read -r call; do
   [ -n "$call" ] || continue
@@ -227,6 +236,14 @@ done <<EOF
 $trace_calls
 EOF
 assert_eq "$unapproved" ""
+
+it "and every approved filter has a call site, in exactly one spelling"
+# The two sets are held equal in both directions. An approved filter with no
+# call site is an operation that reads as available and can never answer; a
+# second spelling of one that already has a call site is an approval a reader of
+# the allowlist would have to count rather than read.
+assert_eq "$(printf '%s\n' "$trace_calls" | grep -c 'zmmsgtrace')" \
+          "$(printf '%s\n' "$allow" | grep -c '^zmmsgtrace:')"
 
 it "the delivery trace names no mailbox binary and no directory command"
 # M5's independence from the existence gate, asserted rather than assumed.

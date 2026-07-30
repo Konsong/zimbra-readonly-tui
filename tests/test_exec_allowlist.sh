@@ -24,20 +24,40 @@ for sub in ca ma da dm mm mmr ef df createAccount modifyAccount deleteAccount \
 done
 
 # The tracing binary takes every filter as a flag, and each flag IS the whole
-# operation — the same shape as `zmcontrol -v`. Only the recipient filter is
-# approved in this milestone, so every other filter the tool accepts must be
-# refused: an operation nobody approved must not be reachable just because the
-# binary is.
-it "approves the recipient filter of the tracing binary and no other filter"
+# operation — the same shape as `zmcontrol -v`. Three filters are exposed, and
+# every other filter the tool accepts must be refused: an operation nobody
+# approved must not be reachable just because the binary is.
+it "approves the three exposed filters of the tracing binary"
 assert_ok zro_allowed zmmsgtrace --recipient
 assert_ok zro_allowed zmmsgtrace --recipient 'ahmet.yilmaz@example.com'
+assert_ok zro_allowed zmmsgtrace --sender
+assert_ok zro_allowed zmmsgtrace --sender 'ahmet.yilmaz@example.com'
+assert_ok zro_allowed zmmsgtrace --id
+assert_ok zro_allowed zmmsgtrace --id 'CAabc123@example.com'
+
+it "approves each filter on its own entry, never through another one"
+# Three approvals, not one approval of "the tracing binary". The gate matches a
+# whole line literally, so no filter rides in on the back of a neighbour: a
+# prefix of an approved filter, a longer form of one, and two of them written as
+# a single token are all refused.
+assert_fail zro_allowed zmmsgtrace --send
+assert_fail zro_allowed zmmsgtrace --senders
+assert_fail zro_allowed zmmsgtrace --i
+assert_fail zro_allowed zmmsgtrace --ids
+assert_fail zro_allowed zmmsgtrace '--sender --id'
+assert_fail zro_allowed zmmsgtrace --recipient--sender
 
 it "refuses every other filter and flag of the tracing binary"
-# Verbatim from the tool's own option list: the short form of each filter, the
-# filters this milestone does not expose, and its non-filter flags. The window and
-# year options are in this list too — see the case below for what that does and
-# does not mean.
-for opt in -r --sender -s --id -i --srchost -F --desthost -D --time -t \
+# Verbatim from the tool's own option list: the short form of each exposed
+# filter, the filters this milestone does not expose, and its non-filter flags.
+# The window and year options are in this list too — see the case below for what
+# that does and does not mean.
+#
+# The short forms are refused although they name an operation that IS approved.
+# An operation reaches the gate in exactly one spelling, so that reading a call
+# site tells a maintainer which allowlist entry approves it without knowing the
+# tracer's option table by heart.
+for opt in -r -s -i --srchost -F --desthost -D --time -t \
            --year --nosort --debug --help --man; do
   assert_fail zro_allowed zmmsgtrace "$opt"
   assert_fail zro_allowed zmmsgtrace "$opt" 'ahmet.yilmaz@example.com'
@@ -62,11 +82,13 @@ assert_fail zro_allowed zmmsgtrace ''
 assert_fail zro_allowed zmmsgtrace 'recipient'
 assert_fail zro_allowed zmmsgtrace '--recipients'
 
-it "the allowlist names exactly one filter of the tracing binary"
-# Reading the list has to tell a maintainer what tracing can do. A second entry
-# added without a ticket behind it fails here.
+it "the allowlist names exactly the three filters the tool exposes"
+# Reading the list has to tell a maintainer what tracing can do. A fourth entry
+# added without a ticket behind it fails here, and so does a filter approved in
+# two spellings.
 traces=$(zro_allow_entries | grep '^zmmsgtrace:')
-assert_eq "$traces" "zmmsgtrace:--recipient"
+assert_eq "$traces" "$(printf '%s\n%s\n%s' \
+  'zmmsgtrace:--recipient' 'zmmsgtrace:--sender' 'zmmsgtrace:--id')"
 
 it "allows the LDAP-mode reads as three-token prefixes"
 assert_ok zro_allowed zmprov -l ga
