@@ -70,10 +70,21 @@ ZRO_CAP_RUN_ACCOUNT=zimbra
 # happens to be installed. Upstream packaging puts it under libexec while an
 # upstream mapping still names the bin path — that mapping is stale, which is why
 # the root is declared per binary and why this question is worth asking at all.
+#
+# The override is a yes-or-no because the question is: a binary is there or it is
+# not, and there is one repair. The log probe below answers with a REASON instead,
+# because that question has three answers with three different repairs. An
+# unrecognised forced value is a defect in whatever set it rather than a fact about
+# this host, so it is logged and read as the strictest answer there is — a typo can
+# only ever hide the feature, never offer one this host cannot perform.
 zro_cap_trace_bin() {
   if [ -n "${ZRO_CAP_FORCE_TRACE_BIN:-}" ]; then
-    [ "$ZRO_CAP_FORCE_TRACE_BIN" = yes ]
-    return $?
+    case $ZRO_CAP_FORCE_TRACE_BIN in
+      yes) return 0 ;;
+      no)  return 1 ;;
+    esac
+    zro_log error "not a probe answer: ZRO_CAP_FORCE_TRACE_BIN=$ZRO_CAP_FORCE_TRACE_BIN (expected: yes no)"
+    return 1
   fi
   if [ -z "$ZRO_CAP_TRACE_BIN_CACHE" ]; then
     if zro_cap_op_available zmmsgtrace --recipient; then
@@ -121,11 +132,18 @@ zro_cap_mode_readable() {
     zro_cap_read_bit "${digits%??}"
     return $?
   fi
+  # A group with no name is not a group: without the guard, a file whose group
+  # stat could not name and an account in no groups at all would match each other
+  # on the empty string, and the group bits would decide a question they know
+  # nothing about.
+  #
   # Space-padded on both sides so a group name cannot match a longer one it is a
   # prefix or suffix of: 'adm' is not 'sysadm'.
-  case " $groups " in
-    *" $group "*) zro_cap_read_bit "$mid"; return $? ;;
-  esac
+  if [ -n "$group" ]; then
+    case " $groups " in
+      *" $group "*) zro_cap_read_bit "$mid"; return $? ;;
+    esac
+  fi
   zro_cap_read_bit "${digits#??}"
 }
 
@@ -158,12 +176,24 @@ zro_cap_read_bit() {
 # by the trace itself as a partial scan, while this one being unreadable leaves the
 # screen with nothing to answer from at all.
 #
-# What it does not see: a directory on the way to the file that the account cannot
-# traverse. That residual runs in the visible direction — the probe says yes, and
-# the search then reports the log it could not open, naming the same repair.
+# TWO THINGS IT CANNOT SEE, both recorded rather than compensated for, because the
+# only way to see either is to ask the kernel AS that account — and the one command
+# that would do it needs root when the tool is already running as the account,
+# which is the per-identity branch this whole design exists without.
+#
+#   A directory on the way to the file that the account cannot traverse. The file
+#   then reads as absent rather than as unreadable, so the screen below says NOT
+#   FOUND and names both possibilities. It does not claim the file does not exist.
+#
+#   A POSIX ACL granting the account read on a file whose mode refuses it. That
+#   reads as unreadable, so a host where tracing would work is marked unavailable.
+#   The cost runs the visible way round: the screen names the file, its ownership
+#   and its mode, so an operator holding an ACL can see what the tool judged and
+#   that it judged the mode alone.
 zro_cap_trace_log() {
-  if [ -n "${ZRO_CAP_FORCE_TRACE_LOG:-}" ]; then
-    [ "$ZRO_CAP_FORCE_TRACE_LOG" = ok ]
+  local forced
+  if forced=$(zro_cap_forced_log_reason); then
+    [ "$forced" = ok ]
     return $?
   fi
   if [ -z "$ZRO_CAP_TRACE_LOG_CACHE" ]; then
@@ -172,15 +202,18 @@ zro_cap_trace_log() {
   [ "$ZRO_CAP_TRACE_LOG_CACHE" = ok ]
 }
 
-# Why the probe above answered as it did: 'ok', 'missing' when the log is not there
-# at all, or 'unreadable' when it is there and the account cannot read it.
-#
-# Two refusals rather than one because the repairs have nothing in common: naming
-# the permission repair tool for a file that does not exist sends an operator
-# looking for a mode that is not the problem.
+# What the probe above may answer. FOUR reasons rather than one because the repairs
+# have nothing in common: naming the permission repair tool for a file that does not
+# exist sends an operator looking for a mode that is not the problem, and a path
+# this tool refuses to read at all is a setting to correct rather than anything on
+# disk.
+ZRO_CAP_TRACE_LOG_ANSWERS="ok denied missing unreadable"
+
+# Why the probe answered as it did.
 zro_cap_trace_log_reason() {
-  if [ -n "${ZRO_CAP_FORCE_TRACE_LOG:-}" ]; then
-    printf '%s' "$ZRO_CAP_FORCE_TRACE_LOG"
+  local forced
+  if forced=$(zro_cap_forced_log_reason); then
+    printf '%s' "$forced"
     return 0
   fi
   # A caller that asks why before asking whether gets the probe run for it. An
@@ -190,17 +223,46 @@ zro_cap_trace_log_reason() {
   printf '%s' "$ZRO_CAP_TRACE_LOG_CACHE"
 }
 
+# The forced answer, when the suite has pinned one. Fails when nothing is pinned,
+# which is what tells the two functions above to ask the host instead.
+#
+# An unrecognised value is a defect in whatever set it rather than a fact about this
+# host: logged, and read as the strictest answer there is. Echoing it verbatim would
+# let a typo pick a screen — and the screen it picks names a repair for a cause
+# nobody diagnosed.
+zro_cap_forced_log_reason() {
+  [ -n "${ZRO_CAP_FORCE_TRACE_LOG:-}" ] || return 1
+  case " $ZRO_CAP_TRACE_LOG_ANSWERS " in
+    *" $ZRO_CAP_FORCE_TRACE_LOG "*) printf '%s' "$ZRO_CAP_FORCE_TRACE_LOG"; return 0 ;;
+  esac
+  zro_log error \
+    "not a log probe answer: ZRO_CAP_FORCE_TRACE_LOG=$ZRO_CAP_FORCE_TRACE_LOG (expected one of: $ZRO_CAP_TRACE_LOG_ANSWERS)"
+  printf 'unreadable'
+}
+
 # Asks the host, once. Prints the reason zro_cap_trace_log caches.
 zro_cap_probe_log() {
   local path perms owner group mode groups
   # Which file is the primary mail log is the inventory's business, and a name it
-  # does not declare has already been logged there.
+  # does not declare has already been logged there. A log this tool cannot name is
+  # a setting to correct, not a file that is missing.
   if ! path=$(zro_inv_base_path syslog); then
-    printf 'missing'
+    printf 'denied'
     return 0
   fi
+  # The same admission the inventory applies before reading anything, applied here
+  # so that the menu and the search cannot disagree. Without it an inadmissible
+  # override would offer the entry and then refuse the search — the operator would
+  # be told the operation is not on the allowlist, about a path.
+  if ! zro_inv_path_ok "$path"; then
+    zro_log error "denied, log path outside the permitted set: $path"
+    printf 'denied'
+    return 0
+  fi
+  # Absent, or in a directory this tool cannot look into: the two are
+  # indistinguishable from here, and the screen says so rather than picking one.
   if [ ! -f "$path" ]; then
-    zro_log warn "delivery trace unavailable: no primary mail log at $path"
+    zro_log warn "delivery trace unavailable: no primary mail log found at $path"
     printf 'missing'
     return 0
   fi
@@ -237,11 +299,26 @@ zro_cap_probe_log() {
 # Both probes, as the one question a menu asks: can a delivery trace answer
 # anything at all on this host?
 #
-# Two probes and one question, because the menu entry they gate is one entry. Which
-# of them refused is what the operator is told afterwards, and that is the screen's
-# business rather than this module's.
+# Two probes and one question, because the menu entry they gate is one entry. An
+# AND, so the order it reads them in decides nothing — which of them refused is
+# answered once, below.
 zro_cap_trace_available() {
   zro_cap_trace_bin || return 1
   zro_cap_trace_log || return 1
   return 0
+}
+
+# WHY it cannot, in one word: 'ok', 'nobin', or whichever reason the log probe gave.
+#
+# The one place the two probes are ranked. A screen that asked each probe again to
+# find out which refused would be a second ranking, and the pair that drifted would
+# be the mark on the menu entry and the message behind it — an entry marked for one
+# cause and explained by another. Both come from here instead.
+#
+# A missing binary is reported first because it is the repair that has to happen
+# first: on a host with neither, repairing the log permission changes nothing until
+# the binary is there.
+zro_cap_trace_reason() {
+  zro_cap_trace_bin || { printf 'nobin'; return 0; }
+  zro_cap_trace_log_reason
 }

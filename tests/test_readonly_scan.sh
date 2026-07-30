@@ -325,14 +325,31 @@ while IFS= read -r probe; do
   [ -n "$probe" ] || continue
   bin=$(printf '%s' "$probe" | awk '{print $2}')
   t1=$(printf '%s' "$probe" | awk '{print $3}')
-  case $t1 in
-    '"'*|'$'*) continue ;;          # dynamic: not decidable here
-  esac
   printf '%s\n' "$allow" | grep -qxF -- "$bin:$t1" || unapproved="$unapproved [$bin:$t1]"
 done <<EOF
 $probes
 EOF
 assert_eq "$unapproved" ""
+
+it "and every capability probe is one that reader could resolve"
+# The exemption is only as good as the extractor above, and a probe handing the
+# query a variable would be invisible to it: dropped from the rule below, matched by
+# nothing above, approved by neither. So a call site this reader cannot resolve fails
+# the build HERE rather than passing quietly — which is the same friction CLAUDE.md
+# asks for when a new capability is added.
+#
+# Resolvable means both tokens are literal: a binary name, then a subcommand or a
+# flag. Anything quoted or expanded fails the pattern.
+unresolved=""
+while IFS= read -r line; do
+  [ -n "$line" ] || continue
+  printf '%s' "$line" \
+    | grep -qE 'zro_cap_op_available[[:space:]]+[A-Za-z0-9_-]+[[:space:]]+[A-Za-z0-9_-]' \
+    || unresolved="$unresolved [$line]"
+done <<EOF
+$(printf '%s\n' "$raw_code" | grep 'zro_cap_op_available[[:space:]]')
+EOF
+assert_eq "$unresolved" ""
 
 it "no module calls a Zimbra binary outside the gate"
 # Capability probes are dropped along with the gate's own call sites, and for the

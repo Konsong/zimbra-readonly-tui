@@ -111,6 +111,13 @@ it "and a reader with no name is never a group member either"
 assert_fail zro_cap_mode_readable zimbra zimbra 644 '' "zimbra"
 assert_fail zro_cap_mode_readable '' '' 644 '' ""
 
+it "a group nobody could name decides nothing"
+# A file whose group stat could not name and an account in no groups at all must
+# not match each other on the empty string: the other bits decide instead, which is
+# the class that really applies.
+assert_fail zro_cap_mode_readable syslog '' 040 zimbra ""
+assert_ok   zro_cap_mode_readable syslog '' 044 zimbra ""
+
 it "the tracing binary is probed as the operation the allowlist names"
 zro_cap_reset
 assert_ok zro_cap_trace_bin
@@ -164,15 +171,29 @@ zro_cap_trace_log 2>/dev/null
 assert_contains "$(cat "$ZRO_MOCK_LOG")" "$(printf 'id\t-Gn\tzimbra')"
 
 it "a log that is not there is missing, not unreadable"
-# Different causes, different repairs: a mode is not the problem when the file does
-# not exist, and a message naming the permission repair tool would send an operator
+# Different causes, different repairs: a mode is not the problem when the file is not
+# found, and a message naming the permission repair tool would send an operator
 # looking for one.
 zro_cap_reset
 ZRO_SYSLOG_FILE=/nonexistent/zimbra.log assert_fail zro_cap_trace_log
 zro_cap_reset
 ZRO_SYSLOG_FILE=/nonexistent/zimbra.log assert_out_eq "missing" zro_cap_trace_log_reason
+
+it "a log this tool would refuse to read is denied, not missing"
+# The probe applies the inventory's own admission, so the menu and the search cannot
+# disagree: without it an inadmissible path would offer the entry and then refuse the
+# search, telling the operator an operation is not on the allowlist — about a path.
+# A setting to correct is not a file that is absent, and not a mode to repair.
 zro_cap_reset
-ZRO_SYSLOG_FILE="" assert_out_eq "missing" zro_cap_trace_log_reason
+ZRO_SYSLOG_FILE="$LOGTREE/zimbra log.txt" assert_out_eq "denied" zro_cap_trace_log_reason
+zro_cap_reset
+ZRO_SYSLOG_FILE="relative/zimbra.log" assert_out_eq "denied" zro_cap_trace_log_reason
+zro_cap_reset
+ZRO_SYSLOG_FILE="$LOGTREE/../zimbra.log" assert_out_eq "denied" zro_cap_trace_log_reason
+# A log root nobody configured is the same kind of defect, and reaches the same
+# screen: there is no file to name, so there is nothing to say about its mode.
+zro_cap_reset
+ZRO_SYSLOG_FILE="" assert_out_eq "denied" zro_cap_trace_log_reason
 
 it "the reason is asked for the probe, never for an empty cache"
 # A caller that asks why before asking whether must not be told nothing is wrong.
@@ -186,6 +207,42 @@ ZRO_CAP_FORCE_TRACE_LOG=ok assert_ok zro_cap_trace_log
 ZRO_CAP_FORCE_TRACE_LOG=unreadable assert_fail zro_cap_trace_log
 ZRO_CAP_FORCE_TRACE_LOG=unreadable assert_out_eq "unreadable" zro_cap_trace_log_reason
 ZRO_CAP_FORCE_TRACE_LOG=missing assert_out_eq "missing" zro_cap_trace_log_reason
+ZRO_CAP_FORCE_TRACE_LOG=denied assert_out_eq "denied" zro_cap_trace_log_reason
+
+it "a forced answer nobody recognises is a defect, not a diagnosis"
+# Echoing it verbatim would let a typo pick a screen — and the screen it picks names
+# a repair for a cause nobody diagnosed. Refused as the strictest answer there is, so
+# a mistyped override can only ever hide the feature.
+zro_cap_reset
+ZRO_CAP_FORCE_TRACE_LOG=OK assert_fail zro_cap_trace_log
+ZRO_CAP_FORCE_TRACE_LOG=OK assert_out_eq "unreadable" zro_cap_trace_log_reason
+captured=$(ZRO_CAP_FORCE_TRACE_LOG=OK zro_cap_trace_log_reason 2>&1 >/dev/null)
+assert_contains "$captured" "ZRO_CAP_FORCE_TRACE_LOG=OK"
+ZRO_CAP_FORCE_TRACE_BIN=YES assert_fail zro_cap_trace_bin
+captured=$(ZRO_CAP_FORCE_TRACE_BIN=YES zro_cap_trace_bin 2>&1)
+assert_contains "$captured" "ZRO_CAP_FORCE_TRACE_BIN=YES"
+# And neither defect was remembered as an answer about this host.
+zro_cap_reset
+chmod 644 -- "$SYS"
+assert_ok zro_cap_trace_log
+
+it "which probe refused is answered once, and the binary comes first"
+# The one place the two probes are ranked. A screen that asked each probe again to
+# find out which refused would rank them a second time, and the pair that drifted
+# would be the mark on the menu entry and the message behind it.
+zro_cap_reset
+assert_out_eq "ok" zro_cap_trace_reason
+zro_cap_reset
+ZRO_CAP_FORCE_TRACE_BIN=no assert_out_eq "nobin" zro_cap_trace_reason
+zro_cap_reset
+ZRO_CAP_FORCE_TRACE_LOG=unreadable assert_out_eq "unreadable" zro_cap_trace_reason
+zro_cap_reset
+ZRO_CAP_FORCE_TRACE_LOG=missing assert_out_eq "missing" zro_cap_trace_reason
+# Neither on this host: the binary is named, because repairing the log permission
+# changes nothing until the binary is there.
+zro_cap_reset
+ZRO_CAP_FORCE_TRACE_BIN=no ZRO_CAP_FORCE_TRACE_LOG=unreadable \
+  assert_out_eq "nobin" zro_cap_trace_reason
 
 it "a delivery trace needs both probes, asked as one question"
 chmod 644 -- "$SYS"

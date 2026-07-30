@@ -165,9 +165,20 @@ workaround. The answer is the same whether you started the tool as `zimbra` or a
 `root`.
 
 The probe reads the file's owner, group and mode, and the groups the `zimbra`
-account belongs to. It does **not** check whether every directory on the way to the
-file can be traversed, so that one case still arrives as `Log okunamiyor` from
-inside the screen — which names the same repair.
+account belongs to. **Two things it cannot see**, both recorded rather than
+compensated for — seeing either means asking the kernel *as* that account, and the
+command that would do it needs `root` when the tool is already running as `zimbra`,
+which is the per-identity branch this design deliberately does without:
+
+- **A directory on the way to the file that cannot be traversed.** The file then
+  reads as *not found*, so the screen says so and names both possibilities — the
+  file may be absent, or its directory may be closed to the account. It does not
+  claim the file does not exist.
+- **A POSIX ACL granting `zimbra` read on a file whose mode refuses it.** That reads
+  as unreadable, so a host where tracing would in fact work is marked unavailable.
+  The screen names the file and says the decision was made from ownership and mode
+  alone, so an operator who has set an ACL can see what was judged. `zmfixperms`
+  would replace such an ACL rather than preserve it.
 
 Both answers are remembered for the session. A binary removed, or a permission
 repaired, while the tool is open is not noticed until it is restarted. Nothing is

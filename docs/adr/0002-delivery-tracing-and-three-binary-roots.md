@@ -126,6 +126,29 @@ edited.
 production default cannot be exercised by the suite at all, since no test can
 create `/var/log/zimbra.log`.
 
+**The readability probe asks `id` a second question, and that stays outside the
+allowlist.** Deciding whether `zimbra` may read a file means reading the file's
+owner, group and mode — `stat`, which the inventory already runs — and the groups
+that account belongs to, which is `id -Gn zimbra` beside the `id -un` the identity
+decision already runs. Both sit on the plumbing side of the line drawn against
+`tail` and `gzip` above: what makes those two *operations* is that they read the
+content an operator asked about, and this probe runs **before** an operator has
+chosen anything, to decide whether the entry is offered at all. `id` is also not a
+new command — this adds a flag to a binary the tool already invokes and already
+documents. The probe reads no log content, reaches no Zimbra binary and opens no
+mailbox, so nothing about it belongs to the set the allowlist exists to enumerate.
+
+**What the probe cannot see, it declines to claim.** Judging by name and mode rather
+than by access is what keeps the answer identical under both identities, and it costs
+two blind spots: a directory the account cannot traverse (the file reads as *not
+found*, and the screen names both possibilities rather than asserting the file is
+absent) and a POSIX ACL widening a mode (the log reads as unreadable, so a working
+host is marked unavailable). Seeing either means asking the kernel as that account,
+and the one command that would — `runuser -u zimbra -- test -r` — needs `root` when
+the tool is already running as `zimbra`. That is the per-binary branch inside the
+identity decision this ADR rejected above, so both blind spots are recorded in
+`docs/operations.md` instead.
+
 **The table view is blocked on a capture, and ships without it.** Real
 `zmmsgtrace` output must be captured from a server before any column is parsed.
 This is the same class of debt as M2's `gis` experiment: hours of server work, off

@@ -584,25 +584,46 @@ queue "2" "__CANCEL__" "__CANCEL__"
 ZRO_CAP_FORCE_TRACE_LOG=unreadable zro_menu_main
 transcript=$(cat "$ZRO_UI_OUT")
 assert_contains "$transcript" "KULLANILAMAZ"
-# The cause: the account every command runs as cannot read it. Not that the tool is
-# running as the wrong user, and not that a search found nothing.
-assert_contains "$transcript" "zimbra"
-assert_contains "$transcript" "okunamiyor"
+# The cause, as a whole phrase: the account every command runs as cannot read it.
+# The bare account name would not do — every path in this fixture tree ends in
+# zimbra.log, so a case asserting on it would pass on a message that never named
+# the account at all.
+assert_contains "$transcript" "zimbra kullanicisi tarafindan okunamiyor"
+# And not the neighbouring readings: the tool is not running as the wrong user, and
+# a search did not come back empty.
+assert_not_contains "$transcript" "Sonuc yok"
 # The repair, by name, and the file it is about.
 assert_contains "$transcript" "zmfixperms"
 assert_contains "$transcript" "$SYS"
+# The limit of what the probe read, said where the operator can act on it.
+assert_contains "$transcript" "ACL"
 assert_not_contains "$transcript" "MENU Teslim takibi"
 assert_not_contains "$(cat "$ZRO_MOCK_LOG")" "zmmsgtrace"
 
 it "a log that is not there is not reported as a permission to repair"
-# Different cause, different repair: naming the permission tool for a file that
-# does not exist sends the operator looking for a mode that is not the problem.
+# Different cause, different repair: naming the permission tool for a file that was
+# not found sends the operator looking for a mode that is not the problem.
 queue "2" "__CANCEL__" "__CANCEL__"
 : >"$ZRO_UI_OUT"
 ZRO_CAP_FORCE_TRACE_LOG=missing zro_menu_main
 transcript=$(cat "$ZRO_UI_OUT")
 assert_contains "$transcript" "bulunamadi"
 assert_contains "$transcript" "$SYS"
+assert_not_contains "$transcript" "zmfixperms"
+# Both readings of a file that was not found, because from here they cannot be told
+# apart: it may be absent, or its directory may be closed to the account. Claiming
+# the first would send an operator to the syslog service over a directory mode.
+assert_contains "$transcript" "dizin"
+
+it "a log path this tool refuses to read names the setting, not the server"
+# The probe applies the inventory's own admission, so this arrives as the
+# configuration error it is rather than as an allowlist refusal about a path.
+queue "2" "__CANCEL__" "__CANCEL__"
+: >"$ZRO_UI_OUT"
+ZRO_CAP_FORCE_TRACE_LOG=denied zro_menu_main
+transcript=$(cat "$ZRO_UI_OUT")
+assert_contains "$transcript" "KULLANILAMAZ"
+assert_contains "$transcript" "ZRO_SYSLOG_FILE"
 assert_not_contains "$transcript" "zmfixperms"
 
 it "the entry carries no such mark when both probes are satisfied"

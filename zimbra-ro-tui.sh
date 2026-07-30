@@ -342,58 +342,84 @@ Her sorgu birkac saniye surebilir."
 
 # Why a delivery trace cannot answer on this host, in terms that name the repair.
 #
-# WHICH PROBE REFUSED DECIDES WHAT IS SAID, because the two repairs have nothing in
-# common: a binary this build does not ship is not something a permissions tool can
-# fix, and a log that is not there is not a mode. One message naming both causes
-# would send half its readers to the wrong place — and an operator who repairs the
-# wrong thing concludes the tool is broken.
+# ONE MESSAGE PER CAUSE, because the repairs have nothing in common: a binary this
+# build does not ship is not something a permissions tool can fix, a log that is not
+# there is not a mode, and a path this tool refuses to read is a setting. One message
+# naming every cause would send most of its readers to the wrong place — and an
+# operator who repairs the wrong thing concludes the tool is broken.
 #
-# Reached from the trace screen rather than from the menu that marks its entry, so
-# that the mark and the explanation cannot disagree about which probe refused — and
-# only after zro_cap_trace_available has already refused, which is what makes one of
-# the two branches below always the right one.
+# WHICH cause it is comes from the capability module, in one word, and is not
+# re-decided here. That is what keeps the mark on the menu entry and the explanation
+# behind it from disagreeing.
+#
+# Unavailability is reported as a SCREEN rather than as an exit code. Every menu
+# function here returns 0 to the loop above it, and the code for this condition —
+# $ZRO_E_NOCAP — is what the exec gate returns when a command is reached anyway,
+# which is the path that has a caller to report to. What the shared reporter would
+# say for it is the bare 'this operation does not exist on this server' that this
+# whole ticket exists to replace.
 zro_delivery_unavailable() {
-  if ! zro_cap_trace_bin; then
-    zro_ui_msgbox "Kullanilamaz" \
-"Teslim takibi bu sunucuda kullanilamiyor.
-
-Takip programi (zmmsgtrace) bu kurulumda bulunamadi. Bu bir surum veya paketleme
-farkidir; izinlerle ilgisi yoktur ve izin onarimi bunu duzeltmez.
-
-Kontrol edin: zmmsgtrace programi libexec dizininde kurulu mu."
-    return 0
-  fi
-
-  # The file the operator has to go and look at. Named on both messages below,
-  # because neither cause can be repaired without knowing which file it is about.
+  # The file the operator has to go and look at. Named on every message below that
+  # is about a file, because none of those causes can be repaired without knowing
+  # which one it is.
   local path
   path=$(zro_inv_base_path syslog) || path="(bilinmiyor)"
 
-  if [ "$(zro_cap_trace_log_reason)" = missing ]; then
-    zro_ui_msgbox "Kullanilamaz" \
-"Teslim takibi bu sunucuda kullanilamiyor.
+  case $(zro_cap_trace_reason) in
+    nobin)
+      zro_delivery_unavailable_box \
+"Takip programi (zmmsgtrace) bu kurulumda bulunamadi. Bu bir surum veya paketleme
+farkidir; izinlerle ilgisi yoktur ve izin onarimi bunu duzeltmez.
 
-Ana mail logu bulunamadi. Bu bir izin sorunu DEGILDIR: dosyanin kendisi yok.
+Kontrol edin: zmmsgtrace programi libexec dizininde kurulu mu." ;;
+
+    denied)
+      zro_delivery_unavailable_box \
+"Ana mail logunun yolu bu aracin okumayi kabul ettigi bicimde degil. Yol mutlak
+olmali ve yalnizca [A-Za-z0-9._/-] karakterlerini icermelidir. Bu, sunucudaki bir
+bozukluk degil, bir ayar hatasidir.
+
+Yol: $path
+
+Kontrol edin: ZRO_SYSLOG_FILE ayari." ;;
+
+    missing)
+      zro_delivery_unavailable_box \
+"Ana mail logu bulunamadi. Bu bir izin sorunu DEGILDIR.
 
 Beklenen dosya: $path
 
-Kontrol edin: syslog servisi calisiyor mu ve Zimbra kayitlarini bu dosyaya
-yaziyor mu."
-    return 0
-  fi
+Iki olasilik var ve buradan ayirt edilemez: dosya hic yok, ya da bulundugu dizin
+zimbra kullanicisi tarafindan acilamiyor.
 
-  zro_ui_msgbox "Kullanilamaz" \
-"Teslim takibi bu sunucuda kullanilamiyor.
+Kontrol edin: syslog servisi calisiyor mu, Zimbra kayitlarini bu dosyaya yaziyor
+mu, ve dosyanin dizini zimbra kullanicisi tarafindan gorulebiliyor mu." ;;
 
-Ana mail logu zimbra kullanicisi tarafindan okunamiyor. Bu araci root ile
+    *)
+      zro_delivery_unavailable_box \
+"Ana mail logu zimbra kullanicisi tarafindan okunamiyor. Bu araci root ile
 baslatmis olsaniz bile her komut zimbra kullanicisi olarak calisir; bu nedenle
 log taranamaz. Yetki YUKSELTILMEZ, sorun bildirilir: ayni bozukluk Zimbra'nin
 kendi araclarini da etkiler, dolayisiyla dogru sonuc onarmaktir.
 
 Dosya: $path
+Bu karar dosyanin sahipligi ve izin bitleri okunarak verilir; erisim listeleri
+(ACL) hesaba katilmaz.
 
 Onarim: bu dosya zimbra kullanicisi tarafindan okunabilir olmalidir. Sahiplik
-veya izinler bozulmussa: zmfixperms"
+veya izinler bozulmussa: zmfixperms" ;;
+  esac
+}
+
+# The sentence every one of those messages opens with, written once. Each branch
+# above says only what is true of its own cause; what they have in common is that
+# the operator cannot trace on this host, and four copies of that line is four
+# chances for one of them to say something slightly different.
+zro_delivery_unavailable_box() {
+  zro_ui_msgbox "Kullanilamaz" \
+"Teslim takibi bu sunucuda kullanilamiyor.
+
+${1-}"
 }
 
 # The delivery trace: whether a message reached the server, answered from the
