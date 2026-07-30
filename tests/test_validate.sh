@@ -118,6 +118,63 @@ else
   zro_t_pass
 fi
 
+it "accepts a date and time an operator would type"
+assert_ok zro_validate_datetime '2026-07-28 08:00'
+assert_ok zro_validate_datetime '2026-07-28 08:00:30'
+assert_ok zro_validate_datetime '2026-07-28 00:00:00'
+assert_ok zro_validate_datetime '2026-07-28 23:59:59'
+# '08' is a valid hour and an invalid octal number. Without base-10 arithmetic
+# this function refuses eight o'clock.
+assert_ok zro_validate_datetime '2026-08-09 08:09'
+assert_ok zro_validate_datetime '2026-01-01 00:08:09'
+
+it "requires the time part rather than guessing it"
+# A bare date on both ends is a window of zero width: every log the operator
+# asked for is read and nothing is found, which reads as an answer it has not
+# earned. The whole-day case is what the presets are for.
+assert_status "$ZRO_E_INPUT" zro_validate_datetime '2026-07-28'
+assert_status "$ZRO_E_INPUT" zro_validate_datetime '2026-07'
+
+it "rejects a value outside the calendar's own ranges"
+assert_status "$ZRO_E_INPUT" zro_validate_datetime '2026-13-01 08:00'
+assert_status "$ZRO_E_INPUT" zro_validate_datetime '2026-00-01 08:00'
+assert_status "$ZRO_E_INPUT" zro_validate_datetime '2026-07-32 08:00'
+assert_status "$ZRO_E_INPUT" zro_validate_datetime '2026-07-00 08:00'
+assert_status "$ZRO_E_INPUT" zro_validate_datetime '2026-07-28 24:00'
+assert_status "$ZRO_E_INPUT" zro_validate_datetime '2026-07-28 08:60'
+assert_status "$ZRO_E_INPUT" zro_validate_datetime '2026-07-28 08:00:60'
+# Before syslog files exist to hold it.
+assert_status "$ZRO_E_INPUT" zro_validate_datetime '1969-12-31 23:59'
+
+it "rejects a malformed date and time"
+assert_status "$ZRO_E_INPUT" zro_validate_datetime ''
+assert_status "$ZRO_E_INPUT" zro_validate_datetime
+assert_status "$ZRO_E_INPUT" zro_validate_datetime 'dun'
+assert_status "$ZRO_E_INPUT" zro_validate_datetime 'yesterday'
+assert_status "$ZRO_E_INPUT" zro_validate_datetime 'now'
+assert_status "$ZRO_E_INPUT" zro_validate_datetime '26-07-28 08:00'
+assert_status "$ZRO_E_INPUT" zro_validate_datetime '2026-7-28 08:00'
+assert_status "$ZRO_E_INPUT" zro_validate_datetime '2026/07/28 08:00'
+assert_status "$ZRO_E_INPUT" zro_validate_datetime '2026-07-28T08:00'
+assert_status "$ZRO_E_INPUT" zro_validate_datetime '2026-07-28  08:00'
+assert_status "$ZRO_E_INPUT" zro_validate_datetime ' 2026-07-28 08:00'
+assert_status "$ZRO_E_INPUT" zro_validate_datetime '2026-07-28 08:00 '
+assert_status "$ZRO_E_INPUT" zro_validate_datetime '2026-07-28 08:00:30:40'
+assert_status "$ZRO_E_INPUT" zro_validate_datetime '20260728080000'
+
+it "rejects anything a shell or a command line would read as more than a value"
+# The explicit range is the only path that hands operator text to the clock, so
+# this table is the one standing between a prompt and 'date -d'.
+assert_status "$ZRO_E_INPUT" zro_validate_datetime '2026-07-28 08:00; id'
+# shellcheck disable=SC2016
+assert_status "$ZRO_E_INPUT" zro_validate_datetime '$(id)'
+# shellcheck disable=SC2016
+assert_status "$ZRO_E_INPUT" zro_validate_datetime '`id`'
+assert_status "$ZRO_E_INPUT" zro_validate_datetime '2026-07-28 08:00 | cat'
+assert_status "$ZRO_E_INPUT" zro_validate_datetime '-2026-07-28 08:00'
+assert_status "$ZRO_E_INPUT" zro_validate_datetime $'2026-07-28 08:00\n2026-07-29 08:00'
+assert_status "$ZRO_E_INPUT" zro_validate_datetime $'2026-07-28\t08:00'
+
 it "validates bare domains"
 assert_ok zro_validate_domain 'example.com'
 assert_ok zro_validate_domain 'mail.example.co.uk'

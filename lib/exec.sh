@@ -29,10 +29,20 @@ ZRO_LIB_EXEC_LOADED=1
 # is a flag which is the whole operation, so it is approved the same way
 # `zmcontrol -v` is: as a two-token entry, with the operator's already-validated
 # address following as data. Only the recipient filter is listed. The short form
-# `-r`, the sender and message-id filters, and the time and year options are all
-# absent and therefore refused — each is an operation of its own, and an
-# operation arrives with the ticket that exposes it, never because the binary it
-# belongs to was already reachable.
+# `-r`, the sender and message-id filters and the `--debug`, `--nosort` and
+# `--man` flags are all absent and therefore refused — each is an operation of its
+# own, and an operation arrives with the ticket that exposes it, never because the
+# binary it belongs to was already reachable.
+#
+# What follows the filter in an argument vector is DATA, exactly as an account
+# name is data after `zmprov ga`. The arrival window (`--time`), the year
+# (`--year`) and the log file being traced are all computed by this program — from
+# a preset or a validated date, and from the declared log inventory — and none of
+# them is text an operator typed. So they are not listed here, and listing them
+# would be worse than pointless: an entry for `zmmsgtrace:--time` would approve a
+# trace with no filter at all as an operation of its own. The gate still refuses
+# every one of them in the leading position, which is what keeps this list the
+# complete account of what may be run.
 ZRO_ALLOW='
 zmprov:ga
 zmprov:getAccount

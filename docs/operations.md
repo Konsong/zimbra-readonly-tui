@@ -63,7 +63,7 @@ than at startup:
 
 | Message | Meaning | Fix |
 |---|---|---|
-| `Log okunamiyor` (exit 23) | the delivery trace ran but could not open the mail log — usually the syslog file is owned `syslog:adm` because rsyslog created it | `zmfixperms`; the same misconfiguration breaks Zimbra's own tooling, so repairing it is the right outcome rather than reading the log as root |
+| `Log okunamiyor` (exit 23) | a log file the arrival window selected could not be opened, or the window found no log file at all — usually the syslog file is owned `syslog:adm` because rsyslog created it. **Nothing was scanned**, which is not the same answer as "no records" | `zmfixperms`; the same misconfiguration breaks Zimbra's own tooling, so repairing it is the right outcome rather than reading the log as root |
 
 ### Environment overrides
 
@@ -103,8 +103,51 @@ Menu 1, *Hesap ve kota kontrolleri*:
   Accounts with no quota are shown as `sinirsiz` rather than divided by zero.
 - **Dagitim listesi uyelikleri** — the distribution lists the account belongs to.
 
+Menu 2, *Teslim takibi (mail loglari)*:
+
+- **Alici adresine gore izle** — asks for a recipient address and an arrival
+  window, then shows what the mail transfer agent's log says about messages for
+  that address. No mailbox is opened, so this is safe on an account that has
+  never logged in.
+
 Cancel and ESC return to the previous screen from every prompt. Nothing exits
 the tool except the explicit *Cikis* entry.
+
+### The arrival window, and why it says "varis"
+
+The window is offered as four presets — last hour, last 24 hours, yesterday as a
+whole calendar day, last 7 days — plus an explicit range typed as
+`YYYY-MM-DD HH:MM`. The presets compute their bounds in code, so the common
+questions cost no typing and cannot be mistyped; only the explicit range is
+validated as text, and a malformed value is refused rather than repaired.
+
+**The window is compared against the message's arrival time, not its delivery
+time.** A message that arrived at 23:59 and was delivered at 00:02 is found by
+yesterday's window, not by today's. Every screen says so, because reading it the
+other way turns "not in this window" into "never arrived".
+
+You never name a log file. The tool works out which files the window covers from
+their modification times, so you do not have to know that rotation runs in the
+early morning — the file rotated on the 29th holds the 28th's afternoon — or that
+the most recent rotated file is already compressed.
+
+**One invocation of `zmmsgtrace` per file, each with that file's own year.** The
+tool guesses the year once from the local clock, which makes a time-bounded search
+of a rotated log return nothing at all, silently. Deriving it per file removes
+that. One residual is inherent and remains: a file rotated on 1 January carries
+the new year for lines written on 31 December.
+
+**If any file the window selected cannot be read, the whole search is refused**
+with `Log okunamiyor` (exit 23) and no partial report. Finding nothing must never
+be mistaken for nothing having happened; a later release shows what could be read
+together with a banner naming what was skipped.
+
+Timestamps are **local wall clock throughout**, with no timezone or
+daylight-saving arithmetic anywhere — the log lines being read carry neither a
+zone nor a year. A window spanning a daylight-saving change is therefore an hour
+wider or narrower than its label. That is documented rather than corrected: the
+underlying tool has no zone handling either, and compensating on one side of that
+would invent a precision the other side does not have.
 
 ### Last logon is approximate
 
@@ -167,19 +210,28 @@ mapping still names the `bin` path and it is stale. That is why each allowlisted
 binary declares the directory it resolves under instead of sharing one root.
 
 Only the recipient filter is listed. The short form `-r`, the sender and
-message-id filters and the `--time` and `--year` options are absent and therefore
-refused: each is an operation of its own and arrives with the ticket that exposes
-it, not because the binary is already reachable.
+message-id filters and the `--debug`, `--nosort` and `--man` flags are absent and
+therefore refused: each is an operation of its own and arrives with the ticket
+that exposes it, not because the binary is already reachable.
+
+The arrival window (`--time`), the year (`--year`) and the log file follow the
+filter as **data**, exactly as an account name follows `zmprov ga`. All three are
+computed by this tool — from a preset or a validated date, and from the declared
+log inventory — and none is text an operator typed. They are not listed, and
+listing them would be worse than pointless: an entry for `zmmsgtrace:--time` would
+approve a trace with no filter at all. Put any of them in the leading position and
+the gate refuses it.
 
 Every filter that binary takes is a **Perl regular expression**, so the address is
 escaped before it is passed. Without that, `ali+fatura@example.com` — a valid
 address — would be read as a pattern and fail to match itself, reporting no
 delivery record for a message that has one.
 
-The trace currently reads only the log `zmmsgtrace` defaults to, so it covers
-today's lines and not the rotated files behind them. Both delivery screens say so:
-finding nothing there is not evidence that nothing arrived. Nothing in the trace
-opens a mailbox, so the existence gate in section 5 is not involved.
+The trace reads the log files the operator's arrival window covers — the file
+being written and the rotated files behind it — one invocation per file. See *The
+arrival window* in section 3 for what that means when a file cannot be read.
+Nothing in the trace opens a mailbox, so the existence gate in section 5 is not
+involved.
 
 `zmprov gmi` was on this list and has been removed — it creates mailboxes. See
 section 5.

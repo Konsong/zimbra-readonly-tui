@@ -184,14 +184,9 @@ ZRO_INV_OPEN_END=99999999999
 
 ZRO_INV_TAB=$'\t'
 
-# The year a timestamp falls in, as local wall clock.
-#
-# Behind a variable like every other binary path, and for the reason CLAUDE.md
-# gives: that is what makes it mockable. lib/core.sh calls date bare, but that
-# call only stamps a log line, while this one produces a value that reaches a
-# command line and decides whether a trace finds anything at all.
-ZRO_DATE_BIN="${ZRO_DATE_BIN:-$(zro_first_existing /usr/bin/date /bin/date)}"
-
+# The year a timestamp falls in, as local wall clock. $ZRO_DATE_BIN is declared
+# in lib/core.sh, which says why the clock sits behind a variable at all; the
+# arrival window reads the same one.
 zro_inv_year() {
   [ -n "$ZRO_DATE_BIN" ] || return 1
   "$ZRO_DATE_BIN" -d "@${1-}" '+%Y' 2>/dev/null

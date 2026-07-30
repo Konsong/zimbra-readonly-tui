@@ -52,15 +52,58 @@ zro_trace_fail_code() {
   printf '%s' "$rc"
 }
 
-# Traces delivery for one recipient address in the current primary log.
+# The tracer's own time bound, as its POD documents it: YYYYMM[DD[HH[MM[SS]]]],
+# from docs/research/2026-07-29-zimbra-cli-read-only-reference.md §B.11. Written
+# out to full precision every time, so that no field is left to a default nobody
+# in this project has read.
 #
-# The arrival window, the rotated files behind it and the other filters the tool
-# accepts all belong to later tickets. Here the tool reads the single file it
-# defaults to, which is why the header below says so: an operator must never read
-# "nothing found" as "nothing arrived" when only today's log was searched.
+# Local wall clock, like everything else here. The tracer compares this against a
+# timestamp it built from a syslog line carrying no zone and the year we hand it,
+# so any conversion on this side would be inventing a precision the other side
+# does not have.
+zro_trace_stamp() {
+  local ts=${1-} out
+  case $ts in ''|*[!0-9]*) return "$ZRO_E_INPUT" ;; esac
+  [ -n "$ZRO_DATE_BIN" ] || return "$ZRO_E_UNAVAILABLE"
+  out=$("$ZRO_DATE_BIN" -d "@$ts" '+%Y%m%d%H%M%S' 2>/dev/null) || return "$ZRO_E_UNAVAILABLE"
+  # Fourteen digits or nothing. A short or empty bound would be read by the
+  # tracer as a different, wider window, and the trace would answer a question
+  # the operator did not ask.
+  case $out in
+    [0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]) ;;
+    *) return "$ZRO_E_UNAVAILABLE" ;;
+  esac
+  printf '%s' "$out"
+}
+
+# Traces delivery for one recipient address inside an arrival window.
+#
+#   $1  recipient address, as the operator typed it
+#   $2  window start, an absolute local timestamp in seconds
+#   $3  window end, the same
+#
+# ONE INVOCATION PER SELECTED FILE, each carrying the year derived from that
+# file's own modification time. The tracer guesses the year once, globally, from
+# the local clock, so a time-bounded search of a rotated log otherwise returns
+# nothing at all — silently. And because it re-initialises its parser state per
+# file, handing it several files at once never chained a message across a rotation
+# boundary in the first place: splitting the invocation costs no capability and
+# removes the year defect outright.
+#
+# A SELECTED FILE THAT CANNOT BE READ REFUSES THE WHOLE OPERATION. Strict, and
+# never silent: a report assembled from two of three files reads exactly like a
+# complete answer, and an operator who concludes from it that a message never
+# arrived goes on to make the wrong decision. The next ticket replaces this with a
+# partial scan, which discloses the skipped files instead of refusing — the same
+# rule, kept honest at less cost.
 zro_trace_recipient() {
-  local addr=${1-}
+  local addr=${1-} ws=${2-} we=${3-}
   zro_validate_email "$addr" || return "$ZRO_E_INPUT"
+  case $ws in ''|*[!0-9]*) return "$ZRO_E_INPUT" ;; esac
+  case $we in ''|*[!0-9]*) return "$ZRO_E_INPUT" ;; esac
+  # An end before its start is a caller defect. Searching the empty window it
+  # describes would answer "nothing arrived" to a question nobody asked.
+  [ "$ws" -le "$we" ] || return "$ZRO_E_INPUT"
 
   # Third escaping layer. The gate already keeps this out of a shell, and the
   # validator has already refused anything that is not an address — but every
@@ -74,34 +117,98 @@ zro_trace_recipient() {
   # an address that is a substring of another can pull in a neighbour's message,
   # and the report shown below names every recipient it matched. Anchoring waits
   # on the same capture as the table view.
-  local pattern
+  local pattern from to
   pattern=$(zro_regex_quote "$addr")
+  from=$(zro_trace_stamp "$ws") || return "$ZRO_E_UNAVAILABLE"
+  to=$(zro_trace_stamp "$we") || return "$ZRO_E_UNAVAILABLE"
 
-  local err out rc=0
-  err=$(zro_tmpfile) || return "$ZRO_E_UNAVAILABLE"
-  out=$(zro_exec zmmsgtrace --recipient "$pattern" 2>"$err") || rc=$?
-  if [ "$rc" -ne 0 ]; then
-    # Whatever the tool said, so an unreadable log reaches the operator as its
-    # own cause rather than as a bare exit code.
-    zro_set_error "$(head -c 500 -- "$err" 2>/dev/null)"
-    local mapped
-    mapped=$(zro_trace_fail_code "$err" "$rc")
-    rm -f -- "$err"
-    return "$mapped"
+  # Which files the window covers. The syslog family only: the tracer parses
+  # postfix and amavis lines, and those land in no other log in the inventory.
+  #
+  # Selection is what turns the window into a file list, and it is pure — the
+  # off-by-one that rotation's early-morning schedule invites is checked in
+  # tests/test_inventory.sh without a filesystem, not here.
+  local selected rc=0
+  selected=$(zro_inv_discover syslog | zro_inv_select "$ws" "$we") || rc=$?
+  # Passed through rather than flattened: a name the inventory does not declare
+  # and a root that fails admission are defects in this program, and each has
+  # already been logged where it was found.
+  [ "$rc" -eq 0 ] || return "$rc"
+
+  if [ -z "$selected" ]; then
+    # Every window intersects something as long as one file exists — the oldest
+    # file in a family has no lower bound and the newest no upper one — so an
+    # empty selection means the inventory found no file at all. That is a log
+    # this tool could not read, not a window with nothing in it, and answering
+    # "no records" here would be exactly the ambiguity this feature exists to
+    # remove. The ticket after next probes this before the menu entry is offered.
+    zro_log error "no log file to trace: the inventory found none for $(zro_inv_base_path syslog)"
+    return "$ZRO_E_NO_LOG"
   fi
+
+  local err out mapped line year path
+  local bodies='' scanned='' total=0 count files=0
+  err=$(zro_tmpfile) || return "$ZRO_E_UNAVAILABLE"
+  while IFS= read -r line; do
+    [ -n "$line" ] || continue
+    # The shape zro_inv_select emits: the year it derived, then the path.
+    year=${line%%"$ZRO_INV_TAB"*}
+    path=${line#*"$ZRO_INV_TAB"}
+    files=$((files + 1))
+    scanned="$scanned
+                 $path"
+
+    rc=0
+    : >"$err"
+    # The filter comes first, because it is the operation the allowlist approves;
+    # the window, the year and the file follow it as this program's own arguments.
+    # The path needs no '--' before it: nothing enters the inventory that does not
+    # begin with '/'.
+    #
+    # stdin is closed for the child. This loop reads the selection from a
+    # heredoc, and a program that read from it would consume the files it has not
+    # been asked about yet.
+    out=$(zro_exec zmmsgtrace --recipient "$pattern" \
+            --time "$from,$to" --year "$year" "$path" \
+            2>"$err" </dev/null) || rc=$?
+    if [ "$rc" -ne 0 ]; then
+      # Whatever the tool said, so an unreadable log reaches the operator as its
+      # own cause rather than as a bare exit code.
+      zro_set_error "$(head -c 500 -- "$err" 2>/dev/null)"
+      mapped=$(zro_trace_fail_code "$err" "$rc")
+      rm -f -- "$err"
+      # Nothing has been printed yet, which is the point: the refusal above is
+      # only a refusal if no half-answer escapes with it.
+      return "$mapped"
+    fi
+
+    count=$(zro_trace_message_count "$out")
+    total=$((total + count))
+    # Each file's report is rendered as it arrived, under a line naming the file
+    # it came from. That heading is not decoration: the tracer re-initialises per
+    # file, so a message whose hops straddle a rotation is reported as fragments,
+    # and an operator who cannot see which file a fragment came from has no way
+    # to know that is what they are looking at.
+    bodies="$bodies
+----- $path -----
+$out
+"
+  done <<EOF
+$selected
+EOF
   rm -f -- "$err"
   zro_clear_error
 
-  local count
-  count=$(zro_trace_message_count "$out")
-  [ "$count" -gt 0 ] || return "$ZRO_E_NO_RESULT"
+  [ "$total" -gt 0 ] || return "$ZRO_E_NO_RESULT"
 
   printf 'Alici          : %s\n' "$addr"
-  printf 'Bulunan ileti  : %s\n' "$count"
-  printf 'Taranan log    : guncel birincil mail logu\n'
-  printf '                 (rotasyona girmis eski loglar bu surumde taranmiyor)\n'
-  printf '\n'
+  printf 'Varis araligi  : %s - %s\n' "$(zro_win_human "$ws")" "$(zro_win_human "$we")"
+  printf '                 (aralik iletinin sunucuya VARIS zamanina gore\n'
+  printf '                  uygulanir; aralik oncesinde varip aralik icinde\n'
+  printf '                  teslim edilen bir ileti bu listede yer almaz)\n'
+  printf 'Bulunan ileti  : %s\n' "$total"
+  printf 'Taranan log    : %s dosya%s\n' "$files" "$scanned"
   # Unmodified, on purpose: what follows is what the server said. Reformatting it
   # would risk dropping something nobody has looked at yet.
-  printf '%s\n' "$out"
+  printf '%s\n' "$bodies"
 }

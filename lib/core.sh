@@ -58,6 +58,14 @@ zro_first_existing() {
   return 1
 }
 
+# The clock, behind a variable like every other binary path, and for the reason
+# CLAUDE.md gives: that is what makes it mockable. zro_log above calls date bare,
+# because a log line's stamp is only ever read by a human. Every other date in
+# this program produces a value that reaches a command line and decides whether a
+# trace finds anything at all — the year stamped on a rotated log, the bounds of
+# an arrival window — so those go through this.
+ZRO_DATE_BIN="${ZRO_DATE_BIN:-$(zro_first_existing /usr/bin/date /bin/date)}"
+
 # The last underlying failure message, kept in a file rather than a variable.
 # Menu code runs operations inside command substitution, so a variable set in
 # that subshell would never reach the caller — the operator would be left with

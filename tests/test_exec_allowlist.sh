@@ -34,12 +34,30 @@ assert_ok zro_allowed zmmsgtrace --recipient 'ahmet.yilmaz@example.com'
 
 it "refuses every other filter and flag of the tracing binary"
 # Verbatim from the tool's own option list: the short form of each filter, the
-# filters this milestone does not expose, and its non-filter flags.
+# filters this milestone does not expose, and its non-filter flags. The window and
+# year options are in this list too — see the case below for what that does and
+# does not mean.
 for opt in -r --sender -s --id -i --srchost -F --desthost -D --time -t \
            --year --nosort --debug --help --man; do
   assert_fail zro_allowed zmmsgtrace "$opt"
   assert_fail zro_allowed zmmsgtrace "$opt" 'ahmet.yilmaz@example.com'
 done
+
+it "the window and the year ride behind the filter as data, never as operations"
+# The trace hands the gate the approved filter first and then its own arguments:
+# the arrival window, the year derived from the file, and the file itself. Those
+# are data in the same sense an account name is data after `zmprov ga` — computed
+# by this program from a preset or a validated date and from the declared log
+# inventory, never typed by an operator.
+#
+# So the approval is unchanged by their presence...
+assert_ok zro_allowed zmmsgtrace --recipient 'ahmet\.yilmaz@example\.com'
+# ...and refused when one of them is put in front, where it would be the whole
+# operation: a trace with no filter, reading a file nobody approved.
+assert_fail zro_allowed zmmsgtrace --time '20260728000000,20260728235959'
+assert_fail zro_allowed zmmsgtrace --year '2026'
+assert_fail zro_allowed zmmsgtrace /var/log/zimbra.log
+assert_fail zro_allowed zmmsgtrace /var/log/zimbra.log --recipient
 assert_fail zro_allowed zmmsgtrace ''
 assert_fail zro_allowed zmmsgtrace 'recipient'
 assert_fail zro_allowed zmmsgtrace '--recipients'
