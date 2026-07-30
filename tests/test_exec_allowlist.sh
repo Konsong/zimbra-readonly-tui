@@ -23,6 +23,33 @@ for sub in ca ma da dm mm mmr ef df createAccount modifyAccount deleteAccount \
   assert_fail zro_allowed zmmailbox "$sub"
 done
 
+# The tracing binary takes every filter as a flag, and each flag IS the whole
+# operation — the same shape as `zmcontrol -v`. Only the recipient filter is
+# approved in this milestone, so every other filter the tool accepts must be
+# refused: an operation nobody approved must not be reachable just because the
+# binary is.
+it "approves the recipient filter of the tracing binary and no other filter"
+assert_ok zro_allowed zmmsgtrace --recipient
+assert_ok zro_allowed zmmsgtrace --recipient 'ahmet.yilmaz@example.com'
+
+it "refuses every other filter and flag of the tracing binary"
+# Verbatim from the tool's own option list: the short form of each filter, the
+# filters this milestone does not expose, and its non-filter flags.
+for opt in -r --sender -s --id -i --srchost -F --desthost -D --time -t \
+           --year --nosort --debug --help --man; do
+  assert_fail zro_allowed zmmsgtrace "$opt"
+  assert_fail zro_allowed zmmsgtrace "$opt" 'ahmet.yilmaz@example.com'
+done
+assert_fail zro_allowed zmmsgtrace ''
+assert_fail zro_allowed zmmsgtrace 'recipient'
+assert_fail zro_allowed zmmsgtrace '--recipients'
+
+it "the allowlist names exactly one filter of the tracing binary"
+# Reading the list has to tell a maintainer what tracing can do. A second entry
+# added without a ticket behind it fails here.
+traces=$(zro_allow_entries | grep '^zmmsgtrace:')
+assert_eq "$traces" "zmmsgtrace:--recipient"
+
 it "allows the LDAP-mode reads as three-token prefixes"
 assert_ok zro_allowed zmprov -l ga
 assert_ok zro_allowed zmprov -l gam

@@ -177,8 +177,37 @@ for verb in create modify delete remove move mark flag tag empty import post rec
   assert_not_contains "$allow" "$verb"
 done
 
-it "M1 exposes no zmmailbox operation at all"
+it "the allowlist exposes no mailbox binary at all"
+# Not an M1 statement any more: M5 traces delivery from logs precisely so that
+# the question can be answered without a mailbox, which is what keeps the
+# existence gate out of it.
 assert_not_contains "$allow" "zmmailbox"
+
+# The delivery trace hands the gate a literal filter followed by a variable
+# holding the operator's address. The generic extraction above cannot decide a
+# call site whose token after a flag is dynamic, so the filter is checked here
+# instead: every tracing call site must name a filter the allowlist approves.
+it "every delivery trace call site names an approved filter"
+trace_calls=$(printf '%s\n' "$raw_code" \
+              | grep -oE 'zro_exec[[:space:]]+zmmsgtrace[[:space:]]+[^[:space:]]+' \
+              | sort -u)
+assert_contains "$trace_calls" "zro_exec zmmsgtrace --recipient"
+unapproved=""
+while IFS= read -r call; do
+  [ -n "$call" ] || continue
+  filter=$(printf '%s' "$call" | awk '{print $3}')
+  printf '%s\n' "$allow" | grep -qxF -- "zmmsgtrace:$filter" || \
+    unapproved="$unapproved [$filter]"
+done <<EOF
+$trace_calls
+EOF
+assert_eq "$unapproved" ""
+
+it "the delivery trace names no mailbox binary and no directory command"
+# M5's independence from the existence gate, asserted rather than assumed.
+delivery=$(sed 's/[[:space:]]*#.*$//' "$ZRO_SRC/lib/delivery.sh" | zro_strip_dquotes)
+assert_not_contains "$delivery" "zmmailbox"
+assert_not_contains "$delivery" "zmprov"
 
 # §7.4, reshaped. This was a count: /opt/zimbra had to appear exactly once in the
 # tree. Three binary roots and two log roots break that count, and raising the
@@ -214,6 +243,7 @@ for f in "${SOURCES[@]}"; do
   assert_not_contains "$body" 'zmprov '
   assert_not_contains "$body" 'zmmailbox '
   assert_not_contains "$body" 'zmcontrol '
+  assert_not_contains "$body" 'zmmsgtrace '
 done
 
 it "every library guards against being loaded twice"

@@ -58,6 +58,13 @@ screen.
 | `Zimbra servisine erisilemedi` | `zmcontrol -v` returned nothing | check `zmcontrol status`; the mailbox service may be down |
 | `UTF-8 olmayan locale` | warning only | set `LANG=tr_TR.UTF-8` or `en_US.UTF-8` so the Turkish labels render at the right width |
 
+One failure is worth naming here even though it happens inside a screen rather
+than at startup:
+
+| Message | Meaning | Fix |
+|---|---|---|
+| `Log okunamiyor` (exit 23) | the delivery trace ran but could not open the mail log — usually the syslog file is owned `syslog:adm` because rsyslog created it | `zmfixperms`; the same misconfiguration breaks Zimbra's own tooling, so repairing it is the right outcome rather than reading the log as root |
+
 ### Environment overrides
 
 These exist so the tool can be tested and so an unusual installation can be
@@ -66,6 +73,7 @@ accommodated. They are not needed on a standard host.
 | Variable | Default | Purpose |
 |---|---|---|
 | `ZRO_ZIMBRA_BIN` | `/opt/zimbra/bin` | where the Zimbra binaries live |
+| `ZRO_ZIMBRA_LIBEXEC` | `/opt/zimbra/libexec` | where `zmmsgtrace` lives |
 | `ZRO_TIMEOUT` | `60` | seconds before a command is killed |
 | `ZRO_LOG_FILE` | unset | when set, activity is appended here |
 | `ZRO_RUNUSER`, `ZRO_TIMEOUT_BIN`, `ZRO_ID_BIN` | resolved by path | system binaries |
@@ -143,7 +151,27 @@ zmprov ga        getAccount                 zmprov -l ga    same, from LDAP
 zmprov gam       getAccountMembership       zmprov -l gam   same, from LDAP
 zmprov gc        getCos                     zmprov -l gc    same, from LDAP
 zmcontrol -v     version
+zmmsgtrace --recipient                      delivery trace by recipient
 ```
+
+`zmmsgtrace` is installed in `/opt/zimbra/libexec`, not in `bin` — an upstream
+mapping still names the `bin` path and it is stale. That is why each allowlisted
+binary declares the directory it resolves under instead of sharing one root.
+
+Only the recipient filter is listed. The short form `-r`, the sender and
+message-id filters and the `--time` and `--year` options are absent and therefore
+refused: each is an operation of its own and arrives with the ticket that exposes
+it, not because the binary is already reachable.
+
+Every filter that binary takes is a **Perl regular expression**, so the address is
+escaped before it is passed. Without that, `ali+fatura@example.com` — a valid
+address — would be read as a pattern and fail to match itself, reporting no
+delivery record for a message that has one.
+
+The trace currently reads only the log `zmmsgtrace` defaults to, so it covers
+today's lines and not the rotated files behind them. Both delivery screens say so:
+finding nothing there is not evidence that nothing arrived. Nothing in the trace
+opens a mailbox, so the existence gate in section 5 is not involved.
 
 `zmprov gmi` was on this list and has been removed — it creates mailboxes. See
 section 5.

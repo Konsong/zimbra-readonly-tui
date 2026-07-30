@@ -20,6 +20,8 @@ ZRO_ROOT=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 . "$ZRO_ROOT/lib/ui.sh"
 # shellcheck source=lib/account.sh
 . "$ZRO_ROOT/lib/account.sh"
+# shellcheck source=lib/delivery.sh
+. "$ZRO_ROOT/lib/delivery.sh"
 
 trap zro_cleanup EXIT INT TERM
 
@@ -86,15 +88,28 @@ zro_show_text() {
   rm -f -- "$f"
 }
 
-zro_prompt_account() {
-  local acct rc=0
-  acct=$(zro_ui_input "Hesap" "Hesap adresi:") || rc=$?
+# Asks for one e-mail address and validates it. Cancel and ESC are told apart
+# from a rejected value: the first returns the operator to the previous screen,
+# the second re-offers the same one.
+#
+#   $1  screen title      $2  prompt text      $3  what to say when it is invalid
+zro_prompt_address() {
+  local title=$1 text=$2 invalid=$3 value rc=0
+  value=$(zro_ui_input "$title" "$text") || rc=$?
   [ "$rc" -eq 0 ] || return "$ZRO_E_CANCEL"
-  if ! zro_validate_email "$acct"; then
-    zro_ui_msgbox "Gecersiz girdi" "Gecersiz hesap adresi."
+  if ! zro_validate_email "$value"; then
+    zro_ui_msgbox "Gecersiz girdi" "$invalid"
     return "$ZRO_E_INPUT"
   fi
-  printf '%s' "$acct"
+  printf '%s' "$value"
+}
+
+zro_prompt_account() {
+  zro_prompt_address "Hesap" "Hesap adresi:" "Gecersiz hesap adresi."
+}
+
+zro_prompt_recipient() {
+  zro_prompt_address "Alici" "Alici adresi:" "Gecersiz alici adresi."
 }
 
 zro_report_error() {
@@ -112,6 +127,15 @@ $detail"
     "$ZRO_E_NO_ACCOUNT") zro_ui_msgbox "Bulunamadi" "Hesap bulunamadi.$detail" ;;
     "$ZRO_E_NO_MAILBOX") zro_ui_msgbox "Bulunamadi" "Mailbox bulunamadi.$detail" ;;
     "$ZRO_E_NO_RESULT")  zro_ui_msgbox "Sonuc yok" "Kayit bulunamadi." ;;
+    # The tool ran but could not read the log it was pointed at. Naming the
+    # repair matters: the usual cause is ownership on the syslog file, which
+    # breaks Zimbra's own tooling too, so fixing it is the right outcome.
+    "$ZRO_E_NO_LOG")
+      zro_ui_msgbox "Log okunamiyor" \
+"Mail logu okunamadi, bu nedenle hicbir sey taranamadi.
+
+Log dosyalari zimbra kullanicisi tarafindan okunabilir olmalidir. Izinler
+bozulmussa onarmak icin: zmfixperms$detail" ;;
     "$ZRO_E_TIMEOUT")    zro_ui_msgbox "Zaman asimi" "Komut zaman asimina ugradi." ;;
     "$ZRO_E_DENIED")     zro_ui_msgbox "Reddedildi" "Bu islem izin listesinde degil." ;;
     "$ZRO_E_NOCAP")      zro_ui_msgbox "Kullanilamaz" "Bu islem bu sunucuda mevcut degil." ;;
@@ -164,16 +188,71 @@ Her sorgu birkac saniye surebilir."
   done
 }
 
+# The delivery trace: whether a message reached the server, answered from the
+# mail transfer agent's log. No mailbox is opened anywhere below this line.
+#
+# Only the log the tracing tool defaults to is searched in this version, and the
+# screens say so on both paths. An operator who reads an empty answer as "it
+# never arrived" goes on to make the wrong decision, and that ambiguity is the
+# reason this screen exists at all.
+zro_menu_delivery() {
+  local choice addr out rc
+  while :; do
+    rc=0
+    choice=$(zro_ui_menu "Teslim takibi" "Islem secin:" \
+      1 "Alici adresine gore izle") || rc=$?
+    [ "$rc" -eq 0 ] || return 0
+
+    case $choice in
+      1) ;;
+      *) continue ;;
+    esac
+
+    rc=0
+    addr=$(zro_prompt_recipient) || rc=$?
+    [ "$rc" -eq 0 ] || continue
+
+    # Reading a whole log takes seconds, and longer on a busy server.
+    zro_ui_notice "Calisiyor" "Mail loglari taraniyor, lutfen bekleyin.
+
+Alici: $addr
+Buyuk bir log dosyasi bu islemi uzatabilir."
+
+    rc=0
+    out=$(zro_trace_recipient "$addr") || rc=$?
+
+    # Answered here rather than by the shared reporter: "kayit bulunamadi" alone
+    # would let an operator conclude the message never arrived, when what it
+    # really means is that it is not in the one log that was read.
+    if [ "$rc" -eq "$ZRO_E_NO_RESULT" ]; then
+      zro_ui_msgbox "Sonuc yok" \
+"$addr icin teslim kaydi bulunamadi.
+
+Yalnizca guncel birincil mail logu tarandi; rotasyona girmis eski loglar bu
+surumde taranmiyor. Kayit bulunamamasi, iletinin sunucuya hic ulasmadigini
+kanitlamaz."
+      continue
+    fi
+    if [ "$rc" -ne 0 ]; then
+      zro_report_error "$rc"
+      continue
+    fi
+    zro_show_text "Teslim izi" "$out"
+  done
+}
+
 zro_menu_main() {
   local choice rc
   while :; do
     rc=0
     choice=$(zro_ui_menu "Ana menu" "Zimbra: $(zro_cap_version)" \
       1 "Hesap ve kota kontrolleri" \
+      2 "Teslim takibi (mail loglari)" \
       9 "Cikis") || rc=$?
     [ "$rc" -eq 0 ] || return 0
     case $choice in
       1) zro_menu_account ;;
+      2) zro_menu_delivery ;;
       9) return 0 ;;
     esac
   done

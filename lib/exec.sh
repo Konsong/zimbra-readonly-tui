@@ -24,6 +24,15 @@ ZRO_LIB_EXEC_LOADED=1
 # sibling passes DO_NOT_AUTOCREATE and throws "mailbox not found". Reading an
 # account's quota usage would therefore create a mailbox for an account that
 # had none. See docs/research/2026-07-29-zimbra-cli-read-only-reference.md §A.3.
+#
+# `zmmsgtrace --recipient` is the delivery trace. Every filter that binary takes
+# is a flag which is the whole operation, so it is approved the same way
+# `zmcontrol -v` is: as a two-token entry, with the operator's already-validated
+# address following as data. Only the recipient filter is listed. The short form
+# `-r`, the sender and message-id filters, and the time and year options are all
+# absent and therefore refused — each is an operation of its own, and an
+# operation arrives with the ticket that exposes it, never because the binary it
+# belongs to was already reachable.
 ZRO_ALLOW='
 zmprov:ga
 zmprov:getAccount
@@ -38,6 +47,7 @@ zmprov:-l:getAccountMembership
 zmprov:-l:gc
 zmprov:-l:getCos
 zmcontrol:-v
+zmmsgtrace:--recipient
 '
 
 zro_allow_entries() {
@@ -75,6 +85,10 @@ zro_allowed() {
 # mocks. Never write one of these paths as a literal in module code. Which
 # binary resolves under which root is declared in ZRO_BIN_ROOTS below.
 ZRO_ZIMBRA_BIN="${ZRO_ZIMBRA_BIN:-/opt/zimbra/bin}"
+# The tracing binary is installed here, not under bin. An upstream mapping
+# (zmrcd) still names the bin path and it is stale, which is exactly why the root
+# is declared per binary instead of guessed.
+ZRO_ZIMBRA_LIBEXEC="${ZRO_ZIMBRA_LIBEXEC:-/opt/zimbra/libexec}"
 ZRO_RUNUSER="${ZRO_RUNUSER:-$(zro_first_existing /sbin/runuser /usr/sbin/runuser /bin/runuser)}"
 ZRO_TIMEOUT_BIN="${ZRO_TIMEOUT_BIN:-$(zro_first_existing /usr/bin/timeout /bin/timeout)}"
 ZRO_ID_BIN="${ZRO_ID_BIN:-$(zro_first_existing /usr/bin/id /bin/id)}"
@@ -114,6 +128,7 @@ zro_identity_mode() {
 ZRO_BIN_ROOTS='
 zmprov:ZRO_ZIMBRA_BIN
 zmcontrol:ZRO_ZIMBRA_BIN
+zmmsgtrace:ZRO_ZIMBRA_LIBEXEC
 '
 
 zro_bin_root_entries() {

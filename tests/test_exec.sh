@@ -7,11 +7,16 @@ set -uo pipefail
 
 export ZRO_MOCK_LIB="$ZRO_TEST_ROOT/mocks"
 export ZRO_ZIMBRA_BIN="$ZRO_TEST_ROOT/mocks/bin"
+# A directory of its own, not an alias for the one above: the tracing binary is
+# installed under libexec while a stale upstream mapping still names bin, so a
+# gate that resolved it under the wrong root must fail the suite rather than
+# find the mock anyway.
+export ZRO_ZIMBRA_LIBEXEC="$ZRO_TEST_ROOT/mocks/libexec"
 export ZRO_ID_BIN="$ZRO_TEST_ROOT/mocks/bin/id"
 export ZRO_RUNUSER="$ZRO_TEST_ROOT/mocks/bin/runuser"
 export ZRO_TIMEOUT_BIN="$ZRO_TEST_ROOT/mocks/bin/timeout"
 export ZRO_TIMEOUT=60
-chmod +x "$ZRO_TEST_ROOT"/mocks/bin/* 2>/dev/null || true
+chmod +x "$ZRO_TEST_ROOT"/mocks/bin/* "$ZRO_TEST_ROOT"/mocks/libexec/* 2>/dev/null || true
 
 # shellcheck source=../lib/exec.sh
 . "$ZRO_SRC/lib/exec.sh"
@@ -132,19 +137,34 @@ it "resolves each binary under the root its own declaration names"
 assert_out_eq "$ZRO_TEST_ROOT/mocks/bin/zmprov" zro_bin_path zmprov
 assert_out_eq "$ZRO_TEST_ROOT/mocks/bin/zmcontrol" zro_bin_path zmcontrol
 
-# Every binary in the tree declares the same root today, so the behaviour the
-# table exists for — two binaries resolving under two different directories —
-# would otherwise go unexercised until the ticket that needs it. A simulated
-# table proves the mechanism now; adding a real second root is then one line.
+# Two binaries under two different declared roots is the behaviour the table
+# exists for. It was simulated with a hand-built table until the tracing binary
+# arrived; now it is the real declaration that is asserted.
 it "resolves two binaries under two different declared roots"
-# SC2034: the table names this variable and the gate reads it indirectly, which
-# is exactly the mechanism under test and not something ShellCheck can follow.
-# shellcheck disable=SC2034
-two_roots=$( ZRO_OTHER_ROOT=/other/root
-             ZRO_BIN_ROOTS='zmprov:ZRO_ZIMBRA_BIN
-zmcontrol:ZRO_OTHER_ROOT'
-             zro_bin_path zmprov; printf '|'; zro_bin_path zmcontrol )
-assert_eq "$two_roots" "$ZRO_TEST_ROOT/mocks/bin/zmprov|/other/root/zmcontrol"
+two_roots=$( zro_bin_path zmprov; printf '|'; zro_bin_path zmmsgtrace )
+assert_eq "$two_roots" \
+  "$ZRO_TEST_ROOT/mocks/bin/zmprov|$ZRO_TEST_ROOT/mocks/libexec/zmmsgtrace"
+
+# The stale upstream mapping names the bin path for this binary; the packaging
+# installs it under libexec. Emptying the bin root has to leave tracing working,
+# or the declaration is not what the gate is really using.
+it "resolves the tracing binary without consulting the Zimbra bin root"
+: >"$ZRO_MOCK_LOG"
+ZRO_ZIMBRA_BIN=/nonexistent ZRO_MOCK_ID_USER=zimbra \
+  assert_ok zro_exec zmmsgtrace --recipient 'ahmet.yilmaz@example.com'
+assert_contains "$(cat "$ZRO_MOCK_LOG")" \
+  "$(printf -- '%s/mocks/libexec/zmmsgtrace\t--recipient\tahmet.yilmaz@example.com' "$ZRO_TEST_ROOT")"
+
+it "refuses a filter of the tracing binary that nobody approved, and runs nothing"
+: >"$ZRO_MOCK_LOG"
+ZRO_MOCK_ID_USER=zimbra assert_status "$ZRO_E_DENIED" \
+  zro_exec zmmsgtrace --sender 'ahmet.yilmaz@example.com'
+ZRO_MOCK_ID_USER=zimbra assert_status "$ZRO_E_DENIED" \
+  zro_exec zmmsgtrace --id 'CAabc123@example.com'
+ZRO_MOCK_ID_USER=zimbra assert_status "$ZRO_E_DENIED" \
+  zro_exec zmmsgtrace --time '20260729,20260730'
+ZRO_MOCK_ID_USER=zimbra assert_status "$ZRO_E_DENIED" zro_exec zmmsgtrace --man
+assert_eq "$(cat "$ZRO_MOCK_LOG")" ""
 
 it "refuses to resolve a binary that declares no root"
 assert_fail zro_bin_path zmmailbox

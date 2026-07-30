@@ -69,6 +69,15 @@ it "a non-zero whiptail status is reported as cancel, not as an answer"
 ZRO_MOCK_WHIPTAIL_RC=1 assert_status "$ZRO_E_CANCEL" zro_ui_input "Hesap" "Adres:"
 ZRO_MOCK_WHIPTAIL_RC=1 assert_status "$ZRO_E_CANCEL" zro_ui_menu "Ana menu" "Secim" 1 "Hesap"
 
+# ESC is whiptail's 255, and it has to leave a screen the same way the Cancel
+# button does. Asserted here, at the one place where a status becomes navigation,
+# so it holds for every screen in the program rather than screen by screen — the
+# stub backend has no ESC to queue.
+it "ESC leaves a screen exactly as Cancel does"
+ZRO_MOCK_WHIPTAIL_RC=255 assert_status "$ZRO_E_CANCEL" zro_ui_input "Alici" "Alici adresi:"
+ZRO_MOCK_WHIPTAIL_RC=255 assert_status "$ZRO_E_CANCEL" \
+  zro_ui_menu "Teslim takibi" "Islem secin:" 1 "Alici adresine gore izle"
+
 it "a refused confirmation is a no"
 ZRO_MOCK_WHIPTAIL_RC=1 assert_status 1 zro_ui_yesno "Onay" "Devam?"
 
