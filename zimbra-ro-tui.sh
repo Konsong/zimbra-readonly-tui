@@ -340,6 +340,62 @@ Her sorgu birkac saniye surebilir."
   done
 }
 
+# Why a delivery trace cannot answer on this host, in terms that name the repair.
+#
+# WHICH PROBE REFUSED DECIDES WHAT IS SAID, because the two repairs have nothing in
+# common: a binary this build does not ship is not something a permissions tool can
+# fix, and a log that is not there is not a mode. One message naming both causes
+# would send half its readers to the wrong place — and an operator who repairs the
+# wrong thing concludes the tool is broken.
+#
+# Reached from the trace screen rather than from the menu that marks its entry, so
+# that the mark and the explanation cannot disagree about which probe refused — and
+# only after zro_cap_trace_available has already refused, which is what makes one of
+# the two branches below always the right one.
+zro_delivery_unavailable() {
+  if ! zro_cap_trace_bin; then
+    zro_ui_msgbox "Kullanilamaz" \
+"Teslim takibi bu sunucuda kullanilamiyor.
+
+Takip programi (zmmsgtrace) bu kurulumda bulunamadi. Bu bir surum veya paketleme
+farkidir; izinlerle ilgisi yoktur ve izin onarimi bunu duzeltmez.
+
+Kontrol edin: zmmsgtrace programi libexec dizininde kurulu mu."
+    return 0
+  fi
+
+  # The file the operator has to go and look at. Named on both messages below,
+  # because neither cause can be repaired without knowing which file it is about.
+  local path
+  path=$(zro_inv_base_path syslog) || path="(bilinmiyor)"
+
+  if [ "$(zro_cap_trace_log_reason)" = missing ]; then
+    zro_ui_msgbox "Kullanilamaz" \
+"Teslim takibi bu sunucuda kullanilamiyor.
+
+Ana mail logu bulunamadi. Bu bir izin sorunu DEGILDIR: dosyanin kendisi yok.
+
+Beklenen dosya: $path
+
+Kontrol edin: syslog servisi calisiyor mu ve Zimbra kayitlarini bu dosyaya
+yaziyor mu."
+    return 0
+  fi
+
+  zro_ui_msgbox "Kullanilamaz" \
+"Teslim takibi bu sunucuda kullanilamiyor.
+
+Ana mail logu zimbra kullanicisi tarafindan okunamiyor. Bu araci root ile
+baslatmis olsaniz bile her komut zimbra kullanicisi olarak calisir; bu nedenle
+log taranamaz. Yetki YUKSELTILMEZ, sorun bildirilir: ayni bozukluk Zimbra'nin
+kendi araclarini da etkiler, dolayisiyla dogru sonuc onarmaktir.
+
+Dosya: $path
+
+Onarim: bu dosya zimbra kullanicisi tarafindan okunabilir olmalidir. Sahiplik
+veya izinler bozulmussa: zmfixperms"
+}
+
 # The delivery trace: whether a message reached the server, answered from the
 # mail transfer agent's log. No mailbox is opened anywhere below this line.
 #
@@ -351,6 +407,17 @@ Her sorgu birkac saniye surebilir."
 # reason this screen exists at all.
 zro_menu_delivery() {
   local choice filter label subject window ws we out rc note
+  # REFUSED BEFORE THE FIRST PROMPT, not from inside a search. An operator who gets
+  # this far has typed nothing yet, and the entry that brought them here is already
+  # marked — this is where they learn why, and what repairs it.
+  #
+  # Neither probe is the last word: the exec gate still refuses a binary it cannot
+  # resolve and the trace still discloses a log it could not open. This is what
+  # keeps an operator from spending a search to find that out.
+  if ! zro_cap_trace_available; then
+    zro_delivery_unavailable
+    return 0
+  fi
   while :; do
     rc=0
     choice=$(zro_ui_menu "Teslim takibi" "Islem secin:" \
@@ -468,12 +535,23 @@ iletinin sunucuya hic ulasmadigini kanitlamaz — araligi genisletmeyi deneyin.$
 }
 
 zro_menu_main() {
-  local choice rc
+  local choice rc trace
   while :; do
     rc=0
+    # The entry says so BEFORE it is selected, which is the whole point: an
+    # operator who learns that tracing is unavailable after choosing a filter, an
+    # address and a window has already spent the search this mark exists to save.
+    # whiptail has no notion of a disabled entry, so the label carries it and the
+    # screen behind it explains why.
+    #
+    # Asked here rather than inside the command substitution below, so the probes
+    # run in this shell and the session cache they fill is the one the screen
+    # behind the entry reads. Inside $( ) every redraw would ask the host again.
+    trace="Teslim takibi (mail loglari)"
+    zro_cap_trace_available || trace="$trace - KULLANILAMAZ"
     choice=$(zro_ui_menu "Ana menu" "Zimbra: $(zro_cap_version)" \
       1 "Hesap ve kota kontrolleri" \
-      2 "Teslim takibi (mail loglari)" \
+      2 "$trace" \
       9 "Cikis") || rc=$?
     [ "$rc" -eq 0 ] || return 0
     case $choice in

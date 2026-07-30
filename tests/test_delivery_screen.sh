@@ -46,6 +46,11 @@ SYS="$TREE/var/log/zimbra.log"
 mk() {
   printf 'placeholder\n' >"$1"
   touch -d "@$2" -- "$1"
+  # The MODE is set explicitly, not left to the umask of whoever runs the suite.
+  # The readability probe reads it, and under a restrictive umask every case in
+  # this file would otherwise find the trace unavailable — for a reason that is
+  # about the machine running the tests rather than about the tool.
+  chmod 644 -- "$1"
 }
 mk "$SYS"      "$((NOW - 300))"
 mk "$SYS.1.gz" "$R1"
@@ -53,6 +58,15 @@ mk "$SYS.2.gz" "$R2"
 
 # shellcheck source=../zimbra-ro-tui.sh
 . "$ZRO_SRC/zimbra-ro-tui.sh"
+
+it "this fixture host can trace, which every case below assumes"
+# Asked HERE, before the mock log exists, and remembered for the rest of the file.
+# The probes are asked once per session by design, and several cases below assert
+# that NOTHING ran: a probe firing inside one of them would put an identity lookup
+# in the very log they are reading. The cases that need a different answer force
+# one rather than clearing this.
+zro_cap_reset
+assert_ok zro_cap_trace_available
 
 ZRO_MOCK_LOG=$(mktemp);  export ZRO_MOCK_LOG
 ZRO_UI_QUEUE=$(mktemp);  export ZRO_UI_QUEUE
@@ -546,7 +560,72 @@ assert_contains "$transcript" "Saat okunamadi"
 assert_not_contains "$transcript" "mailboxd"
 assert_eq "$(cat "$ZRO_MOCK_LOG")" ""
 
-it "a tracing binary this host does not have is reported, not crashed into"
+it "a tracing binary this host does not have marks the entry, not the search"
+# Learned BEFORE a search is invested in it: the main menu entry says so, and
+# selecting it explains why rather than failing from inside a screen.
+queue "2" "__CANCEL__" "__CANCEL__"
+: >"$ZRO_UI_OUT"; : >"$ZRO_MOCK_LOG"
+ZRO_CAP_FORCE_TRACE_BIN=no zro_menu_main
+transcript=$(cat "$ZRO_UI_OUT")
+assert_contains "$transcript" "KULLANILAMAZ"
+assert_contains "$transcript" "Kullanilamaz"
+# A version difference is not a permission, so this message may not send the
+# operator to the permission repair tool.
+assert_not_contains "$transcript" "zmfixperms"
+# The screen was never drawn and nothing was asked for or run.
+assert_not_contains "$transcript" "MENU Teslim takibi"
+# The main menu reads the version on every redraw, so the log is not empty here;
+# what matters is that no trace was run.
+assert_not_contains "$(cat "$ZRO_MOCK_LOG")" "zmmsgtrace"
+
+it "an unreadable primary log marks the entry and names the cause and the repair"
+queue "2" "__CANCEL__" "__CANCEL__"
+: >"$ZRO_UI_OUT"; : >"$ZRO_MOCK_LOG"
+ZRO_CAP_FORCE_TRACE_LOG=unreadable zro_menu_main
+transcript=$(cat "$ZRO_UI_OUT")
+assert_contains "$transcript" "KULLANILAMAZ"
+# The cause: the account every command runs as cannot read it. Not that the tool is
+# running as the wrong user, and not that a search found nothing.
+assert_contains "$transcript" "zimbra"
+assert_contains "$transcript" "okunamiyor"
+# The repair, by name, and the file it is about.
+assert_contains "$transcript" "zmfixperms"
+assert_contains "$transcript" "$SYS"
+assert_not_contains "$transcript" "MENU Teslim takibi"
+assert_not_contains "$(cat "$ZRO_MOCK_LOG")" "zmmsgtrace"
+
+it "a log that is not there is not reported as a permission to repair"
+# Different cause, different repair: naming the permission tool for a file that
+# does not exist sends the operator looking for a mode that is not the problem.
+queue "2" "__CANCEL__" "__CANCEL__"
+: >"$ZRO_UI_OUT"
+ZRO_CAP_FORCE_TRACE_LOG=missing zro_menu_main
+transcript=$(cat "$ZRO_UI_OUT")
+assert_contains "$transcript" "bulunamadi"
+assert_contains "$transcript" "$SYS"
+assert_not_contains "$transcript" "zmfixperms"
+
+it "the entry carries no such mark when both probes are satisfied"
+queue "__CANCEL__"
+: >"$ZRO_UI_OUT"
+zro_menu_main
+transcript=$(cat "$ZRO_UI_OUT")
+assert_contains "$transcript" "Teslim takibi"
+assert_not_contains "$transcript" "KULLANILAMAZ"
+
+it "and the screen refuses on its own, not only through the entry that marks it"
+# The mark is what an operator sees first; this is what makes it more than a label.
+# Both read the same probe, asked once.
+queue "${HOUR[@]}"
+: >"$ZRO_UI_OUT"; : >"$ZRO_MOCK_LOG"
+ZRO_CAP_FORCE_TRACE_LOG=unreadable assert_ok zro_menu_delivery
+assert_contains "$(cat "$ZRO_UI_OUT")" "Kullanilamaz"
+assert_eq "$(cat "$ZRO_MOCK_LOG")" ""
+
+it "a tracing binary that vanishes mid-session is still refused by the gate"
+# The probe answers once per session, so a binary removed after the menu was drawn
+# from it is not caught by it. The gate refuses independently, which is what makes
+# it safe for the probe to be an answer about a moment rather than a guarantee.
 queue "${HOUR[@]}"
 : >"$ZRO_UI_OUT"
 ZRO_ZIMBRA_LIBEXEC=/nonexistent zro_menu_delivery

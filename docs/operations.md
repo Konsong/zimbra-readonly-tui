@@ -133,6 +133,47 @@ line is refused as invalid input rather than searched for and never found.
 Cancel and ESC return to the previous screen from every prompt. Nothing exits
 the tool except the explicit *Cikis* entry.
 
+### When the entry reads `KULLANILAMAZ`
+
+Two things have to be true before a delivery trace can answer anything, and both
+are checked once per session, before the menu is drawn:
+
+- **`zmmsgtrace` is installed.** Upstream packaging puts it in
+  `/opt/zimbra/libexec`; an upstream mapping still names the `bin` path and that
+  mapping is stale, so a build which differs shows up here instead of as an error
+  from inside a screen.
+- **The primary mail log is readable by the `zimbra` account.** It is the only file
+  in the inventory whose readability depends on the distribution and on whether
+  `zmfixperms` has been run since the last upgrade.
+
+When either is false the main menu entry reads
+`Teslim takibi (mail loglari) - KULLANILAMAZ`, and selecting it says which of the
+two it is, names the file it is talking about, and names the repair — a missing
+binary and an unreadable log get different messages, because a version difference
+is not a permission and `zmfixperms` would be the wrong advice for it. You learn
+this before spending a search on it rather than after.
+
+**Read access is judged for the `zimbra` account, never for you.** Every command
+runs as `zimbra` — see section 2 — so a log that `root` can read and `zimbra`
+cannot is a log no trace can read, and a check of your own access would pass on
+exactly the configuration worth catching. If `rsyslog` created
+`/var/log/zimbra.log` itself, the file is owned `syslog:adm` with mode `0640`,
+which is that configuration. The tool **diagnoses it rather than escalating around
+it**: it will not read the file as `root`, because the same ownership breaks
+Zimbra's own tooling, so repairing it is the right outcome rather than a
+workaround. The answer is the same whether you started the tool as `zimbra` or as
+`root`.
+
+The probe reads the file's owner, group and mode, and the groups the `zimbra`
+account belongs to. It does **not** check whether every directory on the way to the
+file can be traversed, so that one case still arrives as `Log okunamiyor` from
+inside the screen — which names the same repair.
+
+Both answers are remembered for the session. A binary removed, or a permission
+repaired, while the tool is open is not noticed until it is restarted. Nothing is
+ever *run* on the strength of a stale answer: the exec gate still refuses a binary
+it cannot resolve, and the trace still discloses a log it could not open.
+
 ### The arrival window, and why it says "varis"
 
 The window is offered as four presets — last hour, last 24 hours, yesterday as a
