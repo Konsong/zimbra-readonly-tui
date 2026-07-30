@@ -1,5 +1,7 @@
 # shellcheck shell=bash
-# Input validators. Pure functions: a return status, never output.
+# Input validators, and the quoting that has to follow them. Pure functions: the
+# validators answer with a return status and never print; the quoter prints the
+# text it was given, escaped, and is the one function here that has output.
 [ -n "${ZRO_LIB_VALIDATE_LOADED:-}" ] && return 0
 ZRO_LIB_VALIDATE_LOADED=1
 
@@ -7,6 +9,43 @@ ZRO_LIB_VALIDATE_LOADED=1
 ZRO_RE_LABEL='[A-Za-z0-9]([A-Za-z0-9-]*[A-Za-z0-9])?'
 # Local part: the conservative subset Zimbra accounts actually use.
 ZRO_RE_LOCAL='[A-Za-z0-9._%+-]+'
+
+# Metacharacters, in the order they are cheapest to read: the escape character
+# first, then the anchors, then everything that quantifies or groups. The set
+# covers Perl and POSIX alike, plus '/', which is not a metacharacter but is the
+# usual match delimiter and costs nothing to escape.
+ZRO_RE_META='\^$.|?*+()[]{}/'
+
+# Escapes text so a regular-expression engine reads it as the literal it is.
+#
+# This is a THIRD escaping layer, alongside shell safety — which the exec gate
+# provides by passing argv arrays and never building a string — and the
+# query-language quoting a later milestone owes. It exists because every filter
+# the delivery tracer accepts is a Perl regular expression, while the address
+# validator admits '.' and '+': 'ali+fatura@example.com' passes validation and
+# then, used unescaped as a pattern, fails to match itself. That is a silent
+# false negative on the one question a delivery trace exists to answer.
+#
+# The escaping is done here rather than by wrapping the value in the target
+# language's own quoting construct. That would be one line, but it depends on how
+# the tracer interpolates the option — a source line nobody in this project has
+# read. An unverified assumption is not a green light.
+zro_regex_quote() {
+  local s=${1-} out='' i c
+  for (( i = 0; i < ${#s}; i++ )); do
+    c=${s:i:1}
+    # Substring test by parameter expansion: if removing everything up to and
+    # including this character changes the set, the set contained it. A case
+    # pattern cannot be built from a variable, and a bracket expression holding
+    # both ']' and '\' is the kind of thing that is wrong for years.
+    if [ "${ZRO_RE_META#*"$c"}" != "$ZRO_RE_META" ]; then
+      out="$out\\$c"
+    else
+      out="$out$c"
+    fi
+  done
+  printf '%s' "$out"
+}
 
 zro_validate_domain() {
   local d=${1-}

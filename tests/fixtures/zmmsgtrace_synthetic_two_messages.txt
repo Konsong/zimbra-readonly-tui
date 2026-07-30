@@ -1,0 +1,16 @@
+Tracing messages
+
+Message ID 'CAabc123@example.com'
+alice@example.com -->
+	  bob@zimbra.local
+  Recipient bob@zimbra.local
+  Jul 29 10:15:01 - mx.example.com (203.0.113.10) --> 127.0.0.1:10024 (127.0.0.1:10024) status sent
+  Jul 29 10:15:02 - mail --> mail.zimbra.local:7025 (10.0.0.5:7025) status sent
+
+Message ID '[reject:NOQUEUE:mail]'
+spam@bad.tld -->
+	  bob@zimbra.local
+  Recipient bob@zimbra.local
+  Jul 29 10:20:10 - unknown (198.51.100.9) status reject
+    554 5.7.1 <spam@bad.tld>: Relay access denied
+

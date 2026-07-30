@@ -177,13 +177,92 @@ for verb in create modify delete remove move mark flag tag empty import post rec
   assert_not_contains "$allow" "$verb"
 done
 
-it "M1 exposes no zmmailbox operation at all"
+it "the allowlist exposes no mailbox binary at all"
+# Not an M1 statement any more: M5 traces delivery from logs precisely so that
+# the question can be answered without a mailbox, which is what keeps the
+# existence gate out of it.
 assert_not_contains "$allow" "zmmailbox"
 
-it "the production Zimbra path appears only as the overridable default"
-assert_not_contains "$code" "/opt/zimbra/bin/"
-assert_not_contains "$code" "/opt/zimbra/libexec/"
-assert_eq "$(printf '%s\n' "$raw_code" | grep -c '/opt/zimbra')" "1"
+# The delivery trace hands the gate a literal filter followed by a variable
+# holding the operator's address. The generic extraction above cannot decide a
+# call site whose token after a flag is dynamic, so the filter is checked here
+# instead: every tracing call site must name a filter the allowlist approves.
+it "every delivery trace call site names an approved filter"
+trace_calls=$(printf '%s\n' "$raw_code" \
+              | grep -oE 'zro_exec[[:space:]]+zmmsgtrace[[:space:]]+[^[:space:]]+' \
+              | sort -u)
+assert_contains "$trace_calls" "zro_exec zmmsgtrace --recipient"
+unapproved=""
+while IFS= read -r call; do
+  [ -n "$call" ] || continue
+  filter=$(printf '%s' "$call" | awk '{print $3}')
+  printf '%s\n' "$allow" | grep -qxF -- "zmmsgtrace:$filter" || \
+    unapproved="$unapproved [$filter]"
+done <<EOF
+$trace_calls
+EOF
+assert_eq "$unapproved" ""
+
+it "the delivery trace names no mailbox binary and no directory command"
+# M5's independence from the existence gate, asserted rather than assumed.
+delivery=$(sed 's/[[:space:]]*#.*$//' "$ZRO_SRC/lib/delivery.sh" | zro_strip_dquotes)
+assert_not_contains "$delivery" "zmmailbox"
+assert_not_contains "$delivery" "zmprov"
+
+# §7.4, reshaped. This was a count: /opt/zimbra had to appear exactly once in the
+# tree. Three binary roots and two log roots break that count, and raising the
+# number would turn a guarantee into a reminder. What the count was reaching for
+# is that the production path is never reachable except through a variable the
+# operator can override — so that is what is asserted, and it survives the next
+# root without being edited.
+#
+# The log inventory brought a second prefix with it: the primary mail log is
+# written by the syslog daemon and lives outside the Zimbra tree, so the rule is
+# applied to every production prefix rather than to the one that came first.
+zro_scan_literal_paths() {
+  local prefix=$1 esc line name literal=""
+  # The prefix is interpolated into a sed pattern whose delimiter is '/'.
+  esc=$(printf '%s' "$prefix" | sed 's|/|\\/|g')
+  while IFS= read -r line; do
+    [ -n "$line" ] || continue
+    # The backreference is the point of the pattern: the name being assigned and
+    # the name being defaulted have to be the same variable, or setting it in the
+    # environment overrides nothing.
+    name=$(printf '%s\n' "$line" \
+           | sed -n 's/^[[:space:]]*\(ZRO_[A-Z0-9_]*\)="\${\1:-'"$esc"'[^"]*}"[[:space:]]*$/\1/p')
+    [ -n "$name" ] || literal="$literal [$line]"
+  done <<EOF
+$(printf '%s\n' "$raw_code" | grep -F -- "$prefix")
+EOF
+  printf '%s' "$literal"
+}
+
+it "every production path is an overridable default and nothing else"
+for prefix in /opt/zimbra /var/log; do
+  # The assertion has something to check.
+  assert_contains "$(printf '%s\n' "$raw_code" | grep -F -- "$prefix")" "$prefix"
+  assert_eq "$(zro_scan_literal_paths "$prefix")" ""
+  # Every occurrence sits inside a double-quoted default, so once quoted spans
+  # are stripped the path is gone entirely. A literal path anywhere in executable
+  # position fails both this and the assertion above.
+  assert_not_contains "$code" "$prefix"
+done
+
+inventory=$(sed 's/[[:space:]]*#.*$//' "$ZRO_SRC/lib/inventory.sh" | zro_strip_dquotes)
+
+it "the log inventory declares no proxy log"
+# The proxy log's rotation configuration is the only one that delays compression,
+# so its most recent rotated file is plain text while every other file's is
+# already gzipped. Excluding it keeps that inversion out of the code entirely.
+assert_not_contains "$inventory" "nginx"
+
+it "the log inventory reaches no binary and no mailbox"
+# Building the inventory is a question about names and timestamps. Asking Zimbra
+# anything would make it something else, and would put it behind the existence
+# gate this milestone is independent of.
+assert_not_contains "$inventory" "zmmailbox"
+assert_not_contains "$inventory" "zmprov"
+assert_not_contains "$inventory" "zro_exec"
 
 it "no module calls a Zimbra binary outside the gate"
 for f in "${SOURCES[@]}"; do
@@ -192,6 +271,7 @@ for f in "${SOURCES[@]}"; do
   assert_not_contains "$body" 'zmprov '
   assert_not_contains "$body" 'zmmailbox '
   assert_not_contains "$body" 'zmcontrol '
+  assert_not_contains "$body" 'zmmsgtrace '
 done
 
 it "every library guards against being loaded twice"

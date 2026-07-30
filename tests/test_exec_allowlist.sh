@@ -23,6 +23,33 @@ for sub in ca ma da dm mm mmr ef df createAccount modifyAccount deleteAccount \
   assert_fail zro_allowed zmmailbox "$sub"
 done
 
+# The tracing binary takes every filter as a flag, and each flag IS the whole
+# operation — the same shape as `zmcontrol -v`. Only the recipient filter is
+# approved in this milestone, so every other filter the tool accepts must be
+# refused: an operation nobody approved must not be reachable just because the
+# binary is.
+it "approves the recipient filter of the tracing binary and no other filter"
+assert_ok zro_allowed zmmsgtrace --recipient
+assert_ok zro_allowed zmmsgtrace --recipient 'ahmet.yilmaz@example.com'
+
+it "refuses every other filter and flag of the tracing binary"
+# Verbatim from the tool's own option list: the short form of each filter, the
+# filters this milestone does not expose, and its non-filter flags.
+for opt in -r --sender -s --id -i --srchost -F --desthost -D --time -t \
+           --year --nosort --debug --help --man; do
+  assert_fail zro_allowed zmmsgtrace "$opt"
+  assert_fail zro_allowed zmmsgtrace "$opt" 'ahmet.yilmaz@example.com'
+done
+assert_fail zro_allowed zmmsgtrace ''
+assert_fail zro_allowed zmmsgtrace 'recipient'
+assert_fail zro_allowed zmmsgtrace '--recipients'
+
+it "the allowlist names exactly one filter of the tracing binary"
+# Reading the list has to tell a maintainer what tracing can do. A second entry
+# added without a ticket behind it fails here.
+traces=$(zro_allow_entries | grep '^zmmsgtrace:')
+assert_eq "$traces" "zmmsgtrace:--recipient"
+
 it "allows the LDAP-mode reads as three-token prefixes"
 assert_ok zro_allowed zmprov -l ga
 assert_ok zro_allowed zmprov -l gam
@@ -98,6 +125,59 @@ entries=$(zro_allow_entries)
 for verb in create modify delete remove move mark flag tag empty import post recover sync; do
   assert_not_contains "$entries" "$verb"
 done
+
+it "every allowlisted binary declares the root it resolves under"
+# There is no default root. A binary the allowlist names and the root table does
+# not is refused at the gate, which would make it an operation that reads as
+# approved and can never run.
+while IFS= read -r entry; do
+  [ -n "$entry" ] || continue
+  assert_ok zro_bin_path "${entry%%:*}"
+done <<EOF
+$(zro_allow_entries)
+EOF
+
+it "the root table names no binary the allowlist does not"
+# The table decides where a binary lives, never whether it may run. Reading the
+# allowlist must still tell a maintainer everything this tool can execute.
+allow=$(zro_allow_entries)
+roots=$(zro_bin_root_entries)
+assert_contains "$roots" ":"        # the loop below has something to check
+unlisted=""
+while IFS= read -r entry; do
+  [ -n "$entry" ] || continue
+  bin=${entry%%:*}
+  found=""
+  # Compared as literal text, for the same reason the gate does: a name is never
+  # allowed to widen into a pattern, not even in a test.
+  while IFS= read -r listed; do
+    case $listed in
+      "$bin":*) found=1; break ;;
+    esac
+  done <<INNER
+$allow
+INNER
+  [ -n "$found" ] || unlisted="$unlisted [$bin]"
+done <<EOF
+$roots
+EOF
+assert_eq "$unlisted" ""
+
+it "every root declaration names an overridable variable, never a path"
+# The value in the table is a variable NAME. A path written here would be a root
+# the operator cannot override and the suite cannot point at its mocks.
+bad=""
+while IFS= read -r entry; do
+  [ -n "$entry" ] || continue
+  var=${entry#*:}
+  case $var in
+    ZRO_[A-Z0-9_]*) case $var in *[!A-Z0-9_]*) bad="$bad [$entry]" ;; esac ;;
+    *) bad="$bad [$entry]" ;;
+  esac
+done <<EOF
+$(zro_bin_root_entries)
+EOF
+assert_eq "$bad" ""
 
 it "every allowlist entry is a binary:token pair"
 while IFS= read -r entry; do

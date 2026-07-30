@@ -7,9 +7,12 @@ ZRO_SRC=$(cd -- "$ZRO_TEST_ROOT/.." && pwd)
 export ZRO_TEST_ROOT ZRO_SRC
 
 # Windows checkouts do not carry the executable bit; restore it for the mocks.
-if [ -d "$ZRO_TEST_ROOT/mocks/bin" ]; then
-  chmod +x "$ZRO_TEST_ROOT"/mocks/bin/* 2>/dev/null || true
-fi
+# One directory per declared binary root, so a binary resolved under the wrong
+# root is not found by accident.
+for d in "$ZRO_TEST_ROOT"/mocks/bin "$ZRO_TEST_ROOT"/mocks/libexec; do
+  [ -d "$d" ] || continue
+  chmod +x "$d"/* 2>/dev/null || true
+done
 
 total_ok=0
 total_fail=0

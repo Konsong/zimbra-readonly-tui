@@ -9,7 +9,8 @@ set -uo pipefail
 SOURCES=()
 for f in "$ZRO_SRC/zimbra-ro-tui.sh" "$ZRO_SRC"/lib/*.sh \
          "$ZRO_SRC"/tests/*.sh "$ZRO_SRC"/tests/lib/*.sh \
-         "$ZRO_SRC"/tests/mocks/*.sh "$ZRO_SRC"/tests/mocks/bin/*; do
+         "$ZRO_SRC"/tests/mocks/*.sh "$ZRO_SRC"/tests/mocks/bin/* \
+         "$ZRO_SRC"/tests/mocks/libexec/*; do
   case $f in
     # This file has to spell out every construct it bans, so scanning it would
     # always report itself.
@@ -44,7 +45,8 @@ assert_not_contains "$code" "EPOCHREALTIME"
 
 it "every executable script disables errexit and enables nounset"
 for f in "$ZRO_SRC/zimbra-ro-tui.sh" "$ZRO_SRC/tests/run.sh" \
-         "$ZRO_SRC"/tests/test_*.sh "$ZRO_SRC"/tests/mocks/bin/*; do
+         "$ZRO_SRC"/tests/test_*.sh "$ZRO_SRC"/tests/mocks/bin/* \
+         "$ZRO_SRC"/tests/mocks/libexec/*; do
   # Comments stripped: the entry point explains in prose why errexit is absent,
   # and that explanation is not a setting.
   header=$(head -n 12 "$f" | sed 's/[[:space:]]*#.*$//')
