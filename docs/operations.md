@@ -145,10 +145,22 @@ says so whenever more than one file was read. Telling those apart would mean
 parsing the report further, and no output from a real server has been captured to
 parse against.
 
-**If any file the window selected cannot be read, the whole search is refused**
-with `Log okunamiyor` (exit 23) and no partial report. Finding nothing must never
-be mistaken for nothing having happened; a later release shows what could be read
-together with a banner naming what was skipped.
+**If some of the selected files cannot be read, you get the answer plus an
+account of what was missed.** That is a **partial scan**: the report is shown
+under a banner naming every file that was skipped and what `zmmsgtrace` said
+about each, the screen title reads `EKSIK TARAMA` so the disclosure stays on the
+frame while the report scrolls, and the exit code is 30. An empty answer from a
+partial scan is still reported as partial — never as `Sonuc yok` — because
+finding nothing must never be mistaken for nothing having happened.
+
+**If none of them can be read, the search is refused** with `Log okunamiyor`
+(exit 23) and no report at all: nothing was scanned, so there is no answer to
+qualify. The usual cause is ownership on the log file, which breaks Zimbra's own
+tooling too — both screens name `zmfixperms` for that reason.
+
+A timeout, or any failure other than a file the tracer could not open, still
+refuses the whole search. Those say nothing about which files were covered, so no
+honest partial answer can be assembled from them.
 
 Timestamps are **local wall clock throughout**, with no timezone or
 daylight-saving arithmetic anywhere — the log lines being read carry neither a
@@ -267,7 +279,7 @@ an account, and returns every account on it. Per-account usage comes from `gmi`.
 | 21 | Zimbra service unreachable |
 | 22 | command timed out |
 | 23 | log unreadable |
-| 30 | partial bulk failure |
+| 30 | partial result — some of the sources could not be read |
 | 40 | operator cancelled — navigation, never a process exit status |
 | 90 | **allowlist denial** |
 | 91 | unsupported operating-system user |

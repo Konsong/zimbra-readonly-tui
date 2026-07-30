@@ -22,7 +22,11 @@ ZRO_E_PERM=20
 ZRO_E_UNAVAILABLE=21
 ZRO_E_TIMEOUT=22
 ZRO_E_NO_LOG=23
-# Bulk
+# Partial. The operation ran and answered, but not from everything it was meant to
+# read: a delivery trace whose arrival window selected a log file it could not open,
+# or a bulk read that could not reach every account. Never returned without saying
+# so on the screen as well — an answer assembled from some of its sources reads
+# exactly like a complete one.
 ZRO_E_PARTIAL=30
 # Navigation. Never becomes a process exit status.
 ZRO_E_CANCEL=40

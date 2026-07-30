@@ -79,6 +79,45 @@ zro_trace_stamp() {
   printf '%s' "$out"
 }
 
+# Printed above a report assembled from fewer log files than the arrival window
+# selected — a PARTIAL SCAN.
+#
+#   $1  how many files were read
+#   $2  how many were skipped
+#   $3  those files, as the block below prints them
+#
+# It goes FIRST, above the answer it qualifies, and prints nothing when nothing was
+# skipped. Same discipline as zro_mode_banner in lib/account.sh, and its own
+# function for the same reason: a degraded read is disclosed at the top of the
+# screen rather than beside the line where it happened, because a caveat read after
+# the conclusion has already been drawn is not a caveat. A banner printed when
+# nothing was missed would be noise, and noise is how a real disclosure stops being
+# read.
+#
+# This is the detail; the screen's TITLE carries the same two words. whiptail keeps
+# a title on the box frame while the text scrolls, so the pair together is what
+# makes the disclosure sticky for the whole screen rather than for its first page.
+zro_trace_partial_banner() {
+  local read_n=${1-} skipped_n=${2-} skipped=${3-}
+  [ "${skipped_n:-0}" -gt 0 ] || return 0
+  printf 'UYARI: EKSIK TARAMA. Secilen %s log dosyasindan %s tanesi okunamadi\n' \
+    "$((read_n + skipped_n))" "$skipped_n"
+  printf '       ve taranmadi. Asagidaki cevap yalnizca okunabilen dosyalari\n'
+  printf '       kapsar: bu aralikta kayit bulunamamasi, iletinin sunucuya hic\n'
+  printf '       ulasmadigini KANITLAMAZ.\n'
+  printf '       Okunamayan dosyalar:%s\n' "$skipped"
+  # The repair, named here as well as on the log-unreadable screen: the cause of a
+  # skipped file is the cause of an unreadable log, and it is almost always
+  # ownership that Zimbra's own tooling trips over too. Kept to one sentence —
+  # the fuller explanation belongs to the screen that has nothing else to say.
+  #
+  # Double-quoted on purpose: the static scanner treats a double-quoted span as
+  # data, so this text may name the command it is recommending.
+  printf "       Onarim: bu dosyalar zimbra kullanicisi tarafindan okunabilir\n"
+  printf "       olmalidir; izinler bozulmussa: zmfixperms\n"
+  printf '\n'
+}
+
 # Traces delivery for one recipient address inside an arrival window.
 #
 #   $1  recipient address, as the operator typed it
@@ -93,12 +132,25 @@ zro_trace_stamp() {
 # boundary in the first place: splitting the invocation costs no capability and
 # removes the year defect outright.
 #
-# A SELECTED FILE THAT CANNOT BE READ REFUSES THE WHOLE OPERATION. Strict, and
-# never silent: a report assembled from two of three files reads exactly like a
-# complete answer, and an operator who concludes from it that a message never
-# arrived goes on to make the wrong decision. The next ticket replaces this with a
-# partial scan, which discloses the skipped files instead of refusing — the same
-# rule, kept honest at less cost.
+# A SELECTED FILE THAT CANNOT BE OPENED IS SKIPPED AND DISCLOSED — a PARTIAL SCAN.
+# The answer that could be found is worth having, so it is shown; and because a
+# report assembled from two of three files reads exactly like a complete answer, it
+# arrives under a banner naming what was missed, and the operation reports
+# $ZRO_E_PARTIAL rather than success.
+#
+# Three cases, deliberately distinct, because an operator acts differently on each:
+#   some files read, some not   the answer, plus the banner, plus $ZRO_E_PARTIAL
+#   no file read at all         nothing scanned: $ZRO_E_NO_LOG and no output
+#   every file read             exactly as before, success or $ZRO_E_NO_RESULT
+#
+# NOTHING FOUND IN A PARTIAL SCAN IS NOT AN EMPTY RESULT. It is reported as the
+# partial scan it is, because an operator who reads "no records" from a scan that
+# could not open half its files will conclude the message never arrived — the exact
+# wrong decision this whole screen exists to prevent.
+#
+# Only a file the tracer COULD NOT OPEN is skippable. A timeout, or a status
+# nobody here recognises, says nothing about which files were covered, so no honest
+# partial answer can be assembled from it and the operation is still refused.
 zro_trace_recipient() {
   local addr=${1-} ws=${2-} we=${3-}
   zro_validate_email "$addr" || return "$ZRO_E_INPUT"
@@ -156,15 +208,18 @@ zro_trace_recipient() {
     return "$ZRO_E_NO_LOG"
   fi
 
-  local err out mapped line year path
+  local err out mapped said line year path reason
   local bodies='' scanned='' total=0 count files=0
+  # The skipped files as the banner prints them, and how many there are. Two names
+  # for one fact, and no third: what the error file needs is this same list, so it
+  # is derived below rather than accumulated a second way that could disagree.
+  local skipped='' skipped_n=0
   err=$(zro_tmpfile) || return "$ZRO_E_UNAVAILABLE"
   while IFS= read -r line; do
     [ -n "$line" ] || continue
     # The shape zro_inv_select emits: the year it derived, then the path.
     year=${line%%"$ZRO_TAB"*}
     path=${line#*"$ZRO_TAB"}
-    files=$((files + 1))
 
     rc=0
     : >"$err"
@@ -180,15 +235,46 @@ zro_trace_recipient() {
             --time "$from,$to" --year "$year" "$path" \
             2>"$err" </dev/null) || rc=$?
     if [ "$rc" -ne 0 ]; then
-      # Whatever the tool said, so an unreadable log reaches the operator as its
-      # own cause rather than as a bare exit code.
-      zro_set_error "$(head -c 500 -- "$err" 2>/dev/null)"
       mapped=$(zro_trace_fail_code "$err" "$rc")
-      rm -f -- "$err"
-      # Nothing has been printed yet, which is the point: the refusal above is
-      # only a refusal if no half-answer escapes with it.
-      return "$mapped"
+      if [ "$mapped" != "$ZRO_E_NO_LOG" ]; then
+        # Not a file the tracer could not open, so nothing is known about what was
+        # covered. Refused whole, with whatever the tool said, so the failure
+        # reaches the operator as its own cause rather than as a bare exit code.
+        # Nothing has been printed yet, which is what makes that a refusal.
+        said=$(head -c 500 -- "$err" 2>/dev/null)
+        # A refusal may abandon the answer; it may not abandon the disclosure. Any
+        # file already skipped is named in the failure the operator is shown,
+        # because the one thing this screen may never do is let a skipped file go
+        # unmentioned — whichever way the operation ends.
+        [ "$skipped_n" -eq 0 ] || said="$said
+Okunamayan log dosyalari:$skipped"
+        zro_set_error "$said"
+        rm -f -- "$err"
+        return "$mapped"
+      fi
+
+      # A file the tracer could not open: skipped, and said out loud three times
+      # over — here in the activity log for whoever reads it afterwards, in the
+      # banner above the answer, and in the title of the screen that carries it.
+      #
+      # The tool's own first non-empty line is kept as the reason, because the cause
+      # is almost always a permission an administrator can repair and a reason of
+      # "could not be read" would send them looking for it. Bounded: the tracer
+      # writes one line, but a reason of unknown length would push the answer off
+      # the screen this banner exists to qualify.
+      reason=$(grep -m 1 -v '^[[:space:]]*$' -- "$err" 2>/dev/null | cut -c 1-200)
+      # The log line stays English like every other line in it; the banner's
+      # fallback below is operator-facing and therefore Turkish. One variable
+      # serving both would have to pick a language for the wrong reader.
+      zro_log warn "log skipped, the tracer could not open it: $path (${reason:-no message on stderr})"
+      [ -n "$reason" ] || reason='(sebep bildirilmedi)'
+      skipped_n=$((skipped_n + 1))
+      skipped="$skipped
+         $path
+           $reason"
+      continue
     fi
+    files=$((files + 1))
 
     count=$(zro_trace_message_count "$out")
     total=$((total + count))
@@ -213,9 +299,26 @@ $out
 $selected
 EOF
   rm -f -- "$err"
+
+  # NOT ONE FILE WAS READ. That is a log this tool could not read, not a partial
+  # scan: a partial scan is an answer with a hole in it, and here there is no
+  # answer at all. Reported as the log failure, with the tool's own words kept so
+  # the screen can name the cause and the repair, and with no output whatsoever.
+  if [ "$files" -eq 0 ]; then
+    # The same list the banner would have printed, so the cause reaches the screen
+    # named file by file rather than as "the log could not be read".
+    zro_set_error "$(printf 'Okunamayan log dosyalari:%s' "$skipped" | head -c 500)"
+    return "$ZRO_E_NO_LOG"
+  fi
   zro_clear_error
 
-  [ "$total" -gt 0 ] || return "$ZRO_E_NO_RESULT"
+  # An empty answer is an empty answer only when nothing was missed. With a file
+  # skipped it is a partial scan, disclosed below and reported as one — because
+  # "no records" from a scan that could not open half its files is how an operator
+  # concludes a message never arrived and goes on to make the wrong decision.
+  if [ "$total" -eq 0 ] && [ "$skipped_n" -eq 0 ]; then
+    return "$ZRO_E_NO_RESULT"
+  fi
 
   # Said out loud whenever more than one file was read, because that is when the
   # total stops being the number of distinct messages. Not said when one file was
@@ -227,6 +330,9 @@ EOF
                   sinirini asan bir ileti her iki dosyada birer kez gorunur)'
   fi
 
+  # FIRST, above the answer it qualifies, for the reason the function says.
+  zro_trace_partial_banner "$files" "$skipped_n" "$skipped"
+
   printf 'Alici          : %s\n' "$addr"
   printf 'Varis araligi  : %s - %s\n' "$from_h" "$to_h"
   printf '                 (aralik iletinin sunucuya VARIS zamanina gore\n'
@@ -237,4 +343,11 @@ EOF
   # Unmodified, on purpose: what follows is what the server said. Reformatting it
   # would risk dropping something nobody has looked at yet.
   printf '%s\n' "$bodies"
+
+  # The answer is out, and it is not a complete one. The banner says so to the
+  # operator; this says so to the caller, which is how the screen knows to mark its
+  # title. $ZRO_E_PARTIAL has been defined in lib/core.sh since M1 with no user;
+  # this is it.
+  [ "$skipped_n" -eq 0 ] || return "$ZRO_E_PARTIAL"
+  return 0
 }

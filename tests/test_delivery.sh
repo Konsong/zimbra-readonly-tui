@@ -264,29 +264,119 @@ assert_status "$ZRO_E_INPUT" zro_trace_recipient 'ahmet.yilmaz@example.com'
 assert_status "$ZRO_E_INPUT" zro_trace_recipient 'ahmet.yilmaz@example.com' "$W_LIVE_TO" "$W_LIVE_FROM"
 assert_eq "$(cat "$ZRO_MOCK_LOG")" ""
 
-it "one unreadable file among several refuses the whole operation"
-# Strict, on purpose. A report assembled from one of two files reads exactly like
-# a complete answer, and an operator who concludes from it that a message never
-# arrived goes on to make the wrong decision. The next ticket discloses the
-# skipped file instead of refusing.
-OUT="$ONE" UNREADABLE="$SYS.1.gz" assert_status "$ZRO_E_NO_LOG" \
+it "one unreadable file among several is disclosed, not refused"
+# What this milestone is for. The answer that COULD be found is worth having, so
+# it is shown — and the operation says out loud that it is partial, because a
+# report assembled from one of two files reads exactly like a complete one.
+OUT="$ONE" UNREADABLE="$SYS.1.gz" assert_status "$ZRO_E_PARTIAL" \
   trace 'ahmet.yilmaz@example.com' "$W_28_DAY_FROM" "$W_28_DAY_TO"
 
-it "and produces no partial output at all"
-OUT="$ONE" UNREADABLE="$SYS.1.gz" out=$(trace 'ahmet.yilmaz@example.com' "$W_28_DAY_FROM" "$W_28_DAY_TO" 2>/dev/null)
-assert_eq "$out" ""
-# Proof that the refusal is about the second file rather than about never having
-# started: the first file was read before the refusal.
+it "and still answers from the file it could read"
+# The scripting variables are set INSIDE the substitution, not in front of it: an
+# assignment-only command sets them in this shell, and a leaked UNREADABLE makes
+# every case below it assert against a tracer nobody asked for.
+out=$(OUT="$ONE" UNREADABLE="$SYS.1.gz" \
+  trace 'ahmet.yilmaz@example.com' "$W_28_DAY_FROM" "$W_28_DAY_TO" 2>/dev/null)
+assert_contains "$out" "$(cat "$ONE")"
+assert_contains "$out" "Bulunan ileti  : 1"
+assert_contains "$out" "$SYS.2.gz (1)"
+# Both files were asked about: the skip is the tracer's answer for one of them,
+# not this program deciding in advance which files to open.
 : >"$ZRO_MOCK_LOG"
 OUT="$ONE" UNREADABLE="$SYS.1.gz" \
   trace 'ahmet.yilmaz@example.com' "$W_28_DAY_FROM" "$W_28_DAY_TO" >/dev/null 2>&1
-assert_contains "$(traced)" "$SYS.2.gz"
+assert_eq "$(traced | wc -l | tr -d ' ')" "2"
 
-it "keeps what the tool said about the file it could not open"
-OUT="$ONE" UNREADABLE="$SYS.1.gz" \
+it "the banner names the skipped file, what the tool said, and the repair"
+assert_contains "$out" "EKSIK TARAMA"
+assert_contains "$out" "$SYS.1.gz"
+assert_contains "$out" "unable to open file"
+# The usual cause is ownership on the log file, which breaks Zimbra's own tooling
+# too, so naming the tool that repairs it is the right outcome.
+assert_contains "$out" "zmfixperms"
+# And the one sentence the whole ticket exists for: an answer missing a file is
+# not proof of absence.
+assert_contains "$out" "KANITLAMAZ"
+
+it "the banner comes before the answer it is a caveat about"
+# A disclosure below the report it qualifies is read after the conclusion has
+# already been drawn, which is the same as not disclosing it.
+banner_line=$(printf '%s\n' "$out" | grep -n 'EKSIK TARAMA' | head -n 1 | cut -d: -f1)
+result_line=$(printf '%s\n' "$out" | grep -n 'Bulunan ileti' | head -n 1 | cut -d: -f1)
+assert_eq "$([ "$banner_line" -lt "$result_line" ] && printf yes || printf no)" "yes"
+
+it "and counts as scanned only the files it actually read"
+# The count above the file list is what an operator reads as coverage. Counting a
+# file the tracer never opened would make the banner a contradiction of the line
+# below it.
+assert_contains "$out" "Taranan log    : 1 dosya"
+assert_not_contains "$out" "2 dosya"
+
+it "the skipped file is in the activity log as well as on the screen"
+# Never silent by any path: an administrator reading the log afterwards learns
+# which file was missed without the operator having to have reported it.
+logged=$(OUT="$ONE" UNREADABLE="$SYS.1.gz" \
+  trace 'ahmet.yilmaz@example.com' "$W_28_DAY_FROM" "$W_28_DAY_TO" 2>&1 >/dev/null)
+assert_contains "$logged" "$SYS.1.gz"
+
+it "nothing found in the files it could read is still a partial scan"
+# THE FAILURE THIS TICKET REMOVES. An operator who reads "kayit bulunamadi" from a
+# scan that could not open half its files concludes the message never arrived, and
+# goes on to make the wrong decision. So an empty answer with a file missing is
+# reported as the partial scan it is, never as a plain no-result.
+OUT="$NONE" UNREADABLE="$SYS.1.gz" assert_status "$ZRO_E_PARTIAL" \
+  trace 'ahmet.yilmaz@example.com' "$W_28_DAY_FROM" "$W_28_DAY_TO"
+out=$(OUT="$NONE" UNREADABLE="$SYS.1.gz" \
+  trace 'ahmet.yilmaz@example.com' "$W_28_DAY_FROM" "$W_28_DAY_TO" 2>/dev/null)
+assert_contains "$out" "EKSIK TARAMA"
+assert_contains "$out" "Bulunan ileti  : 0"
+
+it "a complete scan carries no banner at all"
+# A disclosure printed when nothing was skipped is noise, and noise is how a real
+# disclosure stops being read.
+out=$(OUT="$ONE" trace 'ahmet.yilmaz@example.com' "$W_28_DAY_FROM" "$W_28_DAY_TO")
+assert_not_contains "$out" "EKSIK"
+assert_not_contains "$out" "UYARI"
+
+it "no file readable at all is a log failure, not a partial scan"
+# Nothing was scanned, so there is no partial answer to disclose — only a log this
+# tool could not read. Reporting it as partial would claim a coverage of zero
+# files as an answer.
+OUT="$ONE" UNREADABLE="$(printf '%s\n%s' "$SYS.1.gz" "$SYS.2.gz")" \
+  assert_status "$ZRO_E_NO_LOG" \
+  trace 'ahmet.yilmaz@example.com' "$W_28_DAY_FROM" "$W_28_DAY_TO"
+
+it "and produces no output at all, partial or otherwise"
+out=$(OUT="$ONE" UNREADABLE="$(printf '%s\n%s' "$SYS.1.gz" "$SYS.2.gz")" \
+  trace 'ahmet.yilmaz@example.com' "$W_28_DAY_FROM" "$W_28_DAY_TO" 2>/dev/null)
+assert_eq "$out" ""
+
+it "and keeps what the tool said, so the screen can name the cause"
+OUT="$ONE" UNREADABLE="$(printf '%s\n%s' "$SYS.1.gz" "$SYS.2.gz")" \
   trace 'ahmet.yilmaz@example.com' "$W_28_DAY_FROM" "$W_28_DAY_TO" >/dev/null 2>&1
 assert_contains "$(zro_last_error)" "unable to open file"
 assert_contains "$(zro_last_error)" "$SYS.1.gz"
+
+it "a failure that is not an unreadable log still refuses the whole operation"
+# A partial scan discloses files the TRACER COULD NOT OPEN, and says the rest were
+# covered. A timeout, or a status nobody here recognises, says nothing about what
+# was covered — so there is no honest partial answer to assemble from it, and the
+# operation is refused as it was before.
+RC=2 assert_status 2 trace 'ahmet.yilmaz@example.com' "$W_28_DAY_FROM" "$W_28_DAY_TO"
+out=$(RC=2 trace 'ahmet.yilmaz@example.com' "$W_28_DAY_FROM" "$W_28_DAY_TO" 2>/dev/null)
+assert_eq "$out" ""
+ZRO_MOCK_TIMEOUT_FIRE=1 OUT="$ONE" assert_status "$ZRO_E_TIMEOUT" \
+  trace 'ahmet.yilmaz@example.com' "$W_28_DAY_FROM" "$W_28_DAY_TO"
+
+it "but a refusal after a skip still names the file that was skipped"
+# A refusal may abandon the answer; it may not abandon the disclosure. The older
+# file is skipped, and the one after it fails with a status nobody here recognises:
+# the operation is refused, and what the operator is shown still names the log that
+# was never read. Otherwise this is the one path where a skipped file is silent.
+UNREADABLE="$SYS.2.gz" RC=2 assert_status 2 \
+  trace 'ahmet.yilmaz@example.com' "$W_28_DAY_FROM" "$W_28_DAY_TO"
+assert_contains "$(zro_last_error)" "$SYS.2.gz"
+assert_contains "$(zro_last_error)" "unable to open file"
 
 it "a log it could not open is reported as the documented log failure"
 # The tool dies with a message and an exit status of its own — Perl hands back

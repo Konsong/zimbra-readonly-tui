@@ -238,7 +238,21 @@ demek DEGILDIR: secilen aralik hakkinda hicbir sey ogrenilemedi.
 Secilen araligi kapsayan okunabilir bir log dosyasi yok. Log dosyalari zimbra
 kullanicisi tarafindan okunabilir olmalidir. Izinler bozulmussa onarmak icin:
 zmfixperms$detail" ;;
-    "$ZRO_E_TIMEOUT")    zro_ui_msgbox "Zaman asimi" "Komut zaman asimina ugradi." ;;
+    # Not the delivery trace's path: that screen shows its partial scan rather than
+    # reporting it, banner and all. This is here because code 30 means the same
+    # thing wherever it comes from — an answer assembled from some of its sources —
+    # and the bulk screens M6 brings will return it too. Whichever screen returns
+    # it, it may not arrive as a bare number the operator has to look up.
+    "$ZRO_E_PARTIAL")
+      zro_ui_msgbox "Eksik sonuc" \
+"Islem tamamlandi, ancak kaynaklarin bir kismi okunamadi; sonuc eksik.
+
+Bir sey bulunamamasi, aranan seyin var olmadigini KANITLAMAZ.$detail" ;;
+    # Carries the detail like every other failure here. A trace cut off after it had
+    # already skipped a log file records that file as the detail, and a timeout
+    # screen that dropped it would be the one path where a skipped file went
+    # unmentioned.
+    "$ZRO_E_TIMEOUT")    zro_ui_msgbox "Zaman asimi" "Komut zaman asimina ugradi.$detail" ;;
     "$ZRO_E_DENIED")     zro_ui_msgbox "Reddedildi" "Bu islem izin listesinde degil." ;;
     "$ZRO_E_NOCAP")      zro_ui_msgbox "Kullanilamaz" "Bu islem bu sunucuda mevcut degil." ;;
     "$ZRO_E_PERM")       zro_ui_msgbox "Yetki" "Yetki reddedildi.$detail" ;;
@@ -364,6 +378,15 @@ Aralik: $(zro_win_human "$ws") - $(zro_win_human "$we")
 Aralik iletinin sunucuya varis zamanina gore uygulanir: aralik oncesinde varip
 aralik icinde teslim edilen bir ileti bu sonuca girmez. Kayit bulunamamasi,
 iletinin sunucuya hic ulasmadigini kanitlamaz — araligi genisletmeyi deneyin."
+      continue
+    fi
+    # A PARTIAL SCAN IS AN ANSWER, not a failure, so it is shown rather than
+    # reported. What makes it honest is that the disclosure travels with it in two
+    # places: the banner the report carries at the top, and this title — whiptail
+    # keeps a title on the box frame while the text scrolls, so it is the one part
+    # of the screen a long trace cannot push out of view.
+    if [ "$rc" -eq "$ZRO_E_PARTIAL" ]; then
+      zro_show_text "Teslim izi - EKSIK TARAMA" "$out"
       continue
     fi
     if [ "$rc" -ne 0 ]; then

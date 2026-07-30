@@ -302,17 +302,86 @@ assert_contains "$transcript" "zmfixperms"
 # And it must not be readable as an empty result, which is a different answer.
 assert_contains "$transcript" "DEGILDIR"
 
-it "one unreadable file among several refuses the whole search"
-# Two files, one of them unreadable: no half-answer is shown. A report assembled
-# from one of two files reads exactly like a complete one.
+it "one unreadable file among several is answered, with the gap disclosed"
+# Three files, one of them unreadable: the operator gets what could be found AND an
+# account of what was missed. Refusing outright would throw away a usable answer;
+# showing it silently would let an empty one read as proof the message never came.
 queue "1" "ahmet.yilmaz@example.com" "week" "__CANCEL__" "__CANCEL__"
 : >"$ZRO_UI_OUT"
 ZRO_MOCK_ZMMSGTRACE___RECIPIENT_OUT="$ONE" \
-ZRO_MOCK_ZMMSGTRACE_UNREADABLE="$SYS" \
+ZRO_MOCK_ZMMSGTRACE_UNREADABLE="$SYS.1.gz" \
   zro_menu_delivery
 transcript=$(cat "$ZRO_UI_OUT")
-assert_contains "$transcript" "okunamadi"
+assert_contains "$transcript" "EKSIK TARAMA"
+assert_contains "$transcript" "$SYS.1.gz"
+assert_contains "$transcript" "$(cat "$ONE")"
+assert_contains "$transcript" "Bulunan ileti"
+# The repair, and the sentence the whole screen exists for.
+assert_contains "$transcript" "zmfixperms"
+assert_contains "$transcript" "KANITLAMAZ"
+
+it "and the disclosure is on the frame as well as in the text"
+# whiptail keeps the title on the box border while the report scrolls, so it is the
+# one part of the screen a long trace cannot push out of view. The banner is where
+# the detail is; the title is what makes the disclosure sticky.
+assert_contains "$transcript" "TEXT Teslim izi - EKSIK TARAMA"
+
+it "a complete scan is titled and worded as the whole answer it is"
+queue "1" "ahmet.yilmaz@example.com" "week" "__CANCEL__" "__CANCEL__"
+: >"$ZRO_UI_OUT"
+ZRO_MOCK_ZMMSGTRACE___RECIPIENT_OUT="$ONE" zro_menu_delivery
+transcript=$(cat "$ZRO_UI_OUT")
+assert_contains "$transcript" "TEXT Teslim izi:"
+assert_not_contains "$transcript" "EKSIK"
+
+it "no file readable at all draws the log screen, not a report"
+# Nothing was scanned, so there is no partial answer to show — and the screen has
+# to say that this is not the same thing as finding no record.
+queue "1" "ahmet.yilmaz@example.com" "week" "__CANCEL__" "__CANCEL__"
+: >"$ZRO_UI_OUT"
+ZRO_MOCK_ZMMSGTRACE___RECIPIENT_OUT="$ONE" \
+ZRO_MOCK_ZMMSGTRACE_UNREADABLE="$(printf '%s\n%s\n%s' "$SYS" "$SYS.1.gz" "$SYS.2.gz")" \
+  zro_menu_delivery
+transcript=$(cat "$ZRO_UI_OUT")
+assert_contains "$transcript" "Log okunamiyor"
+assert_contains "$transcript" "DEGILDIR"
 assert_not_contains "$transcript" "Bulunan ileti"
+
+it "nothing found in a partial scan is never shown as a plain empty result"
+# The dangerous case: an operator shown "kayit bulunamadi" from a scan missing a
+# file concludes the message never arrived. The report is shown instead, banner and
+# all, with the count it really found.
+queue "1" "ahmet.yilmaz@example.com" "week" "__CANCEL__" "__CANCEL__"
+: >"$ZRO_UI_OUT"
+ZRO_MOCK_ZMMSGTRACE___RECIPIENT_OUT="$NONE" \
+ZRO_MOCK_ZMMSGTRACE_UNREADABLE="$SYS.1.gz" \
+  zro_menu_delivery
+transcript=$(cat "$ZRO_UI_OUT")
+assert_contains "$transcript" "EKSIK TARAMA"
+assert_contains "$transcript" "Bulunan ileti  : 0"
+
+it "a refused search still names a file it had already skipped"
+# The oldest file is skipped, the next fails with a status nobody recognises. The
+# search is refused — and the screen still names the log that was never read, so no
+# path through this screen leaves a skipped file unmentioned.
+queue "1" "ahmet.yilmaz@example.com" "week" "__CANCEL__" "__CANCEL__"
+: >"$ZRO_UI_OUT"
+ZRO_MOCK_ZMMSGTRACE___RECIPIENT_OUT="$ONE" \
+ZRO_MOCK_ZMMSGTRACE___RECIPIENT_RC=2 \
+ZRO_MOCK_ZMMSGTRACE_UNREADABLE="$SYS.2.gz" \
+  zro_menu_delivery
+transcript=$(cat "$ZRO_UI_OUT")
+assert_contains "$transcript" "$SYS.2.gz"
+assert_not_contains "$transcript" "Bulunan ileti"
+
+it "the shared error reporter names a partial scan rather than a bare code"
+# Unreachable from this screen, which shows the report instead — and asserted all
+# the same, because the one thing this milestone may not do is let a skipped file
+# arrive as a number the operator has to look up.
+: >"$ZRO_UI_OUT"
+zro_report_error "$ZRO_E_PARTIAL"
+assert_contains "$(cat "$ZRO_UI_OUT")" "eksik"
+assert_not_contains "$(cat "$ZRO_UI_OUT")" "kod 30"
 
 it "the window screen offers exactly the presets the window module implements"
 # Two declarations, held equal here because neither can check the other at run

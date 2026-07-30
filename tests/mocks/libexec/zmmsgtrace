@@ -4,10 +4,12 @@ set -uo pipefail
 . "${ZRO_MOCK_LIB:?ZRO_MOCK_LIB is required}/mock_common.sh"
 zro_mock_record zmmsgtrace "$@"
 
-# One named file can be made unreadable, so that a scan over several files can be
-# tested with a single one of them failing. That is the shape both this
-# milestone's refusal and the next ticket's partial scan turn on, and keying the
-# reply on the filter alone cannot express it.
+# Named files can be made unreadable, one per line, so that a scan over several
+# files can be tested with some of them failing. That is the shape the partial
+# scan turns on — some files readable, some not — and keying the reply on the
+# filter alone cannot express it. A list rather than a single name because the
+# difference between a partial scan and a log failure is exactly HOW MANY files
+# could not be opened, so both sides of that line have to be expressible.
 #
 # The message is the one documented in
 # docs/research/2026-07-29-zimbra-cli-read-only-reference.md §B.11: the real tool
@@ -16,10 +18,15 @@ zro_mock_record zmmsgtrace "$@"
 # single-file cases use.
 if [ -n "${ZRO_MOCK_ZMMSGTRACE_UNREADABLE:-}" ]; then
   for arg in "$@"; do
-    if [ "$arg" = "$ZRO_MOCK_ZMMSGTRACE_UNREADABLE" ]; then
-      printf "zmmsgtrace: unable to open file '%s': Permission denied\n" "$arg" >&2
-      exit 13
-    fi
+    while IFS= read -r bad; do
+      [ -n "$bad" ] || continue
+      if [ "$arg" = "$bad" ]; then
+        printf "zmmsgtrace: unable to open file '%s': Permission denied\n" "$arg" >&2
+        exit 13
+      fi
+    done <<EOF
+$ZRO_MOCK_ZMMSGTRACE_UNREADABLE
+EOF
   done
 fi
 
