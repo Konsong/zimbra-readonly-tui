@@ -93,8 +93,29 @@ trace() {
     zro_trace_recipient "$@"
 }
 
+trace_sender() {
+  ZRO_MOCK_ZMMSGTRACE___SENDER_OUT="${OUT:-}" \
+  ZRO_MOCK_ZMMSGTRACE___SENDER_ERR="${ERR:-}" \
+  ZRO_MOCK_ZMMSGTRACE___SENDER_RC="${RC:-0}" \
+  ZRO_MOCK_ZMMSGTRACE_UNREADABLE="${UNREADABLE:-}" \
+    zro_trace_sender "$@"
+}
+
+trace_msgid() {
+  ZRO_MOCK_ZMMSGTRACE___ID_OUT="${OUT:-}" \
+  ZRO_MOCK_ZMMSGTRACE___ID_ERR="${ERR:-}" \
+  ZRO_MOCK_ZMMSGTRACE___ID_RC="${RC:-0}" \
+  ZRO_MOCK_ZMMSGTRACE_UNREADABLE="${UNREADABLE:-}" \
+    zro_trace_msgid "$@"
+}
+
 traced() { grep '^zmmsgtrace' "$ZRO_MOCK_LOG"; }
-vector() { printf 'zmmsgtrace\t--recipient\t%s\t--time\t%s,%s\t--year\t%s\t%s' "$@"; }
+vector_f() {
+  local filter=$1
+  shift
+  printf 'zmmsgtrace\t%s\t%s\t--time\t%s,%s\t--year\t%s\t%s' "$filter" "$@"
+}
+vector() { vector_f --recipient "$@"; }
 
 it "sends the filter, the window, the year and the one file it is asked about"
 # Asserted as the whole line, not a substring: an argument this program did not
@@ -416,6 +437,181 @@ it "opens no mailbox"
 OUT="$ONE" trace 'ahmet.yilmaz@example.com' "$W_28_DAY_FROM" "$W_28_DAY_TO" >/dev/null
 assert_not_contains "$(cat "$ZRO_MOCK_LOG")" "zmmailbox"
 assert_not_contains "$(cat "$ZRO_MOCK_LOG")" "zmprov"
+
+# ------------------------------------------------- the other two filters --
+#
+# Sender answers whether a user's outbound message actually left. Message-id
+# answers the precise question an operator has while holding a bounce report or
+# a forwarded header, where an address alone is too broad.
+#
+# Both take the path the recipient trace already takes — one invocation per
+# selected file, each carrying the year derived from that file, every value
+# quoted for the regular-expression layer. So what these cases assert is that
+# the path really is shared: a filter with a quoting rule, a window rule or a
+# per-file rule of its own would be a second implementation to keep in step.
+
+it "sends the sender filter, the window, the year and the file it is asked about"
+: >"$ZRO_MOCK_LOG"
+OUT="$ONE" trace_sender 'ahmet.yilmaz@example.com' "$W_LIVE_FROM" "$W_LIVE_TO" >/dev/null
+assert_eq "$(traced)" \
+  "$(vector_f --sender 'ahmet\.yilmaz@example\.com' 20260730080000 20260730110000 2026 "$SYS")"
+
+it "sends the message-id filter the same way"
+: >"$ZRO_MOCK_LOG"
+OUT="$ONE" trace_msgid 'CAabc123@example.com' "$W_LIVE_FROM" "$W_LIVE_TO" >/dev/null
+assert_eq "$(traced)" \
+  "$(vector_f --id 'CAabc123@example\.com' 20260730080000 20260730110000 2026 "$SYS")"
+
+it "each filter reaches the tracer in the one spelling the allowlist approves"
+# The short forms -r, -s and -i name the same operations and are refused by the
+# gate, so a call site that used one would fail closed rather than quietly.
+assert_not_contains "$(traced)" "$(printf '\t-i\t')"
+: >"$ZRO_MOCK_LOG"
+OUT="$ONE" trace_sender 'ahmet.yilmaz@example.com' "$W_LIVE_FROM" "$W_LIVE_TO" >/dev/null
+assert_not_contains "$(traced)" "$(printf '\t-s\t')"
+
+it "traces by sender once per selected file, each with that file's own year"
+# The same window that proves the year is derived per file for the recipient
+# filter, asserted again here: the defect it removes is a property of the
+# tracer, not of one filter, so a second code path would bring it back.
+: >"$ZRO_MOCK_LOG"
+OUT="$ONE" trace_sender 'ahmet.yilmaz@example.com' "$W_NY_FROM" "$W_NY_TO" >/dev/null
+assert_contains "$(traced)" "$(printf '\t--year\t2025\t%s' "$SYS.4.gz")"
+assert_contains "$(traced)" "$(printf '\t--year\t2026\t%s' "$SYS.3.gz")"
+
+it "traces by message-id once per selected file, each with that file's own year"
+: >"$ZRO_MOCK_LOG"
+OUT="$ONE" trace_msgid 'CAabc123@example.com' "$W_NY_FROM" "$W_NY_TO" >/dev/null
+assert_contains "$(traced)" "$(printf '\t--year\t2025\t%s' "$SYS.4.gz")"
+assert_contains "$(traced)" "$(printf '\t--year\t2026\t%s' "$SYS.3.gz")"
+# One line per file and no line without a year: the year travels with the file
+# whichever filter asked for it.
+assert_eq "$(traced | cut -f8 | sort -u | wc -l | tr -d ' ')" "$(traced | wc -l | tr -d ' ')"
+assert_eq "$(traced | cut -f6 | sort -u | tr -d ' \n')" "--year"
+
+it "quotes the sender for the regular-expression layer, as it does the recipient"
+# ADR-0002's address again: '+' is a quantifier, so unescaped this reports no
+# record for an address that has one — on the screen that answers whether a
+# user's own message ever left.
+: >"$ZRO_MOCK_LOG"
+OUT="$ONE" trace_sender 'ali+fatura@example.com' "$W_LIVE_FROM" "$W_LIVE_TO" >/dev/null
+assert_contains "$(traced)" "$(printf 'zmmsgtrace\t--sender\tali\\+fatura@example\\.com\t')"
+
+it "quotes a message-id, which carries more metacharacters than an address"
+: >"$ZRO_MOCK_LOG"
+# The single quotes are the point: the '$' has to reach the validator and the
+# quoter exactly as an operator would paste it, unexpanded.
+# shellcheck disable=SC2016
+OUT="$ONE" trace_msgid 'CA+abc.123$x@mail.example.com' "$W_LIVE_FROM" "$W_LIVE_TO" >/dev/null
+# shellcheck disable=SC2016
+assert_contains "$(traced)" \
+  "$(printf 'zmmsgtrace\t--id\tCA\\+abc\\.123\\$x@mail\\.example\\.com\t')"
+
+it "hands the message-id over in the case it was typed"
+# The tracer matches this filter case-sensitively, so anything this program did
+# to the case would decide the answer. It does nothing to it.
+: >"$ZRO_MOCK_LOG"
+OUT="$ONE" trace_msgid 'CAabcXYZ@Mail.EXAMPLE.com' "$W_LIVE_FROM" "$W_LIVE_TO" >/dev/null
+assert_contains "$(traced)" "$(printf '\t--id\tCAabcXYZ@Mail\\.EXAMPLE\\.com\t')"
+
+it "searches the identifier a header carries, without its angle brackets"
+# What an operator has in hand is a header line: 'Message-ID: <CAabc@example.com>'.
+# The tracer records the identifier WITHOUT its delimiters, so a pattern carrying
+# them matches nothing at all — and on this screen nothing at all reads as proof
+# the message never arrived.
+: >"$ZRO_MOCK_LOG"
+OUT="$ONE" trace_msgid '<CAabc123@example.com>' "$W_LIVE_FROM" "$W_LIVE_TO" >/dev/null
+assert_contains "$(traced)" "$(printf '\t--id\tCAabc123@example\\.com\t')"
+assert_not_contains "$(traced)" '<'
+
+it "strips only a matching pair, and only from the ends"
+assert_out_eq 'CAabc123@example.com' zro_trace_msgid_bare '<CAabc123@example.com>'
+assert_out_eq 'CAabc123@example.com' zro_trace_msgid_bare 'CAabc123@example.com'
+assert_out_eq 'a<b>c@example.com' zro_trace_msgid_bare 'a<b>c@example.com'
+assert_out_eq '<CAabc123@example.com' zro_trace_msgid_bare '<CAabc123@example.com'
+assert_out_eq 'CAabc123@example.com>' zro_trace_msgid_bare 'CAabc123@example.com>'
+assert_out_eq '' zro_trace_msgid_bare '<>'
+assert_out_eq '' zro_trace_msgid_bare ''
+
+it "refuses an invalid sender without running anything"
+: >"$ZRO_MOCK_LOG"
+assert_status "$ZRO_E_INPUT" zro_trace_sender 'ahmet@example.com; id' "$W_LIVE_FROM" "$W_LIVE_TO"
+assert_status "$ZRO_E_INPUT" zro_trace_sender '-s' "$W_LIVE_FROM" "$W_LIVE_TO"
+assert_status "$ZRO_E_INPUT" zro_trace_sender '' "$W_LIVE_FROM" "$W_LIVE_TO"
+assert_status "$ZRO_E_INPUT" zro_trace_sender
+assert_status "$ZRO_E_INPUT" zro_trace_sender 'ahmet.yilmaz@example.com' 'dun' "$W_LIVE_TO"
+assert_eq "$(cat "$ZRO_MOCK_LOG")" ""
+
+it "refuses an invalid message-id without running anything"
+: >"$ZRO_MOCK_LOG"
+assert_status "$ZRO_E_INPUT" zro_trace_msgid $'CAabc\n123@example.com' "$W_LIVE_FROM" "$W_LIVE_TO"
+assert_status "$ZRO_E_INPUT" zro_trace_msgid 'Message-ID: <CAabc@example.com>' "$W_LIVE_FROM" "$W_LIVE_TO"
+assert_status "$ZRO_E_INPUT" zro_trace_msgid '-i' "$W_LIVE_FROM" "$W_LIVE_TO"
+# Nothing but the delimiters is nothing to search for, and a filter that matched
+# everything is not what the operator asked about.
+assert_status "$ZRO_E_INPUT" zro_trace_msgid '<>' "$W_LIVE_FROM" "$W_LIVE_TO"
+# One wrapper comes off, never two. What is left is judged as the identifier it
+# claims to be, so a doubly wrapped value is refused rather than half-unwrapped
+# into a search that does not match what the screen would show.
+assert_status "$ZRO_E_INPUT" zro_trace_msgid '<<CAabc123@example.com>>' "$W_LIVE_FROM" "$W_LIVE_TO"
+assert_status "$ZRO_E_INPUT" zro_trace_msgid '<CAabc123@example.com' "$W_LIVE_FROM" "$W_LIVE_TO"
+assert_status "$ZRO_E_INPUT" zro_trace_msgid '' "$W_LIVE_FROM" "$W_LIVE_TO"
+assert_status "$ZRO_E_INPUT" zro_trace_msgid
+assert_status "$ZRO_E_INPUT" zro_trace_msgid 'CAabc123@example.com' "$W_LIVE_TO" "$W_LIVE_FROM"
+assert_eq "$(cat "$ZRO_MOCK_LOG")" ""
+
+it "names what each answer was searched by"
+# The report says which question it answers. An operator who reads a sender
+# trace as a recipient trace draws the opposite conclusion from the same lines.
+OUT="$ONE" out=$(trace_sender 'ahmet.yilmaz@example.com' "$W_28_FROM" "$W_28_TO")
+assert_contains "$out" "Gonderen       : ahmet.yilmaz@example.com"
+assert_not_contains "$out" "Alici          :"
+OUT="$ONE" out=$(trace_msgid 'CAabc123@example.com' "$W_28_FROM" "$W_28_TO")
+assert_contains "$out" "Ileti kimligi  : CAabc123@example.com"
+
+it "and answers by sender and by message-id exactly as it answers by recipient"
+# One engine, three doors: the window, the counting, the per-file headings and
+# the report itself do not know which filter was used.
+OUT="$TWO" out=$(trace_sender 'ahmet.yilmaz@example.com' "$W_28_DAY_FROM" "$W_28_DAY_TO")
+assert_contains "$out" "Bulunan ileti  : 4"
+assert_contains "$out" "Varis araligi  : 2026-07-28 00:00:00 - 2026-07-28 23:59:59"
+assert_contains "$out" "VARIS"
+assert_contains "$out" "$(cat "$TWO")"
+OUT="$NONE" assert_status "$ZRO_E_NO_RESULT" \
+  trace_msgid 'CAabc123@example.com' "$W_28_DAY_FROM" "$W_28_DAY_TO"
+OUT="$ONE" UNREADABLE="$SYS.1.gz" assert_status "$ZRO_E_PARTIAL" \
+  trace_msgid 'CAabc123@example.com' "$W_28_DAY_FROM" "$W_28_DAY_TO"
+
+it "every filter the allowlist approves is reachable and has a label"
+# Two declarations held equal, the way the window presets and the binary roots
+# are: the allowlist owns what may run, this module owns how to run it and what
+# to call it on the screen. A filter approved and unreachable is an operation
+# that reads as available and never answers; a filter reachable and unapproved
+# would not pass the gate.
+while IFS= read -r entry; do
+  [ -n "$entry" ] || continue
+  filter=${entry#*:}
+  : >"$ZRO_MOCK_LOG"
+  zro_trace_exec "$filter" 'pattern' >/dev/null 2>&1
+  assert_contains "$(cat "$ZRO_MOCK_LOG")" "$(printf 'zmmsgtrace\t%s\tpattern' "$filter")"
+  assert_ok zro_trace_label "$filter"
+done <<EOF
+$(zro_allow_entries | grep '^zmmsgtrace:')
+EOF
+
+it "a filter nobody approved cannot be expressed at all"
+# The filters this milestone does not expose are refused before the gate sees
+# them, because there is no call site that could name one. The denial is the
+# defect code, not an operator error, and nothing runs.
+: >"$ZRO_MOCK_LOG"
+assert_status "$ZRO_E_DENIED" zro_trace_exec --srchost 'mail.example.com'
+assert_status "$ZRO_E_DENIED" zro_trace_exec --desthost 'mail.example.com'
+assert_status "$ZRO_E_DENIED" zro_trace_exec -r 'ahmet.yilmaz@example.com'
+assert_status "$ZRO_E_DENIED" zro_trace_exec ''
+assert_status "$ZRO_E_DENIED" zro_trace_exec
+assert_fail zro_trace_label --srchost
+assert_fail zro_trace_label ''
+assert_eq "$(cat "$ZRO_MOCK_LOG")" ""
 
 it "renders a window bound the way the tracer documents it"
 assert_out_eq "20260728120000" zro_trace_stamp "$W_28_FROM"

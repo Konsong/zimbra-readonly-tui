@@ -258,6 +258,132 @@ zro_menu_delivery
 assert_contains "$(cat "$ZRO_UI_OUT")" "Gecersiz"
 assert_eq "$(cat "$ZRO_MOCK_LOG")" ""
 
+# ------------------------------------------------- the other two filters --
+#
+# Two more ways into the same trace. Sender answers whether a user's outbound
+# message actually left; message-id answers the precise question an operator has
+# while holding a bounce report, where an address alone is too broad.
+
+it "the trace menu offers three ways in, each reaching a filter of its own"
+# The stub backend records a menu's title and text, not its entries, so what an
+# entry SAYS cannot be asserted here — what it DOES can, and an entry wired to
+# the wrong filter is the failure a label could not have revealed anyway.
+#
+# One value serves all three: it is a valid address and a valid identifier.
+seen=""
+for entry in 1 2 3; do
+  queue "$entry" "CAabc123@example.com" "hour" "__CANCEL__" "__CANCEL__"
+  : >"$ZRO_MOCK_LOG"
+  ZRO_MOCK_ZMMSGTRACE___RECIPIENT_OUT="$ONE" \
+  ZRO_MOCK_ZMMSGTRACE___SENDER_OUT="$ONE" \
+  ZRO_MOCK_ZMMSGTRACE___ID_OUT="$ONE" \
+    zro_menu_delivery
+  seen="$seen $(grep '^zmmsgtrace' "$ZRO_MOCK_LOG" | head -n 1 | cut -f2)"
+done
+assert_eq "$seen" " --recipient --sender --id"
+
+it "a menu entry this screen does not have runs nothing"
+queue "9" "__CANCEL__"
+: >"$ZRO_MOCK_LOG"
+assert_ok zro_menu_delivery
+assert_eq "$(cat "$ZRO_MOCK_LOG")" ""
+
+it "a sender search reaches the tracer as the sender filter"
+queue "2" "ahmet.yilmaz@example.com" "hour" "__CANCEL__" "__CANCEL__"
+: >"$ZRO_MOCK_LOG"; : >"$ZRO_UI_OUT"
+ZRO_MOCK_ZMMSGTRACE___SENDER_OUT="$ONE" zro_menu_delivery
+traced=$(grep '^zmmsgtrace' "$ZRO_MOCK_LOG")
+assert_contains "$traced" "$(printf 'zmmsgtrace\t--sender\tahmet\\.yilmaz@example\\.com\t')"
+assert_not_contains "$traced" "--recipient"
+transcript=$(cat "$ZRO_UI_OUT")
+assert_contains "$transcript" "Gonderen       : ahmet.yilmaz@example.com"
+assert_contains "$transcript" "$(cat "$ONE")"
+
+it "and the wait screen names the sender it is searching for"
+notice=$(grep -A 4 "NOTICE Calisiyor" "$ZRO_UI_OUT")
+assert_contains "$notice" "Gonderen: ahmet.yilmaz@example.com"
+
+it "a message-id search reaches the tracer as the id filter"
+queue "3" "CAabc123@example.com" "hour" "__CANCEL__" "__CANCEL__"
+: >"$ZRO_MOCK_LOG"; : >"$ZRO_UI_OUT"
+ZRO_MOCK_ZMMSGTRACE___ID_OUT="$ONE" zro_menu_delivery
+traced=$(grep '^zmmsgtrace' "$ZRO_MOCK_LOG")
+assert_contains "$traced" "$(printf 'zmmsgtrace\t--id\tCAabc123@example\\.com\t')"
+transcript=$(cat "$ZRO_UI_OUT")
+assert_contains "$transcript" "Ileti kimligi  : CAabc123@example.com"
+assert_contains "$transcript" "$(cat "$ONE")"
+
+it "the message-id screen says the match is case-sensitive"
+# THE POINT OF SAYING IT. The tracer matches this filter case-sensitively and
+# the other two case-insensitively. An operator who retypes an identifier in the
+# wrong case gets an empty result, and an empty result on this screen reads as
+# proof the message never arrived.
+assert_contains "$transcript" "INPUT Ileti kimligi"
+assert_contains "$transcript" "BUYUK/kucuk harf"
+
+it "an empty message-id answer repeats what an empty answer here can hide"
+queue "3" "CAabc123@example.com" "hour" "__CANCEL__" "__CANCEL__"
+: >"$ZRO_UI_OUT"
+ZRO_MOCK_ZMMSGTRACE___ID_OUT="$NONE" zro_menu_delivery
+transcript=$(cat "$ZRO_UI_OUT")
+assert_contains "$transcript" "bulunamadi"
+assert_contains "$transcript" "kanitlamaz"
+# Said again where it matters most: this is the screen an operator reaches after
+# typing an identifier by hand.
+assert_contains "$transcript" "BUYUK/kucuk harf"
+
+it "and the recipient screen carries no such note, having nothing to warn about"
+queue "${HOUR[@]}"
+: >"$ZRO_UI_OUT"
+ZRO_MOCK_ZMMSGTRACE___RECIPIENT_OUT="$NONE" zro_menu_delivery
+assert_not_contains "$(cat "$ZRO_UI_OUT")" "BUYUK/kucuk harf"
+
+it "the identifier is searched for as a header carries it, brackets and all"
+# The header line reads 'Message-ID: <CAabc123@example.com>' and that is what an
+# operator pastes. The tracer stores the identifier without its delimiters, so
+# they come off before the search rather than turning it into one that matches
+# nothing.
+queue "3" "<CAabc123@example.com>" "hour" "__CANCEL__" "__CANCEL__"
+: >"$ZRO_MOCK_LOG"; : >"$ZRO_UI_OUT"
+ZRO_MOCK_ZMMSGTRACE___ID_OUT="$ONE" zro_menu_delivery
+assert_contains "$(grep '^zmmsgtrace' "$ZRO_MOCK_LOG")" \
+  "$(printf '\t--id\tCAabc123@example\\.com\t')"
+assert_contains "$(cat "$ZRO_UI_OUT")" "Ileti kimligi  : CAabc123@example.com"
+
+it "an invalid sender is reported and nothing is run"
+queue "2" 'ahmet@example.com; id' "__CANCEL__" "__CANCEL__"
+: >"$ZRO_UI_OUT"; : >"$ZRO_MOCK_LOG"
+zro_menu_delivery
+assert_contains "$(cat "$ZRO_UI_OUT")" "Gecersiz"
+assert_eq "$(cat "$ZRO_MOCK_LOG")" ""
+
+it "an invalid message-id is reported and nothing is run"
+# The whole header line, which is the paste that would otherwise match nothing.
+queue "3" 'Message-ID: <CAabc123@example.com>' "__CANCEL__" "__CANCEL__"
+: >"$ZRO_UI_OUT"; : >"$ZRO_MOCK_LOG"
+zro_menu_delivery
+assert_contains "$(cat "$ZRO_UI_OUT")" "Gecersiz"
+assert_eq "$(cat "$ZRO_MOCK_LOG")" ""
+
+it "cancelling either new prompt returns to the trace menu, not out of it"
+for entry in 2 3; do
+  queue "$entry" "__CANCEL__" "__CANCEL__"
+  : >"$ZRO_UI_OUT"; : >"$ZRO_MOCK_LOG"
+  assert_ok zro_menu_delivery
+  assert_eq "$(grep -c 'MENU Teslim takibi' "$ZRO_UI_OUT")" "2"
+  assert_eq "$(cat "$ZRO_MOCK_LOG")" ""
+done
+
+it "a partial scan is disclosed on every filter, not only the first one written"
+queue "2" "ahmet.yilmaz@example.com" "week" "__CANCEL__" "__CANCEL__"
+: >"$ZRO_UI_OUT"
+ZRO_MOCK_ZMMSGTRACE___SENDER_OUT="$ONE" \
+ZRO_MOCK_ZMMSGTRACE_UNREADABLE="$SYS.1.gz" \
+  zro_menu_delivery
+transcript=$(cat "$ZRO_UI_OUT")
+assert_contains "$transcript" "TEXT Teslim izi - EKSIK TARAMA"
+assert_contains "$transcript" "KANITLAMAZ"
+
 it "cancelling the trace menu returns to the caller"
 queue "__CANCEL__"
 assert_ok zro_menu_delivery

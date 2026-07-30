@@ -122,6 +122,42 @@ zro_prompt_recipient() {
   zro_prompt_address "Alici" "Alici adresi:" "Gecersiz alici adresi."
 }
 
+zro_prompt_sender() {
+  zro_prompt_address "Gonderen" "Gonderen adresi:" "Gecersiz gonderen adresi."
+}
+
+# THE ONE THING THIS SCREEN HAS TO SAY. The tracer matches a message-id
+# case-sensitively and the other two filters case-insensitively, so an operator
+# who retypes an identifier in the wrong case is answered "no delivery record" —
+# and on this screen an empty answer reads as proof the message never arrived.
+# The warning belongs where it can still be acted on, which is before the typing
+# rather than after the answer.
+ZRO_TXT_MSGID='Ileti kimligi (ornek: CAabc123@example.com)
+
+BUYUK/kucuk harf duyarlidir: kimligi geldigi yerden oldugu gibi kopyalayin.
+Basliktaki <> parantezleri yazilabilir, arama sirasinda cikarilir.'
+
+# Asks for a message-id, unwrapped and validated. Cancel and a rejected value are
+# told apart exactly as they are for an address.
+zro_prompt_msgid() {
+  local value rc=0 id
+  value=$(zro_ui_input "Ileti kimligi" "$ZRO_TXT_MSGID") || rc=$?
+  [ "$rc" -eq 0 ] || return "$ZRO_E_CANCEL"
+  # Unwrapped before it is judged, so that what is validated, what is shown on
+  # the report and what is searched for are all the same value.
+  id=$(zro_trace_msgid_bare "$value")
+  if ! zro_validate_msgid "$id"; then
+    zro_ui_msgbox "Gecersiz girdi" \
+"Gecersiz ileti kimligi.
+
+Kimlik tek parca olmalidir: bosluk, satir sonu ve kontrol karakteri
+icermemelidir. Baslik satirini oldugu gibi degil, yalnizca kimligi yapistirin
+(ornek: Message-ID: <CAabc123@example.com> icinden CAabc123@example.com)."
+    return "$ZRO_E_INPUT"
+  fi
+  printf '%s' "$id"
+}
+
 # What every screen that offers an arrival window has to say. A window compared
 # against arrival time is not the same thing as a window compared against
 # delivery time, and an operator who reads it as the latter will conclude that a
@@ -314,21 +350,35 @@ Her sorgu birkac saniye surebilir."
 # never arrived" goes on to make the wrong decision, and that ambiguity is the
 # reason this screen exists at all.
 zro_menu_delivery() {
-  local choice addr window ws we out rc
+  local choice filter label subject window ws we out rc note
   while :; do
     rc=0
     choice=$(zro_ui_menu "Teslim takibi" "Islem secin:" \
-      1 "Alici adresine gore izle") || rc=$?
+      1 "Alici adresine gore izle" \
+      2 "Gonderen adresine gore izle" \
+      3 "Ileti kimligine gore izle") || rc=$?
     [ "$rc" -eq 0 ] || return 0
 
+    # Which question was chosen, as the filter that asks it. Everything below
+    # this point is the same for all three: the window, the wait, the report and
+    # every failure. The label comes from the module that owns the report, so the
+    # menu entry an operator chose and the header they read cannot drift apart.
+    rc=0
     case $choice in
-      1) ;;
+      1) filter='--recipient'; subject=$(zro_prompt_recipient) || rc=$? ;;
+      2) filter='--sender';    subject=$(zro_prompt_sender) || rc=$? ;;
+      3) filter='--id';        subject=$(zro_prompt_msgid) || rc=$? ;;
       *) continue ;;
     esac
-
-    rc=0
-    addr=$(zro_prompt_recipient) || rc=$?
     [ "$rc" -eq 0 ] || continue
+    # A filter with no label is a defect in this file, not an operator error, so
+    # it is logged and reported rather than swallowed by the loop — which would
+    # reach the operator as the menu simply reappearing.
+    if ! label=$(zro_trace_label "$filter"); then
+      zro_log error "no label for delivery trace filter: $filter"
+      zro_report_error "$ZRO_E_DENIED"
+      continue
+    fi
 
     rc=0
     window=$(zro_prompt_window) || rc=$?
@@ -358,26 +408,46 @@ zro_menu_delivery() {
     # window reads several files, one invocation each.
     zro_ui_notice "Calisiyor" "Mail loglari taraniyor, lutfen bekleyin.
 
-Alici: $addr
+$label: $subject
 Varis araligi: $(zro_win_human "$ws") - $(zro_win_human "$we")
 Genis bir aralik birden fazla log dosyasi okur ve bu islemi uzatabilir."
 
     rc=0
-    out=$(zro_trace_recipient "$addr" "$ws" "$we") || rc=$?
+    case $filter in
+      --recipient) out=$(zro_trace_recipient "$subject" "$ws" "$we") || rc=$? ;;
+      --sender)    out=$(zro_trace_sender "$subject" "$ws" "$we") || rc=$? ;;
+      --id)        out=$(zro_trace_msgid "$subject" "$ws" "$we") || rc=$? ;;
+      # Unreachable while the two lists above agree, and here so that they may
+      # only disagree loudly: without it a filter added to the first list and
+      # missed in this one would leave $out holding the PREVIOUS search's report
+      # and $rc at zero, and the operator would be shown the last question's
+      # answer under this question's label.
+      *) zro_log error "no trace function for delivery filter: $filter"
+         zro_report_error "$ZRO_E_DENIED"
+         continue ;;
+    esac
 
     # Answered here rather than by the shared reporter: "kayit bulunamadi" alone
     # would let an operator conclude the message never arrived, when what it
     # really means is that nothing arrived IN THIS WINDOW — and a message that
     # arrived before it and was delivered inside it is not in the answer.
     if [ "$rc" -eq "$ZRO_E_NO_RESULT" ]; then
+      # An empty answer to a message-id search has one more way of being wrong
+      # than the other two do, and this is the screen where it can still be
+      # acted on: the tracer matches this filter case-sensitively, so an
+      # identifier retyped in the wrong case produces exactly this screen.
+      note=''
+      [ "$filter" = '--id' ] && note='
+Ileti kimligi BUYUK/kucuk harf duyarli olarak aranir: kimligi geldigi yerden
+oldugu gibi kopyaladiginizdan emin olun.'
       zro_ui_msgbox "Sonuc yok" \
-"$addr icin bu varis araliginda teslim kaydi bulunamadi.
+"$subject icin bu varis araliginda teslim kaydi bulunamadi.
 
 Aralik: $(zro_win_human "$ws") - $(zro_win_human "$we")
 
 Aralik iletinin sunucuya varis zamanina gore uygulanir: aralik oncesinde varip
 aralik icinde teslim edilen bir ileti bu sonuca girmez. Kayit bulunamamasi,
-iletinin sunucuya hic ulasmadigini kanitlamaz — araligi genisletmeyi deneyin."
+iletinin sunucuya hic ulasmadigini kanitlamaz — araligi genisletmeyi deneyin.$note"
       continue
     fi
     # A PARTIAL SCAN IS AN ANSWER, not a failure, so it is shown rather than

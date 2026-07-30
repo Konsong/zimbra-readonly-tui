@@ -25,14 +25,21 @@ ZRO_LIB_EXEC_LOADED=1
 # account's quota usage would therefore create a mailbox for an account that
 # had none. See docs/research/2026-07-29-zimbra-cli-read-only-reference.md §A.3.
 #
-# `zmmsgtrace --recipient` is the delivery trace. Every filter that binary takes
-# is a flag which is the whole operation, so it is approved the same way
-# `zmcontrol -v` is: as a two-token entry, with the operator's already-validated
-# address following as data. Only the recipient filter is listed. The short form
-# `-r`, the sender and message-id filters and the `--debug`, `--nosort` and
-# `--man` flags are all absent and therefore refused — each is an operation of its
-# own, and an operation arrives with the ticket that exposes it, never because the
-# binary it belongs to was already reachable.
+# `zmmsgtrace` is the delivery trace. Every filter that binary takes is a flag
+# which is the whole operation, so each is approved the same way `zmcontrol -v`
+# is: as a two-token entry, with the operator's already-validated value following
+# as data. THREE ENTRIES, ONE PER FILTER — recipient, sender and message-id are
+# three different questions, and approving one may not approve another.
+#
+# The short forms `-r`, `-s` and `-i` are absent although they name operations
+# that are approved: an operation reaches the gate in exactly one spelling, so
+# that reading a call site tells a maintainer which entry above approves it
+# without knowing the tracer's option table by heart.
+#
+# The `--srchost` and `--desthost` filters and the `--debug`, `--nosort` and
+# `--man` flags are absent and therefore refused — each is an operation of its
+# own, and an operation arrives with the ticket that exposes it, never because
+# the binary it belongs to was already reachable.
 #
 # What follows the filter in an argument vector is DATA, exactly as an account
 # name is data after `zmprov ga`. The arrival window (`--time`), the year
@@ -58,6 +65,8 @@ zmprov:-l:gc
 zmprov:-l:getCos
 zmcontrol:-v
 zmmsgtrace:--recipient
+zmmsgtrace:--sender
+zmmsgtrace:--id
 '
 
 zro_allow_entries() {

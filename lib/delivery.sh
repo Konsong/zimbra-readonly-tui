@@ -79,6 +79,70 @@ zro_trace_stamp() {
   printf '%s' "$out"
 }
 
+# The three questions this screen answers, and the only path from here to the
+# tracer. A filter is written out LITERALLY, once each, because that is what
+# lets tests/test_readonly_scan.sh read the source and prove that every tracing
+# call site names a filter the allowlist approves. A single call site handing the
+# gate a variable would be undecidable to that reader, and the guarantee it
+# enforces is worth four lines of case.
+#
+# It also means a filter this project has not exposed cannot be expressed at
+# all: --srchost and --desthost are not refused here because the gate would
+# refuse them, but because there is nowhere to write them. Reaching one is a
+# defect in this file, so the refusal is the defect code.
+#
+#   $1  the filter, as the allowlist spells it
+#   $@  the already-quoted pattern and this program's own arguments
+zro_trace_exec() {
+  local filter=${1-}
+  # Called with nothing at all is a defect like any other bad filter, and shift
+  # on an empty vector is an error rather than a no-op.
+  [ "$#" -eq 0 ] || shift
+  case $filter in
+    --recipient) zro_exec zmmsgtrace --recipient "$@" ;;
+    --sender)    zro_exec zmmsgtrace --sender "$@" ;;
+    --id)        zro_exec zmmsgtrace --id "$@" ;;
+    *)
+      zro_log error "denied, no such delivery trace filter: $filter"
+      return "$ZRO_E_DENIED"
+      ;;
+  esac
+}
+
+# What the report calls the value it was searched by. The header line is how an
+# operator knows which question the lines below it answer — a sender trace read
+# as a recipient trace supports the opposite conclusion from the same output.
+#
+# One table for the module and the screen alike, so the menu entry an operator
+# chose and the header they end up reading cannot drift apart.
+zro_trace_label() {
+  case ${1-} in
+    --recipient) printf 'Alici' ;;
+    --sender)    printf 'Gonderen' ;;
+    --id)        printf 'Ileti kimligi' ;;
+    *) return 1 ;;
+  esac
+}
+
+# The identifier as the tracer holds it, with the angle brackets a mail header
+# wraps it in taken off.
+#
+# The tracer captures a message-id from 'message-id=<([^>]+)>' and stores what is
+# INSIDE the brackets, so a pattern carrying them matches nothing at all. What an
+# operator has in hand is the header line, brackets and all — and on this screen
+# a filter that cannot match reads as proof the message never arrived.
+#
+# Only a MATCHING PAIR at the two ends is removed, and never more than one: that
+# is unwrapping a delimiter the syntax defines, not repairing a value into
+# something nobody typed.
+zro_trace_msgid_bare() {
+  local id=${1-}
+  case $id in
+    '<'*'>') id=${id#<}; id=${id%>} ;;
+  esac
+  printf '%s' "$id"
+}
+
 # Printed above a report assembled from fewer log files than the arrival window
 # selected — a PARTIAL SCAN.
 #
@@ -118,11 +182,23 @@ zro_trace_partial_banner() {
   printf '\n'
 }
 
-# Traces delivery for one recipient address inside an arrival window.
+# Traces delivery inside an arrival window, by whichever filter it was given.
 #
-#   $1  recipient address, as the operator typed it
-#   $2  window start, an absolute local timestamp in seconds
-#   $3  window end, the same
+#   $1  the filter, as the allowlist spells it
+#   $2  the value to search for, validated by the caller and NOT yet quoted
+#   $3  window start, an absolute local timestamp in seconds
+#   $4  window end, the same
+#
+# ONE ENGINE, THREE DOORS. Which question is being asked changes the filter, the
+# value and the header label and nothing else: the window, the file selection,
+# the per-file year, the counting, the partial-scan disclosure and the exit codes
+# are the same for all three. A filter with a rule of its own would be a second
+# implementation of every one of those, and the pair that drifted would be the
+# quoting — which is the one that fails silently, as a trace that finds nothing.
+#
+# The VALUE ARRIVES UNQUOTED and is quoted here. Quoting in the wrappers would
+# put the third escaping layer three times where a fourth filter could forget it
+# once; here it is not a rule to remember but the only path there is.
 #
 # ONE INVOCATION PER SELECTED FILE, each carrying the year derived from that
 # file's own modification time. The tracer guesses the year once, globally, from
@@ -151,29 +227,42 @@ zro_trace_partial_banner() {
 # Only a file the tracer COULD NOT OPEN is skippable. A timeout, or a status
 # nobody here recognises, says nothing about which files were covered, so no honest
 # partial answer can be assembled from it and the operation is still refused.
-zro_trace_recipient() {
-  local addr=${1-} ws=${2-} we=${3-}
-  zro_validate_email "$addr" || return "$ZRO_E_INPUT"
+zro_trace_run() {
+  local filter=${1-} subject=${2-} ws=${3-} we=${4-} label
+  # A filter with no label is one no wrapper below should have asked for, and it
+  # would print a report headed by nothing. Refused here as well as at the gate,
+  # since this is where the two tables are read together — and logged, because a
+  # denial is a defect in this program rather than something the operator did.
+  if ! label=$(zro_trace_label "$filter"); then
+    zro_log error "denied, no such delivery trace filter: $filter"
+    return "$ZRO_E_DENIED"
+  fi
+  [ -n "$subject" ] || return "$ZRO_E_INPUT"
+  # Every validator above refuses a leading '-' already. Refused here too, at the
+  # one point all three filters pass through, so that a filter added later cannot
+  # forget it and hand the tracer a value it would read as a flag.
+  case $subject in -*) return "$ZRO_E_INPUT" ;; esac
   case $ws in ''|*[!0-9]*) return "$ZRO_E_INPUT" ;; esac
   case $we in ''|*[!0-9]*) return "$ZRO_E_INPUT" ;; esac
   # An end before its start is a caller defect. Searching the empty window it
   # describes would answer "nothing arrived" to a question nobody asked.
   [ "$ws" -le "$we" ] || return "$ZRO_E_INPUT"
 
-  # Third escaping layer. The gate already keeps this out of a shell, and the
-  # validator has already refused anything that is not an address — but every
-  # filter this tool takes is a regular expression, so an address carrying a
+  # Third escaping layer, on EVERY filter rather than on the first one written.
+  # The gate already keeps this out of a shell, and a validator has already
+  # refused anything that is not the kind of value it claims to be — but every
+  # filter this tool takes is a regular expression, so a value carrying a
   # quantifier would otherwise fail to match itself.
   #
   # Escaped but deliberately NOT anchored. Anchoring would need to be right about
   # what the tool matches the pattern against, and nobody here has read that; get
   # it wrong and every trace silently finds nothing, which is the one failure this
   # screen may not have. Unanchored, the cost runs the other way and is visible:
-  # an address that is a substring of another can pull in a neighbour's message,
-  # and the report shown below names every recipient it matched. Anchoring waits
-  # on the same capture as the table view.
+  # a value that is a substring of another can pull in a neighbour's message, and
+  # the report shown below names every recipient it matched. Anchoring waits on
+  # the same capture as the table view.
   local pattern from to from_h to_h
-  pattern=$(zro_regex_quote "$addr")
+  pattern=$(zro_regex_quote "$subject")
   from=$(zro_trace_stamp "$ws") || return "$ZRO_E_UNAVAILABLE"
   to=$(zro_trace_stamp "$we") || return "$ZRO_E_UNAVAILABLE"
   # The window as the operator will read it, resolved BEFORE any file is opened.
@@ -231,7 +320,7 @@ zro_trace_recipient() {
     # stdin is closed for the child. This loop reads the selection from a
     # heredoc, and a program that read from it would consume the files it has not
     # been asked about yet.
-    out=$(zro_exec zmmsgtrace --recipient "$pattern" \
+    out=$(zro_trace_exec "$filter" "$pattern" \
             --time "$from,$to" --year "$year" "$path" \
             2>"$err" </dev/null) || rc=$?
     if [ "$rc" -ne 0 ]; then
@@ -333,7 +422,9 @@ EOF
   # FIRST, above the answer it qualifies, for the reason the function says.
   zro_trace_partial_banner "$files" "$skipped_n" "$skipped"
 
-  printf 'Alici          : %s\n' "$addr"
+  # Padded to the width the lines below it use, so the labels line up whichever
+  # question was asked.
+  printf '%-15s: %s\n' "$label" "$subject"
   printf 'Varis araligi  : %s - %s\n' "$from_h" "$to_h"
   printf '                 (aralik iletinin sunucuya VARIS zamanina gore\n'
   printf '                  uygulanir; aralik oncesinde varip aralik icinde\n'
@@ -350,4 +441,48 @@ EOF
   # this is it.
   [ "$skipped_n" -eq 0 ] || return "$ZRO_E_PARTIAL"
   return 0
+}
+
+# The three questions, each with its own validator and nothing else of its own.
+#
+#   $1  the value, as the operator typed it
+#   $2  window start, an absolute local timestamp in seconds
+#   $3  window end, the same
+#
+# A wrapper is thin on purpose: it decides what a valid value IS for its
+# question, and hands the rest to the engine above. Nothing here re-decides how
+# a window is searched, and nothing here quotes — the engine does that for every
+# filter, once.
+#
+# The window is left to the engine to judge as well, so that a malformed one is
+# the same refusal whichever door it arrives at.
+#
+# A path is never taken from a caller: the files come from the log inventory, so
+# a fourth argument is ignored rather than trusted.
+zro_trace_recipient() {
+  zro_validate_email "${1-}" || return "$ZRO_E_INPUT"
+  zro_trace_run --recipient "${1-}" "${2-}" "${3-}"
+}
+
+# Whether a user's own message actually left. The same validator as the
+# recipient: a sender is an address, and the tracer matches it case-insensitively
+# just as it does a recipient.
+zro_trace_sender() {
+  zro_validate_email "${1-}" || return "$ZRO_E_INPUT"
+  zro_trace_run --sender "${1-}" "${2-}" "${3-}"
+}
+
+# The precise question, for an operator holding a bounce report or a forwarded
+# header. The identifier is unwrapped before it is validated, so that the value
+# judged is the value that will actually be searched for — '<>' and nothing else
+# is refused rather than turned into a filter matching everything.
+#
+# CASE-SENSITIVE, alone among the three, and untouched here: the screen says so,
+# because an operator who retypes an identifier in the wrong case would otherwise
+# get an empty result that reads as a definitive answer.
+zro_trace_msgid() {
+  local id
+  id=$(zro_trace_msgid_bare "${1-}")
+  zro_validate_msgid "$id" || return "$ZRO_E_INPUT"
+  zro_trace_run --id "$id" "${2-}" "${3-}"
 }

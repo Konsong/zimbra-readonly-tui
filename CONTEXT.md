@@ -103,6 +103,14 @@ morning, so a file's lines mostly predate its own timestamp — naming a file by
 its own date is the off-by-one this term exists to prevent.
 _Avoid_: log date, file date
 
+**Message-id**:
+The identifier a mail agent stamps on a message and every log of its hops
+carries. It is the one trace filter matched **case-sensitively**, and the one
+whose value is not an address — so it has a validator of its own, permissive in
+character set and strict about being a single value. A header wraps it in angle
+brackets; the tracer records it without them.
+_Avoid_: message id (as two words), header id
+
 **Arrival window**:
 The time range a trace is restricted to, compared against when a message
 **arrived**. A message that arrived before the window and was delivered inside it
