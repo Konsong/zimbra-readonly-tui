@@ -44,6 +44,15 @@ ZRO_MOCK_ID_USER=zimbra ZRO_ZIMBRA_BIN=/nonexistent \
 it "fails when a required system binary is missing"
 ZRO_MOCK_ID_USER=zimbra ZRO_TIMEOUT_BIN="" \
   assert_status "$ZRO_E_UNAVAILABLE" zro_startup_check
+# Without a clock there is no arrival window and no year for a rotated log, and
+# without stat there is no log inventory. Both are refused here rather than from
+# inside a screen, where they would arrive as a failure to work backwards from.
+ZRO_MOCK_ID_USER=zimbra ZRO_DATE_BIN="" \
+  assert_status "$ZRO_E_UNAVAILABLE" zro_startup_check
+ZRO_MOCK_ID_USER=zimbra ZRO_STAT_BIN="" \
+  assert_status "$ZRO_E_UNAVAILABLE" zro_startup_check
+captured=$(ZRO_MOCK_ID_USER=zimbra ZRO_DATE_BIN="" zro_startup_check 2>&1)
+assert_contains "$captured" "date"
 
 it "runs the smoke check through the full wrapper when root"
 : >"$ZRO_MOCK_LOG"

@@ -22,7 +22,11 @@ ZRO_E_PERM=20
 ZRO_E_UNAVAILABLE=21
 ZRO_E_TIMEOUT=22
 ZRO_E_NO_LOG=23
-# Bulk
+# Partial. The operation ran and answered, but not from everything it was meant to
+# read: a delivery trace whose arrival window selected a log file it could not open,
+# or a bulk read that could not reach every account. Never returned without saying
+# so on the screen as well — an answer assembled from some of its sources reads
+# exactly like a complete one.
 ZRO_E_PARTIAL=30
 # Navigation. Never becomes a process exit status.
 ZRO_E_CANCEL=40
@@ -57,6 +61,41 @@ zro_first_existing() {
   done
   return 1
 }
+
+# The clock, behind a variable like every other binary path, and for the reason
+# CLAUDE.md gives: that is what makes it mockable. zro_log above calls date bare,
+# because a log line's stamp is only ever read by a human. Every other date in
+# this program produces a value that reaches a command line and decides whether a
+# trace finds anything at all — the year stamped on a rotated log, the bounds of
+# an arrival window — so those go through this.
+ZRO_DATE_BIN="${ZRO_DATE_BIN:-$(zro_first_existing /usr/bin/date /bin/date)}"
+
+# What an absolute timestamp looks like in a given format, as LOCAL WALL CLOCK.
+# The one place this program asks the clock about a moment: the log inventory
+# derives a file's year through it, the arrival window renders its bounds, and the
+# delivery trace builds the tracer's own time option. Each caller still judges the
+# answer it got — a year is four digits, a trace bound is fourteen — because those
+# are different guarantees, but none of them repeats how to reach the clock or how
+# to refuse a timestamp that is not one.
+#
+#   $1  a date format, without its leading '+'
+#   $2  an absolute timestamp in seconds
+zro_clock_fmt() {
+  local fmt=${1-} ts=${2-} out
+  [ -n "$fmt" ] || return "$ZRO_E_INPUT"
+  case $ts in ''|*[!0-9]*) return "$ZRO_E_INPUT" ;; esac
+  [ -n "$ZRO_DATE_BIN" ] || return "$ZRO_E_UNAVAILABLE"
+  out=$("$ZRO_DATE_BIN" -d "@$ts" "+$fmt" 2>/dev/null) || return "$ZRO_E_UNAVAILABLE"
+  [ -n "$out" ] || return "$ZRO_E_UNAVAILABLE"
+  printf '%s' "$out"
+}
+
+# The separator every pair this program passes between functions travels on. A
+# function answers with a status, so two values have to share one line — the log
+# inventory's timestamp-and-path pairs and the arrival window's two bounds alike.
+# One constant rather than one per module: two names for one character is how a
+# producer and a consumer end up splitting on different things.
+ZRO_TAB=$'\t'
 
 # The last underlying failure message, kept in a file rather than a variable.
 # Menu code runs operations inside command substitution, so a variable set in

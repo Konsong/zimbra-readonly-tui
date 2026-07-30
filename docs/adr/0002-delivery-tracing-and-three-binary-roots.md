@@ -131,6 +131,25 @@ create `/var/log/zimbra.log`.
 This is the same class of debt as M2's `gis` experiment: hours of server work, off
 the critical path, and not a milestone.
 
+**The disclosure arrives in two steps, and the strict one ships first.** The ticket
+that makes the arrival window decide which files are traced refuses the whole
+operation when any selected file cannot be read, reporting code 23; the partial
+scan described above — the answer plus a sticky banner and code 30 — is the ticket
+that follows it. Both are honest; the first is simply stricter than it needs to be,
+and it is sequenced first so that no release ever shows a report assembled from
+some of the files without saying so. The same sequencing applies to the readability
+probe: until it lands, an unreadable log is met inside the screen rather than
+before it.
+
+**The window, the year and the file are data, not allowlist entries.** Only
+`zmmsgtrace:--recipient` is listed, and `--time`, `--year` and the log path follow
+it in the argument vector the way an account name follows `zmprov ga`. All three
+are computed — from a preset or a validated date, and from the log inventory — and
+none is text an operator typed. Listing them would be worse than pointless: an
+entry for `zmmsgtrace:--time` would approve a trace with no filter at all. The gate
+still refuses each of them in the leading position, so reading the allowlist
+remains the complete account of what may run.
+
 **M5 stays independent of the existence gate.** No mailbox is opened anywhere in
 this design, so ADR-0001's blocker does not reach it. §2.2 claimed M5 was free of
 that constraint; this design confirms it rather than assuming it.

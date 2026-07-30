@@ -3,6 +3,33 @@ set -uo pipefail
 # shellcheck source=../mock_common.sh
 . "${ZRO_MOCK_LIB:?ZRO_MOCK_LIB is required}/mock_common.sh"
 zro_mock_record zmmsgtrace "$@"
+
+# Named files can be made unreadable, one per line, so that a scan over several
+# files can be tested with some of them failing. That is the shape the partial
+# scan turns on — some files readable, some not — and keying the reply on the
+# filter alone cannot express it. A list rather than a single name because the
+# difference between a partial scan and a log failure is exactly HOW MANY files
+# could not be opened, so both sides of that line have to be expressible.
+#
+# The message is the one documented in
+# docs/research/2026-07-29-zimbra-cli-read-only-reference.md §B.11: the real tool
+# dies with no exit status of its own, so the text is the only signal there is.
+# Status 13 is what Perl hands back from that errno, matching the fixture the
+# single-file cases use.
+if [ -n "${ZRO_MOCK_ZMMSGTRACE_UNREADABLE:-}" ]; then
+  for arg in "$@"; do
+    while IFS= read -r bad; do
+      [ -n "$bad" ] || continue
+      if [ "$arg" = "$bad" ]; then
+        printf "zmmsgtrace: unable to open file '%s': Permission denied\n" "$arg" >&2
+        exit 13
+      fi
+    done <<EOF
+$ZRO_MOCK_ZMMSGTRACE_UNREADABLE
+EOF
+  done
+fi
+
 # Keyed on the filter flag alone, unlike the Zimbra mocks. What follows a filter
 # here is the operator's address, not a subcommand, so keying on it would make
 # every test invent an environment variable name out of an e-mail address.

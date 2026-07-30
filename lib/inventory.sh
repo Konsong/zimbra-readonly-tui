@@ -182,19 +182,11 @@ zro_inv_unsupported_compression() {
 # upper bound, and a pure function may not ask the clock what time it is.
 ZRO_INV_OPEN_END=99999999999
 
-ZRO_INV_TAB=$'\t'
-
-# The year a timestamp falls in, as local wall clock.
-#
-# Behind a variable like every other binary path, and for the reason CLAUDE.md
-# gives: that is what makes it mockable. lib/core.sh calls date bare, but that
-# call only stamps a log line, while this one produces a value that reaches a
-# command line and decides whether a trace finds anything at all.
-ZRO_DATE_BIN="${ZRO_DATE_BIN:-$(zro_first_existing /usr/bin/date /bin/date)}"
-
+# The year a timestamp falls in, as local wall clock. Through lib/core.sh's one
+# clock accessor, which is also what the arrival window reads. The caller judges
+# the answer: only four digits may reach a command line.
 zro_inv_year() {
-  [ -n "$ZRO_DATE_BIN" ] || return 1
-  "$ZRO_DATE_BIN" -d "@${1-}" '+%Y' 2>/dev/null
+  zro_clock_fmt '%Y' "${1-}"
 }
 
 # Oldest first, and for one timestamp the longest path first.
@@ -207,7 +199,7 @@ zro_inv_year() {
 # rotated file ahead of the plain one, so it is the plain duplicate that is
 # dropped as empty below.
 zro_inv_sort_pairs() {
-  LC_ALL=C sort -t "$ZRO_INV_TAB" -k1,1n -k2,2r
+  LC_ALL=C sort -t "$ZRO_TAB" -k1,1n -k2,2r
 }
 
 # Which files an arrival window covers, and the year to stamp on each.
@@ -252,8 +244,8 @@ zro_inv_select() {
   # dropped as though it were the blank line this heredoc always ends with.
   while IFS= read -r line; do
     [ -n "$line" ] || continue
-    mtime=${line%%"$ZRO_INV_TAB"*}
-    path=${line#*"$ZRO_INV_TAB"}
+    mtime=${line%%"$ZRO_TAB"*}
+    path=${line#*"$ZRO_TAB"}
     case $mtime in
       ''|*[!0-9]*)
         zro_log error "denied, log timestamp is not a number: $line"

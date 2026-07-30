@@ -12,10 +12,21 @@ set -uo pipefail
 SOURCES=("$ZRO_SRC/zimbra-ro-tui.sh" "$ZRO_SRC"/lib/*.sh)
 
 # Comments only. Documentation may name what code may not do.
+#
+# A '#' begins a comment at the start of a line or after whitespace, and NOWHERE
+# ELSE. Cutting at every '#' instead truncates a line in the middle of a parameter
+# expansion — ${var#prefix}, ${#var} — or of an arithmetic base like 10#$n, and a
+# line cut in half can end inside an unclosed quote. That throws the quote
+# tracking below out of step for every file after it, which is how a scan of a
+# tree with nothing wrong in it reported a literal path in executable position.
+zro_strip_comments() {
+  sed -e 's/^[[:space:]]*#.*$//' -e 's/\([[:space:]]\)#.*$/\1/' "$1"
+}
+
 zro_scan_raw() {
   local f
   for f in "${SOURCES[@]}"; do
-    sed 's/[[:space:]]*#.*$//' "$f"
+    zro_strip_comments "$f"
   done
 }
 
@@ -55,8 +66,22 @@ zro_scan_code() {
   zro_scan_raw | zro_strip_dquotes
 }
 
+# One file, read exactly the way the whole tree is. Every per-file case goes
+# through this: repeating the comment rule per case is how two of them below were
+# left reading a '#' the tree's own scan had stopped treating as a comment.
+zro_scan_file() {
+  zro_strip_comments "$1" | zro_strip_dquotes
+}
+
 raw_code=$(zro_scan_raw)
 code=$(zro_scan_code)
+
+it "the scan's own view of the tree closes every quote it opens"
+# The scanner is only as good as its quote tracking, and that tracking runs across
+# the WHOLE tree as one stream: one unbalanced quote and every file after it is
+# read inside out — strings surviving into 'code', real statements vanishing from
+# it. Both directions are silent, so the parity is asserted rather than trusted.
+assert_eq "$(( $(printf '%s' "$raw_code" | tr -cd '"' | wc -c) % 2 ))" "0"
 
 it "contains no write subcommand in an executable position"
 for verb in createAccount modifyAccount deleteAccount renameAccount \
@@ -205,7 +230,7 @@ assert_eq "$unapproved" ""
 
 it "the delivery trace names no mailbox binary and no directory command"
 # M5's independence from the existence gate, asserted rather than assumed.
-delivery=$(sed 's/[[:space:]]*#.*$//' "$ZRO_SRC/lib/delivery.sh" | zro_strip_dquotes)
+delivery=$(zro_scan_file "$ZRO_SRC/lib/delivery.sh")
 assert_not_contains "$delivery" "zmmailbox"
 assert_not_contains "$delivery" "zmprov"
 
@@ -248,7 +273,7 @@ for prefix in /opt/zimbra /var/log; do
   assert_not_contains "$code" "$prefix"
 done
 
-inventory=$(sed 's/[[:space:]]*#.*$//' "$ZRO_SRC/lib/inventory.sh" | zro_strip_dquotes)
+inventory=$(zro_scan_file "$ZRO_SRC/lib/inventory.sh")
 
 it "the log inventory declares no proxy log"
 # The proxy log's rotation configuration is the only one that delays compression,
@@ -266,8 +291,7 @@ assert_not_contains "$inventory" "zro_exec"
 
 it "no module calls a Zimbra binary outside the gate"
 for f in "${SOURCES[@]}"; do
-  body=$(sed 's/[[:space:]]*#.*$//' "$f" | zro_strip_dquotes \
-         | grep -v 'zro_exec' | grep -v 'ZRO_ALLOW')
+  body=$(zro_scan_file "$f" | grep -v 'zro_exec' | grep -v 'ZRO_ALLOW')
   assert_not_contains "$body" 'zmprov '
   assert_not_contains "$body" 'zmmailbox '
   assert_not_contains "$body" 'zmcontrol '
