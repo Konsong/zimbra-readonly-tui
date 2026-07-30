@@ -74,9 +74,17 @@ accommodated. They are not needed on a standard host.
 |---|---|---|
 | `ZRO_ZIMBRA_BIN` | `/opt/zimbra/bin` | where the Zimbra binaries live |
 | `ZRO_ZIMBRA_LIBEXEC` | `/opt/zimbra/libexec` | where `zmmsgtrace` lives |
+| `ZRO_SYSLOG_FILE` | `/var/log/zimbra.log` | the primary mail log — Postfix, amavis and auth |
+| `ZRO_LOG_DIR` | `/opt/zimbra/log` | where Zimbra's own logs live |
 | `ZRO_TIMEOUT` | `60` | seconds before a command is killed |
-| `ZRO_LOG_FILE` | unset | when set, activity is appended here |
-| `ZRO_RUNUSER`, `ZRO_TIMEOUT_BIN`, `ZRO_ID_BIN` | resolved by path | system binaries |
+| `ZRO_LOG_FILE` | unset | when set, **this tool's** activity is appended here — unrelated to the two above |
+| `ZRO_RUNUSER`, `ZRO_TIMEOUT_BIN`, `ZRO_ID_BIN`, `ZRO_STAT_BIN` | resolved by path | system binaries |
+
+The two log variables decide **where** the logs are, never **which** ones are
+read. The base names — the mail log, `mailbox.log` and `audit.log` — are declared
+in code, and only the rotation variants of those names are looked for on disk.
+Pointing `ZRO_LOG_DIR` somewhere else moves the search; it cannot widen it, and a
+path carrying anything outside `[A-Za-z0-9._/-]` is refused rather than read.
 
 There is deliberately **no variable that changes the identity decision or
 disables the allowlist**. A safety check with an off switch is not a safety

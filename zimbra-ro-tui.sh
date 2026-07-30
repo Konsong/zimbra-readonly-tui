@@ -14,6 +14,8 @@ ZRO_ROOT=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 . "$ZRO_ROOT/lib/validate.sh"
 # shellcheck source=lib/exec.sh
 . "$ZRO_ROOT/lib/exec.sh"
+# shellcheck source=lib/inventory.sh
+. "$ZRO_ROOT/lib/inventory.sh"
 # shellcheck source=lib/capability.sh
 . "$ZRO_ROOT/lib/capability.sh"
 # shellcheck source=lib/ui.sh

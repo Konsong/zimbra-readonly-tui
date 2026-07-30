@@ -215,26 +215,54 @@ assert_not_contains "$delivery" "zmprov"
 # is that the production path is never reachable except through a variable the
 # operator can override — so that is what is asserted, and it survives the next
 # root without being edited.
-it "every production Zimbra path is an overridable default and nothing else"
-paths=$(printf '%s\n' "$raw_code" | grep -F '/opt/zimbra')
-assert_contains "$paths" "/opt/zimbra"   # the assertion has something to check
-literal=""
-while IFS= read -r line; do
-  [ -n "$line" ] || continue
-  # The backreference is the point of the pattern: the name being assigned and
-  # the name being defaulted have to be the same variable, or setting it in the
-  # environment overrides nothing.
-  name=$(printf '%s\n' "$line" \
-         | sed -n 's/^[[:space:]]*\(ZRO_[A-Z0-9_]*\)="\${\1:-\/opt\/zimbra[^"]*}"[[:space:]]*$/\1/p')
-  [ -n "$name" ] || literal="$literal [$line]"
-done <<EOF
-$paths
+#
+# The log inventory brought a second prefix with it: the primary mail log is
+# written by the syslog daemon and lives outside the Zimbra tree, so the rule is
+# applied to every production prefix rather than to the one that came first.
+zro_scan_literal_paths() {
+  local prefix=$1 esc line name literal=""
+  # The prefix is interpolated into a sed pattern whose delimiter is '/'.
+  esc=$(printf '%s' "$prefix" | sed 's|/|\\/|g')
+  while IFS= read -r line; do
+    [ -n "$line" ] || continue
+    # The backreference is the point of the pattern: the name being assigned and
+    # the name being defaulted have to be the same variable, or setting it in the
+    # environment overrides nothing.
+    name=$(printf '%s\n' "$line" \
+           | sed -n 's/^[[:space:]]*\(ZRO_[A-Z0-9_]*\)="\${\1:-'"$esc"'[^"]*}"[[:space:]]*$/\1/p')
+    [ -n "$name" ] || literal="$literal [$line]"
+  done <<EOF
+$(printf '%s\n' "$raw_code" | grep -F -- "$prefix")
 EOF
-assert_eq "$literal" ""
-# Every occurrence sits inside a double-quoted default, so once quoted spans are
-# stripped the path is gone entirely. A literal path anywhere in executable
-# position fails both this and the assertion above.
-assert_not_contains "$code" "/opt/zimbra"
+  printf '%s' "$literal"
+}
+
+it "every production path is an overridable default and nothing else"
+for prefix in /opt/zimbra /var/log; do
+  # The assertion has something to check.
+  assert_contains "$(printf '%s\n' "$raw_code" | grep -F -- "$prefix")" "$prefix"
+  assert_eq "$(zro_scan_literal_paths "$prefix")" ""
+  # Every occurrence sits inside a double-quoted default, so once quoted spans
+  # are stripped the path is gone entirely. A literal path anywhere in executable
+  # position fails both this and the assertion above.
+  assert_not_contains "$code" "$prefix"
+done
+
+inventory=$(sed 's/[[:space:]]*#.*$//' "$ZRO_SRC/lib/inventory.sh" | zro_strip_dquotes)
+
+it "the log inventory declares no proxy log"
+# The proxy log's rotation configuration is the only one that delays compression,
+# so its most recent rotated file is plain text while every other file's is
+# already gzipped. Excluding it keeps that inversion out of the code entirely.
+assert_not_contains "$inventory" "nginx"
+
+it "the log inventory reaches no binary and no mailbox"
+# Building the inventory is a question about names and timestamps. Asking Zimbra
+# anything would make it something else, and would put it behind the existence
+# gate this milestone is independent of.
+assert_not_contains "$inventory" "zmmailbox"
+assert_not_contains "$inventory" "zmprov"
+assert_not_contains "$inventory" "zro_exec"
 
 it "no module calls a Zimbra binary outside the gate"
 for f in "${SOURCES[@]}"; do

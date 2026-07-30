@@ -65,6 +65,18 @@ assert_not_contains() {
   esac
 }
 
+# Whole-line membership, for the cases where a substring cannot answer: a log
+# file's path is a prefix of every rotation variant of it, so asking whether
+# /var/log/zimbra.log appears in a list is not the same question as asking
+# whether it is IN the list.
+assert_not_line() {
+  if printf '%s\n' "$1" | grep -qxF -- "$2"; then
+    zro_t_fail "expected no line equal to [$2], got [$1]"
+  else
+    zro_t_pass
+  fi
+}
+
 assert_out_eq() {
   local want=$1 got
   shift
