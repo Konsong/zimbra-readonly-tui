@@ -118,6 +118,23 @@ zro_current_user() {
   "$ZRO_ID_BIN" -un
 }
 
+# The groups an account belongs to, space separated on one line.
+#
+# Beside zro_current_user because it is the same binary asked the other identity
+# question this program has, and it bypasses the allowlist for the same reason:
+# identity is this program's own plumbing rather than an operation an operator
+# chose. Nothing about it reaches Zimbra or a mailbox.
+#
+# The account is named by this program and never by an operator, so no value an
+# operator typed reaches this argument. It answers about an account other than the
+# one running the tool on purpose: whether the account every command runs as can
+# read a file is not a question about who started the tool.
+zro_user_groups() {
+  [ -n "$ZRO_ID_BIN" ] || return "$ZRO_E_UNAVAILABLE"
+  [ -n "${1-}" ] || return "$ZRO_E_INPUT"
+  "$ZRO_ID_BIN" -Gn "$1"
+}
+
 # Pure: the identity decision is a function of the user name alone, and has no
 # environment override. A safety check must not have an off switch, so mocking
 # happens one level down, at $ZRO_ID_BIN.

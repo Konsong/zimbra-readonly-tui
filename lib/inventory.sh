@@ -305,6 +305,18 @@ zro_inv_mtime() {
   "$ZRO_STAT_BIN" -c '%Y' -- "${1-}" 2>/dev/null
 }
 
+# The three facts that decide who may read a file, as "<owner> <group> <mode>",
+# with the mode in octal. Prints nothing when the file cannot be stat'ed at all.
+#
+# Beside zro_inv_mtime because it is the same stat asked the other question this
+# program has about a log file, and because every stat in this program belongs to
+# the module that declares where the logs are. What the three facts MEAN is not
+# decided here: this module reports what is on disk, and lib/capability.sh decides
+# what it makes available.
+zro_inv_file_perms() {
+  "$ZRO_STAT_BIN" -c '%U %G %a' -- "${1-}" 2>/dev/null
+}
+
 # Every file on disk belonging to one declared log, as the pairs selection reads.
 #
 #   $1      a name declared in ZRO_INVENTORY

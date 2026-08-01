@@ -163,6 +163,24 @@ it "and reads one of the two forms of a rotated file, never both"
 out=$(zro_inv_discover mailbox 2>/dev/null | zro_inv_select 1785326400 1785348000 2>/dev/null)
 assert_eq "$out" "$(printf '2026\t%s' "$MBOX.2026-07-29.gz")"
 
+it "reports a file's owner, group and mode as three fields in that order"
+# The format has one producer here and one consumer in lib/capability.sh, which
+# splits it to decide whether the account every command runs as may read the log.
+# Pinned by a case rather than by a comment, so that reordering the fields fails
+# here instead of quietly marking a readable log unavailable.
+chmod 640 -- "$SYS"
+perms=$(zro_inv_file_perms "$SYS")
+assert_eq "$(printf '%s' "$perms" | awk '{print NF}')" "3"
+assert_eq "$(printf '%s' "$perms" | awk '{print $1}')" "$(stat -c '%U' -- "$SYS")"
+assert_eq "$(printf '%s' "$perms" | awk '{print $2}')" "$(stat -c '%G' -- "$SYS")"
+assert_eq "$(printf '%s' "$perms" | awk '{print $3}')" "640"
+chmod 644 -- "$SYS"
+
+it "and answers nothing at all about a file that is not there"
+# Not knowing is not a mode. The caller refuses rather than assuming readable, so
+# an empty answer here has to stay empty.
+assert_out_eq "" zro_inv_file_perms "$TREE/empty/nope.log"
+
 chmod 644 -- "$AUDIT.1.gz" 2>/dev/null || true
 rm -rf -- "$TREE"
 zro_t_report

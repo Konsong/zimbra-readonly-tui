@@ -46,7 +46,12 @@ zro_ui_menu() {
   local title=$1 text=$2
   shift 2
   if [ "$ZRO_UI_BACKEND" = stub ]; then
-    zro_ui_stub_show "MENU $title: $text"
+    # The ENTRIES are recorded as well as the prompt. An entry marked unavailable is
+    # something this program tells the operator, and a transcript that kept only the
+    # prompt could not be asserted on — a menu would be the one screen whose text
+    # the suite cannot read. Still ONE LINE per menu drawn, which is what the cases
+    # that count menus read.
+    zro_ui_stub_show "MENU $title: $text | $*"
     zro_ui_stub_next
     return $?
   fi

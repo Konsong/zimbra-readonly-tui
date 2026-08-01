@@ -340,6 +340,88 @@ Her sorgu birkac saniye surebilir."
   done
 }
 
+# Why a delivery trace cannot answer on this host, in terms that name the repair.
+#
+# ONE MESSAGE PER CAUSE, because the repairs have nothing in common: a binary this
+# build does not ship is not something a permissions tool can fix, a log that is not
+# there is not a mode, and a path this tool refuses to read is a setting. One message
+# naming every cause would send most of its readers to the wrong place — and an
+# operator who repairs the wrong thing concludes the tool is broken.
+#
+# WHICH cause it is comes from the capability module, in one word, and is not
+# re-decided here. That is what keeps the mark on the menu entry and the explanation
+# behind it from disagreeing.
+#
+# Unavailability is reported as a SCREEN rather than as an exit code. Every menu
+# function here returns 0 to the loop above it, and the code for this condition —
+# $ZRO_E_NOCAP — is what the exec gate returns when a command is reached anyway,
+# which is the path that has a caller to report to. What the shared reporter would
+# say for it is the bare 'this operation does not exist on this server' that this
+# whole ticket exists to replace.
+zro_delivery_unavailable() {
+  # The file the operator has to go and look at. Named on every message below that
+  # is about a file, because none of those causes can be repaired without knowing
+  # which one it is.
+  local path
+  path=$(zro_inv_base_path syslog) || path="(bilinmiyor)"
+
+  case $(zro_cap_trace_reason) in
+    nobin)
+      zro_delivery_unavailable_box \
+"Takip programi (zmmsgtrace) bu kurulumda bulunamadi. Bu bir surum veya paketleme
+farkidir; izinlerle ilgisi yoktur ve izin onarimi bunu duzeltmez.
+
+Kontrol edin: zmmsgtrace programi libexec dizininde kurulu mu." ;;
+
+    denied)
+      zro_delivery_unavailable_box \
+"Ana mail logunun yolu bu aracin okumayi kabul ettigi bicimde degil. Yol mutlak
+olmali ve yalnizca [A-Za-z0-9._/-] karakterlerini icermelidir. Bu, sunucudaki bir
+bozukluk degil, bir ayar hatasidir.
+
+Yol: $path
+
+Kontrol edin: ZRO_SYSLOG_FILE ayari." ;;
+
+    missing)
+      zro_delivery_unavailable_box \
+"Ana mail logu bulunamadi. Bu bir izin sorunu DEGILDIR.
+
+Beklenen dosya: $path
+
+Iki olasilik var ve buradan ayirt edilemez: dosya hic yok, ya da bulundugu dizin
+zimbra kullanicisi tarafindan acilamiyor.
+
+Kontrol edin: syslog servisi calisiyor mu, Zimbra kayitlarini bu dosyaya yaziyor
+mu, ve dosyanin dizini zimbra kullanicisi tarafindan gorulebiliyor mu." ;;
+
+    *)
+      zro_delivery_unavailable_box \
+"Ana mail logu zimbra kullanicisi tarafindan okunamiyor. Bu araci root ile
+baslatmis olsaniz bile her komut zimbra kullanicisi olarak calisir; bu nedenle
+log taranamaz. Yetki YUKSELTILMEZ, sorun bildirilir: ayni bozukluk Zimbra'nin
+kendi araclarini da etkiler, dolayisiyla dogru sonuc onarmaktir.
+
+Dosya: $path
+Bu karar dosyanin sahipligi ve izin bitleri okunarak verilir; erisim listeleri
+(ACL) hesaba katilmaz.
+
+Onarim: bu dosya zimbra kullanicisi tarafindan okunabilir olmalidir. Sahiplik
+veya izinler bozulmussa: zmfixperms" ;;
+  esac
+}
+
+# The sentence every one of those messages opens with, written once. Each branch
+# above says only what is true of its own cause; what they have in common is that
+# the operator cannot trace on this host, and four copies of that line is four
+# chances for one of them to say something slightly different.
+zro_delivery_unavailable_box() {
+  zro_ui_msgbox "Kullanilamaz" \
+"Teslim takibi bu sunucuda kullanilamiyor.
+
+${1-}"
+}
+
 # The delivery trace: whether a message reached the server, answered from the
 # mail transfer agent's log. No mailbox is opened anywhere below this line.
 #
@@ -351,6 +433,17 @@ Her sorgu birkac saniye surebilir."
 # reason this screen exists at all.
 zro_menu_delivery() {
   local choice filter label subject window ws we out rc note
+  # REFUSED BEFORE THE FIRST PROMPT, not from inside a search. An operator who gets
+  # this far has typed nothing yet, and the entry that brought them here is already
+  # marked — this is where they learn why, and what repairs it.
+  #
+  # Neither probe is the last word: the exec gate still refuses a binary it cannot
+  # resolve and the trace still discloses a log it could not open. This is what
+  # keeps an operator from spending a search to find that out.
+  if ! zro_cap_trace_available; then
+    zro_delivery_unavailable
+    return 0
+  fi
   while :; do
     rc=0
     choice=$(zro_ui_menu "Teslim takibi" "Islem secin:" \
@@ -468,12 +561,23 @@ iletinin sunucuya hic ulasmadigini kanitlamaz — araligi genisletmeyi deneyin.$
 }
 
 zro_menu_main() {
-  local choice rc
+  local choice rc trace
   while :; do
     rc=0
+    # The entry says so BEFORE it is selected, which is the whole point: an
+    # operator who learns that tracing is unavailable after choosing a filter, an
+    # address and a window has already spent the search this mark exists to save.
+    # whiptail has no notion of a disabled entry, so the label carries it and the
+    # screen behind it explains why.
+    #
+    # Asked here rather than inside the command substitution below, so the probes
+    # run in this shell and the session cache they fill is the one the screen
+    # behind the entry reads. Inside $( ) every redraw would ask the host again.
+    trace="Teslim takibi (mail loglari)"
+    zro_cap_trace_available || trace="$trace - KULLANILAMAZ"
     choice=$(zro_ui_menu "Ana menu" "Zimbra: $(zro_cap_version)" \
       1 "Hesap ve kota kontrolleri" \
-      2 "Teslim takibi (mail loglari)" \
+      2 "$trace" \
       9 "Cikis") || rc=$?
     [ "$rc" -eq 0 ] || return 0
     case $choice in

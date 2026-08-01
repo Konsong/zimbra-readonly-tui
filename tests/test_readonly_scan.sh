@@ -306,9 +306,58 @@ assert_not_contains "$inventory" "zmmailbox"
 assert_not_contains "$inventory" "zmprov"
 assert_not_contains "$inventory" "zro_exec"
 
+# A capability probe RUNS NOTHING. It asks the allowlist whether an operation is
+# approved and tests whether the binary is installed, which is how a menu entry is
+# marked unavailable before an operator selects it. That is why it is exempt from
+# the rule below — and it is exempt only because what it names is checked here
+# instead, against the same list the gate reads.
+#
+# A probe naming an operation nobody approved would grey out a menu entry for a
+# question this tool may not ask, and the operator would read that as a program
+# this host does not have rather than as a refusal.
+it "every capability probe names an operation the allowlist approves"
+probes=$(printf '%s\n' "$raw_code" \
+         | grep -oE 'zro_cap_op_available[[:space:]]+[A-Za-z0-9_-]+[[:space:]]+[^[:space:];]+' \
+         | sort -u)
+assert_contains "$probes" "zro_cap_op_available zmmsgtrace --recipient"
+unapproved=""
+while IFS= read -r probe; do
+  [ -n "$probe" ] || continue
+  bin=$(printf '%s' "$probe" | awk '{print $2}')
+  t1=$(printf '%s' "$probe" | awk '{print $3}')
+  printf '%s\n' "$allow" | grep -qxF -- "$bin:$t1" || unapproved="$unapproved [$bin:$t1]"
+done <<EOF
+$probes
+EOF
+assert_eq "$unapproved" ""
+
+it "and every capability probe is one that reader could resolve"
+# The exemption is only as good as the extractor above, and a probe handing the
+# query a variable would be invisible to it: dropped from the rule below, matched by
+# nothing above, approved by neither. So a call site this reader cannot resolve fails
+# the build HERE rather than passing quietly — which is the same friction CLAUDE.md
+# asks for when a new capability is added.
+#
+# Resolvable means both tokens are literal: a binary name, then a subcommand or a
+# flag. Anything quoted or expanded fails the pattern.
+unresolved=""
+while IFS= read -r line; do
+  [ -n "$line" ] || continue
+  printf '%s' "$line" \
+    | grep -qE 'zro_cap_op_available[[:space:]]+[A-Za-z0-9_-]+[[:space:]]+[A-Za-z0-9_-]' \
+    || unresolved="$unresolved [$line]"
+done <<EOF
+$(printf '%s\n' "$raw_code" | grep 'zro_cap_op_available[[:space:]]')
+EOF
+assert_eq "$unresolved" ""
+
 it "no module calls a Zimbra binary outside the gate"
+# Capability probes are dropped along with the gate's own call sites, and for the
+# same reason the allowlist itself is: naming a binary is not running one. What they
+# name is held to the allowlist by the case above.
 for f in "${SOURCES[@]}"; do
-  body=$(zro_scan_file "$f" | grep -v 'zro_exec' | grep -v 'ZRO_ALLOW')
+  body=$(zro_scan_file "$f" | grep -v 'zro_exec' | grep -v 'ZRO_ALLOW' \
+         | grep -v 'zro_cap_op_available')
   assert_not_contains "$body" 'zmprov '
   assert_not_contains "$body" 'zmmailbox '
   assert_not_contains "$body" 'zmcontrol '
