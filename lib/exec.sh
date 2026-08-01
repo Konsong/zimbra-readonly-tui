@@ -50,6 +50,26 @@ ZRO_LIB_EXEC_LOADED=1
 # trace with no filter at all as an operation of its own. The gate still refuses
 # every one of them in the leading position, which is what keeps this list the
 # complete account of what may be run.
+#
+# `tail` and `gzip` are the first two entries here that are not Zimbra's at all.
+# They serve the bounded log viewer, and they are listed rather than treated as
+# infrastructure beside `timeout` and `id` for one reason: those two serve the
+# gate itself, while these two READ THE CONTENT AN OPERATOR ASKED FOR. An
+# operation the operator chose belongs in the list that enumerates what this tool
+# can do — otherwise the thing keeping bare `gzip` out would be discipline instead
+# of this list.
+#
+# `gzip:-dc` IS THAT DECISION EARNING ITS KEEP. Bare `gzip` compresses in place
+# and DELETES the original; `gzip -d` decompresses in place and does the same. A
+# write, by a command nobody thinks of as dangerous — and the guarantee's
+# judge-by-effect rule applied outside Zimbra's own binaries. Neither form is
+# listed, so both are refused. Only the form that writes to stdout and leaves the
+# file where it was is approved.
+#
+# `tail:-n` is the bound itself. What follows it is the line count and then the
+# file, both computed here: the file comes from the log inventory and never from
+# operator text. `-f` is absent and therefore refused — it follows a growing file
+# and never returns, which on a screen is a tool that has hung.
 ZRO_ALLOW='
 zmprov:ga
 zmprov:getAccount
@@ -67,6 +87,8 @@ zmcontrol:-v
 zmmsgtrace:--recipient
 zmmsgtrace:--sender
 zmmsgtrace:--id
+tail:-n
+gzip:-dc
 '
 
 zro_allow_entries() {
@@ -108,6 +130,17 @@ ZRO_ZIMBRA_BIN="${ZRO_ZIMBRA_BIN:-/opt/zimbra/bin}"
 # (zmrcd) still names the bin path and it is stale, which is exactly why the root
 # is declared per binary instead of guessed.
 ZRO_ZIMBRA_LIBEXEC="${ZRO_ZIMBRA_LIBEXEC:-/opt/zimbra/libexec}"
+# The third root, and the first outside the Zimbra tree: where the system
+# binaries the log viewer runs are installed. A ROOT rather than a path per
+# binary, because that is what the gate resolves against — and declared here
+# rather than written at the call site, so that reaching a new directory stays
+# something a reader can see in one place.
+#
+# A host that keeps one of them somewhere else — Ubuntu before the merged /usr
+# ships gzip in /bin — overrides this. It fails visibly if it is wrong: the gate
+# reports the binary as unavailable on this host rather than falling back to a
+# search of $PATH, which is the same refusal every other root gets.
+ZRO_SYSTEM_BIN="${ZRO_SYSTEM_BIN:-/usr/bin}"
 ZRO_RUNUSER="${ZRO_RUNUSER:-$(zro_first_existing /sbin/runuser /usr/sbin/runuser /bin/runuser)}"
 ZRO_TIMEOUT_BIN="${ZRO_TIMEOUT_BIN:-$(zro_first_existing /usr/bin/timeout /bin/timeout)}"
 ZRO_ID_BIN="${ZRO_ID_BIN:-$(zro_first_existing /usr/bin/id /bin/id)}"
@@ -165,6 +198,8 @@ ZRO_BIN_ROOTS='
 zmprov:ZRO_ZIMBRA_BIN
 zmcontrol:ZRO_ZIMBRA_BIN
 zmmsgtrace:ZRO_ZIMBRA_LIBEXEC
+tail:ZRO_SYSTEM_BIN
+gzip:ZRO_SYSTEM_BIN
 '
 
 zro_bin_root_entries() {

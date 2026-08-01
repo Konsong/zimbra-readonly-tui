@@ -103,6 +103,14 @@ morning, so a file's lines mostly predate its own timestamp — naming a file by
 its own date is the off-by-one this term exists to prevent.
 _Avoid_: log date, file date
 
+**Bounded read**:
+Reading only the last part of a log file, with the bound applied by the command
+that reads it rather than after the whole file is in hand. It is what makes a
+file of any size safe to open, and it is stated on screen: an operator who reads
+a bounded read as the whole file draws a conclusion from an absence nobody
+claimed.
+_Avoid_: tail (as a noun), preview, excerpt
+
 **Message-id**:
 The identifier a mail agent stamps on a message and every log of its hops
 carries. It is the one trace filter matched **case-sensitively**, and the one

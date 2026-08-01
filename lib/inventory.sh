@@ -25,7 +25,7 @@ ZRO_LIB_INVENTORY_LOADED=1
 # stat, sort and date are called directly rather than through the exec gate, for
 # the reason ADR-0002 gives for timeout and id: they are this program's own
 # plumbing, not an operation an operator chose. Everything an operator picks — the
-# tracer, the tail, the decompression — still goes through the gate.
+# tracer, the bounded read, the decompression — still goes through the gate.
 
 # Where the logs are. Production defaults, overridable so the suite can point at
 # a fixture tree. The first is a file because that is what the tracer defaults to
@@ -200,6 +200,19 @@ zro_inv_year() {
 # dropped as empty below.
 zro_inv_sort_pairs() {
   LC_ALL=C sort -t "$ZRO_TAB" -k1,1n -k2,2r
+}
+
+# The same order backwards, for a screen that offers the files to an operator:
+# selection reads a family oldest-first because a file's coverage interval starts
+# at the previous file's timestamp, while an operator opening a log almost always
+# wants the one being written.
+#
+# HERE, BESIDE THE ORDER IT REVERSES, rather than in the module that wants it.
+# The tie-break above is a rule about this format — two files sharing a timestamp
+# are one rotation instant — and a second copy of it elsewhere is a rule that can
+# be changed in one place and not the other.
+zro_inv_sort_pairs_desc() {
+  LC_ALL=C sort -t "$ZRO_TAB" -k1,1nr -k2,2
 }
 
 # Which files an arrival window covers, and the year to stamp on each.
