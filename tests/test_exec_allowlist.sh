@@ -90,6 +90,60 @@ traces=$(zro_allow_entries | grep '^zmmsgtrace:')
 assert_eq "$traces" "$(printf '%s\n%s\n%s' \
   'zmmsgtrace:--recipient' 'zmmsgtrace:--sender' 'zmmsgtrace:--id')"
 
+# The bounded log viewer's two binaries, and the first two in this list that are
+# not Zimbra's at all. Each is a flag that IS the whole operation, so both are
+# approved the way `zmcontrol -v` is.
+it "approves the bounded read and the decompress-to-stdout form"
+assert_ok zro_allowed tail -n
+assert_ok zro_allowed tail -n 500
+assert_ok zro_allowed gzip -dc
+assert_ok zro_allowed gzip -dc '/var/log/zimbra.log.1.gz'
+
+it "refuses the bare decompression command and every form of it that writes"
+# JUDGE BY EFFECT, NOT BY NAME, applied outside Zimbra's own binaries. Bare gzip
+# compresses IN PLACE and deletes the original; -d decompresses in place and does
+# the same. Only the form that writes to stdout and leaves the file alone is
+# approved, and the rest are refused by being absent rather than by a rule
+# somebody has to remember.
+for form in -d --decompress -f --force -r --recursive -k --keep -1 -9 \
+            -c --stdout -l --list -t --test -N -S; do
+  assert_fail zro_allowed gzip "$form"
+  assert_fail zro_allowed gzip "$form" '/var/log/zimbra.log.1.gz'
+done
+
+it "and refuses every other spelling of the approved decompression"
+# One operation, one spelling. A neighbouring command that would do the same
+# thing is not approved by the entry that approves this one.
+assert_fail zro_allowed gzip '-dc -f'
+assert_fail zro_allowed gzip -dcf
+assert_fail zro_allowed gzip -cd
+assert_fail zro_allowed gzip '/var/log/zimbra.log.1.gz'
+assert_fail zro_allowed gzip ''
+assert_fail zro_allowed gunzip -c
+assert_fail zro_allowed gunzip -dc
+assert_fail zro_allowed zcat '/var/log/zimbra.log.1.gz'
+assert_fail zro_allowed zless '/var/log/zimbra.log.1.gz'
+
+it "refuses every form of the bounded read but the one that bounds it"
+# -f follows a growing file and never returns, which on this screen is a tool
+# that hangs; -c bounds by bytes and would cut a line in half. Neither is the
+# operation this milestone exposes.
+for form in -c --bytes -f --follow -F --lines --quiet -q -s --retry --pid; do
+  assert_fail zro_allowed tail "$form"
+done
+assert_fail zro_allowed tail '/var/log/zimbra.log'
+assert_fail zro_allowed tail '+100'
+assert_fail zro_allowed tail ''
+assert_fail zro_allowed head -n
+assert_fail zro_allowed cat '/var/log/zimbra.log'
+assert_fail zro_allowed less '/var/log/zimbra.log'
+
+it "the allowlist names one bounded read and one decompression, and nothing else"
+# Read as the tracing filters are: a fourth system operation added without a
+# ticket behind it fails here, and so does a second spelling of one of these.
+assert_eq "$(zro_allow_entries | grep -E '^(tail|gzip):')" \
+  "$(printf '%s\n%s' 'tail:-n' 'gzip:-dc')"
+
 it "allows the LDAP-mode reads as three-token prefixes"
 assert_ok zro_allowed zmprov -l ga
 assert_ok zro_allowed zmprov -l gam

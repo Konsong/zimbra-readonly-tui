@@ -74,6 +74,8 @@ accommodated. They are not needed on a standard host.
 |---|---|---|
 | `ZRO_ZIMBRA_BIN` | `/opt/zimbra/bin` | where the Zimbra binaries live |
 | `ZRO_ZIMBRA_LIBEXEC` | `/opt/zimbra/libexec` | where `zmmsgtrace` lives |
+| `ZRO_SYSTEM_BIN` | `/usr/bin` | where `tail` and `gzip` live. A host that keeps one of them elsewhere — Ubuntu before the merged `/usr` ships `gzip` in `/bin` — sets this; the log viewer then reports the binary as unavailable rather than searching `$PATH` for it |
+| `ZRO_LOGVIEW_LINES` | `500` | how many lines the log viewer's bounded read is |
 | `ZRO_SYSLOG_FILE` | `/var/log/zimbra.log` | the primary mail log — Postfix, amavis and auth |
 | `ZRO_LOG_DIR` | `/opt/zimbra/log` | where Zimbra's own logs live |
 | `ZRO_TIMEOUT` | `60` | seconds before a command is killed |
@@ -129,6 +131,43 @@ have in hand reads `Message-ID: <CAabc123@example.com>`; `zmmsgtrace` records th
 identifier without its delimiters, so a filter carrying them would match nothing.
 Paste either form of the identifier — but only the identifier: the whole header
 line is refused as invalid input rather than searched for and never found.
+
+Menu 3, *Log dosyalari (son satirlar)*:
+
+- Pick a log — the mail log, `mailbox.log`, or `audit.log` — then pick one of its
+  files from a list, and read the last lines of it. This is where the lines the
+  delivery trace does not parse live, `mailbox.log`'s account of what LMTP did
+  with a message above all.
+
+**You never type a path.** The first screen offers the logs this tool declares,
+the second offers that log's files by position, and a position is what comes
+back. That is what keeps a glob, a symbolic link or an oddly named neighbour from
+turning this screen into a general-purpose file reader — and the reader refuses a
+path the inventory does not list even so, so neither check rests on the other.
+
+**Only the last lines are read** — a **bounded read**, five hundred lines by
+default, with the bound applied by the command that reads the file rather than
+afterwards. Opening a multi-hundred-megabyte mail log therefore neither hangs the
+tool nor exhausts the server's memory. The screen says so above the lines,
+because a bounded read taken for a whole file is an absence nobody claimed: what
+you are not seeing may simply be further up.
+
+The file list is newest first and each entry carries the file's **last written**
+time, not a date from its name. Rotation runs in the early morning, so
+`zimbra.log.1` holds the day before its own date — the same reason the arrival
+window is compared against a coverage interval.
+
+**Compressed rotated files are readable**, decompressed to standard output; the
+file on disk is left exactly as it was. See the note on `gzip` in section 3.
+
+A file that cannot be read names the file, the cause and `zmfixperms`. An **empty
+file** is answered as empty and never as unreadable: one says the server wrote
+nothing there, the other says nothing could be learned at all. A log that is not
+on this host at all is its own screen for the same reason.
+
+The viewer is offered whether or not delivery tracing is available here. The two
+read the same files, but tracing needs `zmmsgtrace` and the primary mail log,
+while this screen can still show `mailbox.log` on a host that has neither.
 
 Cancel and ESC return to the previous screen from every prompt. Nothing exits
 the tool except the explicit *Cikis* entry.
@@ -297,7 +336,27 @@ zmcontrol -v     version
 zmmsgtrace --recipient                      delivery trace by recipient
 zmmsgtrace --sender                         delivery trace by sender
 zmmsgtrace --id                             delivery trace by message-id
+tail -n                                     the log viewer's bounded read
+gzip -dc                                    decompress a rotated log TO STDOUT
 ```
+
+`tail` and `gzip` are the only entries here that are not Zimbra's. They are on
+this list rather than treated as plumbing beside `timeout` and `id`, because
+those two serve the tool itself while these two read the content an operator
+asked for — and because the thing keeping bare `gzip` out would otherwise be
+discipline instead of this list.
+
+**`gzip -dc` is approved and nothing else about `gzip` is.** Bare `gzip`
+compresses in place and deletes the original; `gzip -d` decompresses in place and
+does the same. Both are writes, by a command nobody thinks of as dangerous, and
+both are refused with code 90 — the *judge by effect, not by name* rule in
+section 5 applied outside Zimbra's own binaries. `gunzip`, `zcat` and `zless` are
+absent for the same reason and a static test proves none of them is written down
+anywhere in the tree.
+
+`tail -f` is absent too: it follows a growing file and never returns, which on a
+screen is a tool that has hung. The line count and the file follow `-n` as data —
+the count is this tool's own bound and the file comes from the log inventory.
 
 `zmmsgtrace` is installed in `/opt/zimbra/libexec`, not in `bin` — an upstream
 mapping still names the `bin` path and it is stale. That is why each allowlisted
@@ -442,7 +501,8 @@ Run this sequence before using the tool against real accounts.
    it does not run, stop and investigate rather than skipping it.
 
 2. Read the allowlist in `lib/exec.sh` and confirm every entry is a read
-   operation. It is nine lines. Read them.
+   operation. It is eighteen lines. Read them — and read `gzip:-dc` twice: it is
+   the one entry whose neighbouring spellings write.
 
 3. Choose one test account that is **not receiving mail** during the check, and
    record its state:

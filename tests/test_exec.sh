@@ -12,11 +12,16 @@ export ZRO_ZIMBRA_BIN="$ZRO_TEST_ROOT/mocks/bin"
 # gate that resolved it under the wrong root must fail the suite rather than
 # find the mock anyway.
 export ZRO_ZIMBRA_LIBEXEC="$ZRO_TEST_ROOT/mocks/libexec"
+# The third root: the system binaries the log viewer runs. A directory of its own
+# for the same reason libexec is one — a gate that resolved them under the Zimbra
+# root has to fail the suite rather than find the mock anyway.
+export ZRO_SYSTEM_BIN="$ZRO_TEST_ROOT/mocks/system"
 export ZRO_ID_BIN="$ZRO_TEST_ROOT/mocks/bin/id"
 export ZRO_RUNUSER="$ZRO_TEST_ROOT/mocks/bin/runuser"
 export ZRO_TIMEOUT_BIN="$ZRO_TEST_ROOT/mocks/bin/timeout"
 export ZRO_TIMEOUT=60
-chmod +x "$ZRO_TEST_ROOT"/mocks/bin/* "$ZRO_TEST_ROOT"/mocks/libexec/* 2>/dev/null || true
+chmod +x "$ZRO_TEST_ROOT"/mocks/bin/* "$ZRO_TEST_ROOT"/mocks/libexec/* \
+         "$ZRO_TEST_ROOT"/mocks/system/* 2>/dev/null || true
 
 # shellcheck source=../lib/exec.sh
 . "$ZRO_SRC/lib/exec.sh"
@@ -178,6 +183,69 @@ ZRO_MOCK_ID_USER=zimbra assert_status "$ZRO_E_DENIED" \
   zro_exec zmmsgtrace --time '20260729,20260730'
 ZRO_MOCK_ID_USER=zimbra assert_status "$ZRO_E_DENIED" zro_exec zmmsgtrace --man
 assert_eq "$(cat "$ZRO_MOCK_LOG")" ""
+
+# --------------------------------------- the log viewer's two system binaries --
+#
+# The first two allowlisted binaries that are not Zimbra's, and the first to be
+# resolved outside the Zimbra tree. One of them is approved narrowly enough that
+# the refusal has to be shown to have an EFFECT, not just a status.
+
+it "runs the bounded read under the system root, with the bound in the vector"
+: >"$ZRO_MOCK_LOG"
+plain=$(mktemp)
+seq 1 40 >"$plain"
+ZRO_MOCK_ID_USER=zimbra assert_out_eq "$(seq 38 40)" zro_exec tail -n 3 "$plain"
+assert_contains "$(cat "$ZRO_MOCK_LOG")" \
+  "$(printf -- '%s/mocks/system/tail\t-n\t3\t%s' "$ZRO_TEST_ROOT" "$plain")"
+
+it "runs the decompression in the form that writes to stdout"
+packed=$(mktemp -u).gz
+seq 1 40 | gzip -c >"$packed"
+: >"$ZRO_MOCK_LOG"
+ZRO_MOCK_ID_USER=zimbra assert_out_eq "$(seq 1 40)" zro_exec gzip -dc "$packed"
+assert_contains "$(cat "$ZRO_MOCK_LOG")" \
+  "$(printf -- '%s/mocks/system/gzip\t-dc\t%s' "$ZRO_TEST_ROOT" "$packed")"
+
+it "and leaves the compressed file exactly where it was"
+# The whole reason this form is the only one approved: -dc reads, the forms below
+# replace the file and delete the original.
+assert_ok test -f "$packed"
+
+it "refuses the in-place decompression with the allowlist-denial code"
+: >"$ZRO_MOCK_LOG"
+ZRO_MOCK_ID_USER=zimbra assert_status "$ZRO_E_DENIED" zro_exec gzip -d "$packed"
+ZRO_MOCK_ID_USER=zimbra assert_status "$ZRO_E_DENIED" zro_exec gzip --decompress "$packed"
+assert_eq "$(cat "$ZRO_MOCK_LOG")" ""
+
+it "refuses the bare decompression command with the same code"
+# Bare gzip COMPRESSES in place and deletes the original, which is a write by a
+# command nobody suspects. Refused by being absent from the list rather than by a
+# rule about it.
+: >"$ZRO_MOCK_LOG"
+ZRO_MOCK_ID_USER=zimbra assert_status "$ZRO_E_DENIED" zro_exec gzip "$plain"
+ZRO_MOCK_ID_USER=zimbra assert_status "$ZRO_E_DENIED" zro_exec gzip -f "$plain"
+assert_eq "$(cat "$ZRO_MOCK_LOG")" ""
+
+it "and every refused form left both files untouched"
+# The status is not the guarantee; this is. A denial that still ran the command
+# would show up here as a file that is no longer there.
+assert_ok test -f "$packed"
+assert_ok test -f "$plain"
+assert_eq "$(wc -l <"$plain" | tr -d ' ')" "40"
+assert_fail test -e "$plain.gz"
+rm -f -- "$plain" "$packed"
+
+it "refuses a bounded read that would never return"
+: >"$ZRO_MOCK_LOG"
+ZRO_MOCK_ID_USER=zimbra assert_status "$ZRO_E_DENIED" zro_exec tail -f '/var/log/zimbra.log'
+ZRO_MOCK_ID_USER=zimbra assert_status "$ZRO_E_DENIED" zro_exec tail '/var/log/zimbra.log'
+assert_eq "$(cat "$ZRO_MOCK_LOG")" ""
+
+it "resolves the system binaries without consulting either Zimbra root"
+assert_out_eq "$ZRO_TEST_ROOT/mocks/system/tail" zro_bin_path tail
+assert_out_eq "$ZRO_TEST_ROOT/mocks/system/gzip" zro_bin_path gzip
+ZRO_ZIMBRA_BIN=/nonexistent ZRO_ZIMBRA_LIBEXEC=/nonexistent assert_ok zro_bin_available tail
+ZRO_ZIMBRA_BIN=/nonexistent ZRO_ZIMBRA_LIBEXEC=/nonexistent assert_ok zro_bin_available gzip
 
 it "refuses to resolve a binary that declares no root"
 assert_fail zro_bin_path zmmailbox

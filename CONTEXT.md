@@ -63,7 +63,7 @@ _Avoid_: existence check, pre-flight
 **Existence oracle**:
 A command used as evidence for the gate. To qualify it must be incapable of
 provisioning a mailbox itself.
-_Avoid_: probe, prober
+_Avoid_: probe, prober — a probe asks about this host, never about a mailbox
 
 **Decisive oracle**:
 An oracle that answers both ways — it can prove a mailbox exists and prove it
@@ -103,6 +103,14 @@ morning, so a file's lines mostly predate its own timestamp — naming a file by
 its own date is the off-by-one this term exists to prevent.
 _Avoid_: log date, file date
 
+**Bounded read**:
+Reading only the last part of a log file, with the bound applied by the command
+that reads it rather than after the whole file is in hand. It is what makes a
+file of any size safe to open, and it is stated on screen: an operator who reads
+a bounded read as the whole file draws a conclusion from an absence nobody
+claimed.
+_Avoid_: tail (as a noun), preview, excerpt
+
 **Message-id**:
 The identifier a mail agent stamps on a message and every log of its hops
 carries. It is the one trace filter matched **case-sensitively**, and the one
@@ -116,6 +124,26 @@ The time range a trace is restricted to, compared against when a message
 **arrived**. A message that arrived before the window and was delivered inside it
 falls outside the window.
 _Avoid_: time range, delivery window
+
+## Host capabilities
+
+**Capability**:
+A fact about the host this tool is pointed at — a binary's presence, a version, a
+file's readability — observed once per session and used to decide whether an
+operation is offered before an operator selects it. It is never a safety check:
+the exec gate refuses on its own terms, and the guarantee rests on the gate alone.
+_Avoid_: feature flag, precondition, support check
+
+**Probe**:
+The act of asking the host one capability question. A probe asks about the host;
+evidence about a mailbox is an oracle's. The two words do not cross.
+_Avoid_: check, detection
+
+**Refusal reason**:
+The single word naming why a capability refused, or that none did. Each answer
+names a different repair; a cause an operator would repair the same way as another
+does not earn one of its own.
+_Avoid_: error code, status, failure reason
 
 ## Reduced service
 

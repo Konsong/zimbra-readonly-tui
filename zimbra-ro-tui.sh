@@ -26,6 +26,8 @@ ZRO_ROOT=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 . "$ZRO_ROOT/lib/account.sh"
 # shellcheck source=lib/delivery.sh
 . "$ZRO_ROOT/lib/delivery.sh"
+# shellcheck source=lib/logview.sh
+. "$ZRO_ROOT/lib/logview.sh"
 
 trap zro_cleanup EXIT INT TERM
 
@@ -170,6 +172,22 @@ Aralik secin:'
 ZRO_TXT_DATETIME='Tarih ve saat (ornek: 2026-07-28 08:00)
 
 Saat zorunludur; yerel saat olarak okunur.'
+
+# The identity fact and the repair it points at, written once. Both screens that
+# report a log the account cannot read carry it: the trace's unavailability
+# screen and the viewer's per-file one. They carried it in two wordings before
+# this constant existed — one said "bu dosya", the other "Log dosyalari", one
+# named ownership before permissions and the other after — which is how two
+# screens end up recommending subtly different repairs for one cause.
+#
+# DOUBLE-QUOTED, like every other message here that names a Zimbra command. The
+# static scanner strips double-quoted spans and reads what is left as code, so a
+# single-quoted string naming zmfixperms would read as a call to it. There is
+# nothing here for the shell to expand.
+ZRO_TXT_LOG_UNREADABLE="Bu araci root ile baslatmis olsaniz bile her komut zimbra kullanicisi olarak
+calisir; log dosyalari bu kullanici tarafindan okunabilir olmalidir.
+
+Onarim: sahiplik veya izinler bozulmussa: zmfixperms"
 
 # What the window screen offers, as "<preset id>:<label>". The id is the tag
 # whiptail hands back — the menu is drawn with --notags, so an operator never sees
@@ -397,17 +415,15 @@ mu, ve dosyanin dizini zimbra kullanicisi tarafindan gorulebiliyor mu." ;;
 
     *)
       zro_delivery_unavailable_box \
-"Ana mail logu zimbra kullanicisi tarafindan okunamiyor. Bu araci root ile
-baslatmis olsaniz bile her komut zimbra kullanicisi olarak calisir; bu nedenle
-log taranamaz. Yetki YUKSELTILMEZ, sorun bildirilir: ayni bozukluk Zimbra'nin
+"Ana mail logu zimbra kullanicisi tarafindan okunamiyor, bu nedenle log
+taranamaz. Yetki YUKSELTILMEZ, sorun bildirilir: ayni bozukluk Zimbra'nin
 kendi araclarini da etkiler, dolayisiyla dogru sonuc onarmaktir.
 
 Dosya: $path
 Bu karar dosyanin sahipligi ve izin bitleri okunarak verilir; erisim listeleri
 (ACL) hesaba katilmaz.
 
-Onarim: bu dosya zimbra kullanicisi tarafindan okunabilir olmalidir. Sahiplik
-veya izinler bozulmussa: zmfixperms" ;;
+$ZRO_TXT_LOG_UNREADABLE" ;;
   esac
 }
 
@@ -560,6 +576,202 @@ iletinin sunucuya hic ulasmadigini kanitlamaz — araligi genisletmeyi deneyin.$
   done
 }
 
+# What both viewer screens have to say, and the reason the whole screen is safe
+# to offer: it reads, and the bound is not a detail of the implementation but
+# what the operator is being shown.
+ZRO_TXT_LOGVIEW='Log dosyalarinin SON satirlari gosterilir. Dosyalar okunur;
+degistirilmez, silinmez, sikistirilmis bir dosya yerinde acilmaz.
+
+Hangi logu goruntulemek istiyorsunuz?'
+
+ZRO_TXT_LOGVIEW_FILE='En yeni dosya en ustte. Tarih, dosyanin SON YAZILMA
+zamanidir: rotasyon sabaha karsi calistigi icin bir dosya cogunlukla kendi
+tarihinden onceki gunun satirlarini tutar.
+
+Dosya secin:'
+
+# The bounded log viewer: the last lines of one file from the log inventory.
+#
+# THE OPERATOR NEVER TYPES A PATH. This screen offers the declared logs by name,
+# the next one offers that log's files by position, and a position is what comes
+# back. That is what keeps a glob, a symbolic link or an oddly named neighbour
+# from turning a log viewer into a general-purpose file reader — and the module
+# refuses a path the inventory does not list even so, so neither check rests on
+# the other.
+#
+# Offered whether or not a delivery trace can run on this host. The two read the
+# same files, but the trace needs the tracing binary and the primary mail log,
+# while this screen can still show mailbox.log on a host that has neither. Marking
+# it with the trace's probe would hide a screen that works.
+zro_menu_logview() {
+  local choice rc key label
+  local -a items=()
+  while :; do
+    items=()
+    while IFS= read -r key; do
+      [ -n "$key" ] || continue
+      # A declared log with no label would reach the operator as a menu entry
+      # with no name, so it is left out and said out loud. The suite holds the
+      # two sets equal, which is where this is really prevented.
+      if ! label=$(zro_logview_label "$key"); then
+        zro_log error "no label for declared log: $key"
+        continue
+      fi
+      items+=("$key" "$label")
+    done <<EOF
+$(zro_inv_keys)
+EOF
+    if [ "${#items[@]}" -eq 0 ]; then
+      zro_log error "no log is both declared and named; the viewer has nothing to offer"
+      zro_ui_msgbox "Kullanilamaz" "Goruntulenebilecek log tanimli degil."
+      return 0
+    fi
+
+    rc=0
+    choice=$(zro_ui_menu "Log dosyalari" "$ZRO_TXT_LOGVIEW" "${items[@]}") || rc=$?
+    [ "$rc" -eq 0 ] || return 0
+    # Judged against the list this program itself drew. Nothing else may name a
+    # log, so a value that is not one of those entries is a defect rather than a
+    # log nobody declared.
+    if ! zro_logview_label "$choice" >/dev/null 2>&1; then
+      zro_log error "not a declared log: $choice"
+      continue
+    fi
+    zro_menu_logview_file "$choice"
+  done
+}
+
+# One log's files, and the last lines of whichever one is chosen.
+#
+# The list is rebuilt on every pass, so a rotation that happened while the
+# operator was reading is visible when they come back rather than leaving them
+# pointed at a file that has just been renamed.
+zro_menu_logview_file() {
+  local key=${1-} files rc choice out detail line mtime path i
+  local -a paths items
+  while :; do
+    rc=0
+    files=$(zro_logview_files "$key") || rc=$?
+    if [ "$rc" -ne 0 ]; then
+      # A name the inventory does not declare or a root that fails admission:
+      # both are defects in this program or in an override, already logged where
+      # they were found.
+      zro_report_error "$rc"
+      return 0
+    fi
+    if [ -z "$files" ]; then
+      # ORDINARY, not a failure: a host that does not write this log has none of
+      # its files. Said as its own screen because an empty list must never be
+      # read as an empty file — one says nothing was written, the other says
+      # nothing is there to read.
+      zro_ui_msgbox "Bulunamadi" \
+"Bu log bu sunucuda bulunamadi: $(zro_inv_base_path "$key")
+
+Dosya hic yok olabilir, ya da bulundugu dizin zimbra kullanicisi tarafindan
+acilamiyor olabilir. Bu ikisi buradan ayirt edilemez.
+
+Bu, log bos demek DEGILDIR."
+      return 0
+    fi
+
+    paths=(); items=(); i=0
+    while IFS= read -r line; do
+      [ -n "$line" ] || continue
+      mtime=${line%%"$ZRO_TAB"*}
+      path=${line#*"$ZRO_TAB"}
+      i=$((i + 1))
+      paths+=("$path")
+      items+=("$i" "$(zro_logview_file_label "$mtime" "$path")")
+    done <<EOF
+$files
+EOF
+
+    rc=0
+    choice=$(zro_ui_menu "$(zro_logview_label "$key")" "$ZRO_TXT_LOGVIEW_FILE" \
+      "${items[@]}") || rc=$?
+    [ "$rc" -eq 0 ] || return 0
+
+    # A POSITION IN THE LIST, NEVER A PATH. This is the line that keeps the
+    # viewer bounded to the inventory: whatever comes back is looked up in the
+    # list this program drew, so a value that is not one of those positions names
+    # nothing at all and is refused rather than read.
+    case $choice in
+      ''|*[!0-9]*)
+        zro_log error "denied, not a position in the log file list: $choice"
+        continue ;;
+    esac
+    if [ "$choice" -lt 1 ] || [ "$choice" -gt "${#paths[@]}" ]; then
+      zro_log error "denied, position outside the log file list: $choice"
+      continue
+    fi
+    path=${paths[choice - 1]}
+
+    # A compressed file is decompressed whole before its last lines can be, and
+    # a rotated mail log is large. Without this the terminal sits blank.
+    zro_ui_notice "Calisiyor" "Log okunuyor, lutfen bekleyin.
+
+Dosya: $path
+Sikistirilmis bir dosya bastan sona acilir; bu islem birkac saniye surebilir."
+
+    rc=0
+    out=$(zro_logview_read "$key" "$path") || rc=$?
+
+    if [ "$rc" -eq "$ZRO_E_NO_RESULT" ]; then
+      # Not the shared reporter's "kayit bulunamadi": nothing was searched for
+      # here. The file has no lines, which is a fact about the file and not an
+      # answer about anything an operator was looking for.
+      zro_ui_msgbox "Dosya bos" \
+"Bu dosyada hic satir yok:
+$path
+
+Bu, aradiginiz kaydin olusmadigini gostermez; yalnizca bu dosyanin bos
+oldugunu gosterir. Ayni logun daha eski dosyalarini deneyin."
+      continue
+    fi
+    if [ "$rc" -eq "$ZRO_E_NO_LOG" ]; then
+      # Named file by file rather than through the shared reporter, whose message
+      # for this code is about the arrival window a trace selected — a window
+      # nobody chose on this screen.
+      detail=$(zro_last_error)
+      [ -n "$detail" ] && detail="
+
+Sistemin bildirdigi:
+$detail"
+      zro_ui_msgbox "Log okunamadi" \
+"Bu dosya okunamadi:
+$path
+
+$ZRO_TXT_LOG_UNREADABLE$detail"
+      continue
+    fi
+    if [ "$rc" -eq "$ZRO_E_TIMEOUT" ]; then
+      # Named here rather than left to the shared reporter, which says only that
+      # a command timed out. On this screen there is one cause worth naming: the
+      # end of a compressed file cannot be reached without decompressing all of
+      # it, so a very large rotated log can run out the clock. The bound protects
+      # memory; this is what protects the terminal.
+      zro_ui_msgbox "Zaman asimi" \
+"Bu dosya ayrilan surede okunamadi:
+$path
+
+Sikistirilmis bir dosyanin son satirlarina ulasmak icin dosya bastan sona
+acilir; cok buyuk bir dosyada bu sure yetmeyebilir.
+
+Islem kesildi ve dosyaya DOKUNULMADI. Gerekirse ZRO_TIMEOUT degerini
+yukseltip yeniden deneyin."
+      continue
+    fi
+    if [ "$rc" -ne 0 ]; then
+      zro_report_error "$rc"
+      continue
+    fi
+    # The file's own name on the frame: whiptail keeps a title while the text
+    # scrolls, so an operator who has scrolled past the header can still see
+    # which file they are reading.
+    zro_show_text "Log: ${path##*/}" "$out"
+  done
+}
+
 zro_menu_main() {
   local choice rc trace
   while :; do
@@ -578,11 +790,13 @@ zro_menu_main() {
     choice=$(zro_ui_menu "Ana menu" "Zimbra: $(zro_cap_version)" \
       1 "Hesap ve kota kontrolleri" \
       2 "$trace" \
+      3 "Log dosyalari (son satirlar)" \
       9 "Cikis") || rc=$?
     [ "$rc" -eq 0 ] || return 0
     case $choice in
       1) zro_menu_account ;;
       2) zro_menu_delivery ;;
+      3) zro_menu_logview ;;
       9) return 0 ;;
     esac
   done

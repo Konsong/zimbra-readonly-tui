@@ -245,6 +245,60 @@ it "and every approved filter has a call site, in exactly one spelling"
 assert_eq "$(printf '%s\n' "$trace_calls" | grep -c 'zmmsgtrace')" \
           "$(printf '%s\n' "$allow" | grep -c '^zmmsgtrace:')"
 
+# The bounded log viewer hands the gate a literal flag followed by a variable —
+# the line count, then the path the inventory listed. The generic extraction
+# above cannot decide a call site whose token after a flag is dynamic, so the
+# operation is checked here instead, exactly as the trace's filters are.
+it "every log viewer call site names an operation the allowlist approves"
+viewer_calls=$(printf '%s\n' "$raw_code" \
+               | grep -oE 'zro_exec[[:space:]]+(tail|gzip)[[:space:]]+[^[:space:]]+' \
+               | sort -u)
+assert_contains "$viewer_calls" "zro_exec tail -n"
+assert_contains "$viewer_calls" "zro_exec gzip -dc"
+unapproved=""
+while IFS= read -r call; do
+  [ -n "$call" ] || continue
+  bin=$(printf '%s' "$call" | awk '{print $2}')
+  op=$(printf '%s' "$call" | awk '{print $3}')
+  printf '%s\n' "$allow" | grep -qxF -- "$bin:$op" || unapproved="$unapproved [$bin:$op]"
+done <<EOF
+$viewer_calls
+EOF
+assert_eq "$unapproved" ""
+
+it "and every approved system operation has a call site, in exactly one spelling"
+assert_eq "$(printf '%s\n' "$viewer_calls" | grep -c 'zro_exec')" \
+          "$(printf '%s\n' "$allow" | grep -c '^\(tail\|gzip\):')"
+
+it "no in-place decompression is expressible anywhere in the tree"
+# THE POINT OF APPROVING ONLY ONE FORM. Bare gzip and gzip -d replace the file
+# and delete the original — a write, by a command nobody suspects — and the
+# neighbours below do the reading job under another name, outside the one entry
+# a maintainer reads. The gate refuses all of them; this says they are not
+# written down either.
+assert_not_contains "$code" "gunzip"
+assert_not_contains "$code" "zcat"
+assert_not_contains "$code" "zless"
+assert_not_contains "$code" "zgrep"
+# Matched to the end of the token, so that the approved -dc is not read as this.
+assert_eq "$(printf '%s\n' "$code" | grep -cE 'gzip[[:space:]]+-d([^c]|$)')" "0"
+assert_eq "$(printf '%s\n' "$code" | grep -cE 'gzip[[:space:]]+[^-]')" "0"
+
+it "the log viewer writes no path of its own"
+# Every path it reads comes from the log inventory, and every binary it runs is
+# resolved under a root declared in lib/exec.sh. A literal path here would be a
+# file this tool could read that the inventory never admitted, and a system
+# binary root nobody could override.
+logview=$(zro_scan_file "$ZRO_SRC/lib/logview.sh")
+for prefix in /usr /bin /sbin /var /opt /etc; do
+  assert_not_contains "$logview" "$prefix"
+done
+
+it "the log viewer reaches no Zimbra binary and no mailbox"
+assert_not_contains "$logview" "zmmailbox"
+assert_not_contains "$logview" "zmprov"
+assert_not_contains "$logview" "zmmsgtrace"
+
 it "the delivery trace names no mailbox binary and no directory command"
 # M5's independence from the existence gate, asserted rather than assumed.
 delivery=$(zro_scan_file "$ZRO_SRC/lib/delivery.sh")
