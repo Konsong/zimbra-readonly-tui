@@ -160,10 +160,7 @@ zro_logview_read() {
   # The inventory's own admission, applied here as well as where the path was
   # found. This is the function that hands a path to a program, and a path that
   # arrived some other way must meet the same rule as one that was globbed.
-  if ! zro_inv_path_ok "$path"; then
-    zro_log error "denied, log path outside the permitted set: $path"
-    return "$ZRO_E_DENIED"
-  fi
+  zro_inv_admit_path "$path" || return "$ZRO_E_DENIED"
   zro_logview_declared "$key" "$path" || return $?
 
   local out err rc=0 said

@@ -207,7 +207,7 @@ zro_cap_trace_log() {
 # exist sends an operator looking for a mode that is not the problem, and a path
 # this tool refuses to read at all is a setting to correct rather than anything on
 # disk.
-ZRO_CAP_TRACE_LOG_ANSWERS="ok denied missing unreadable"
+ZRO_CAP_TRACE_LOG_REASONS="ok denied missing unreadable"
 
 # Why the probe answered as it did.
 zro_cap_trace_log_reason() {
@@ -232,11 +232,11 @@ zro_cap_trace_log_reason() {
 # nobody diagnosed.
 zro_cap_forced_log_reason() {
   [ -n "${ZRO_CAP_FORCE_TRACE_LOG:-}" ] || return 1
-  case " $ZRO_CAP_TRACE_LOG_ANSWERS " in
+  case " $ZRO_CAP_TRACE_LOG_REASONS " in
     *" $ZRO_CAP_FORCE_TRACE_LOG "*) printf '%s' "$ZRO_CAP_FORCE_TRACE_LOG"; return 0 ;;
   esac
   zro_log error \
-    "not a log probe answer: ZRO_CAP_FORCE_TRACE_LOG=$ZRO_CAP_FORCE_TRACE_LOG (expected one of: $ZRO_CAP_TRACE_LOG_ANSWERS)"
+    "not a log probe reason: ZRO_CAP_FORCE_TRACE_LOG=$ZRO_CAP_FORCE_TRACE_LOG (expected one of: $ZRO_CAP_TRACE_LOG_REASONS)"
   printf 'unreadable'
 }
 
@@ -254,8 +254,7 @@ zro_cap_probe_log() {
   # so that the menu and the search cannot disagree. Without it an inadmissible
   # override would offer the entry and then refuse the search — the operator would
   # be told the operation is not on the allowlist, about a path.
-  if ! zro_inv_path_ok "$path"; then
-    zro_log error "denied, log path outside the permitted set: $path"
+  if ! zro_inv_admit_path "$path"; then
     printf 'denied'
     return 0
   fi

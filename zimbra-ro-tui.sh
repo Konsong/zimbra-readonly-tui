@@ -173,6 +173,22 @@ ZRO_TXT_DATETIME='Tarih ve saat (ornek: 2026-07-28 08:00)
 
 Saat zorunludur; yerel saat olarak okunur.'
 
+# The identity fact and the repair it points at, written once. Both screens that
+# report a log the account cannot read carry it: the trace's unavailability
+# screen and the viewer's per-file one. They carried it in two wordings before
+# this constant existed — one said "bu dosya", the other "Log dosyalari", one
+# named ownership before permissions and the other after — which is how two
+# screens end up recommending subtly different repairs for one cause.
+#
+# DOUBLE-QUOTED, like every other message here that names a Zimbra command. The
+# static scanner strips double-quoted spans and reads what is left as code, so a
+# single-quoted string naming zmfixperms would read as a call to it. There is
+# nothing here for the shell to expand.
+ZRO_TXT_LOG_UNREADABLE="Bu araci root ile baslatmis olsaniz bile her komut zimbra kullanicisi olarak
+calisir; log dosyalari bu kullanici tarafindan okunabilir olmalidir.
+
+Onarim: sahiplik veya izinler bozulmussa: zmfixperms"
+
 # What the window screen offers, as "<preset id>:<label>". The id is the tag
 # whiptail hands back — the menu is drawn with --notags, so an operator never sees
 # it — which means there is no second table mapping a number onto a preset and no
@@ -399,17 +415,15 @@ mu, ve dosyanin dizini zimbra kullanicisi tarafindan gorulebiliyor mu." ;;
 
     *)
       zro_delivery_unavailable_box \
-"Ana mail logu zimbra kullanicisi tarafindan okunamiyor. Bu araci root ile
-baslatmis olsaniz bile her komut zimbra kullanicisi olarak calisir; bu nedenle
-log taranamaz. Yetki YUKSELTILMEZ, sorun bildirilir: ayni bozukluk Zimbra'nin
+"Ana mail logu zimbra kullanicisi tarafindan okunamiyor, bu nedenle log
+taranamaz. Yetki YUKSELTILMEZ, sorun bildirilir: ayni bozukluk Zimbra'nin
 kendi araclarini da etkiler, dolayisiyla dogru sonuc onarmaktir.
 
 Dosya: $path
 Bu karar dosyanin sahipligi ve izin bitleri okunarak verilir; erisim listeleri
 (ACL) hesaba katilmaz.
 
-Onarim: bu dosya zimbra kullanicisi tarafindan okunabilir olmalidir. Sahiplik
-veya izinler bozulmussa: zmfixperms" ;;
+$ZRO_TXT_LOG_UNREADABLE" ;;
   esac
 }
 
@@ -727,9 +741,7 @@ $detail"
 "Bu dosya okunamadi:
 $path
 
-Bu araci root ile baslatmis olsaniz bile her komut zimbra kullanicisi olarak
-calisir. Log dosyalari bu kullanici tarafindan okunabilir olmalidir; izinler
-veya sahiplik bozulmussa onarmak icin: zmfixperms$detail"
+$ZRO_TXT_LOG_UNREADABLE$detail"
       continue
     fi
     if [ "$rc" -eq "$ZRO_E_TIMEOUT" ]; then

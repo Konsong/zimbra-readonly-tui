@@ -134,6 +134,22 @@ zro_inv_path_ok() {
   return 0
 }
 
+# Admission, refusing out loud. Five call sites across three modules applied the
+# rule above and then wrote the same denial line by hand; the copy that drifts is
+# a refusal an operator cannot grep for, and a rule whose refusal one caller
+# forgets to log is a path that vanishes without a word.
+#
+# Kept separate from zro_inv_path_ok, which stays a pure predicate: the suite
+# drives the rule through that one over a table of paths, where a log line per
+# case would be noise. Logging here follows zro_inv_base_path above, which logs
+# its own failures for the same reason.
+zro_inv_admit_path() {
+  local p=${1-}
+  zro_inv_path_ok "$p" && return 0
+  zro_log error "denied, log path outside the permitted set: $p"
+  return 1
+}
+
 # The rotation variants of a base name, and nothing else. Three schemes reach
 # these files, so all three are named:
 #
@@ -264,10 +280,7 @@ zro_inv_select() {
         zro_log error "denied, log timestamp is not a number: $line"
         continue ;;
     esac
-    if ! zro_inv_path_ok "$path"; then
-      zro_log error "denied, log path outside the permitted set: $path"
-      continue
-    fi
+    zro_inv_admit_path "$path" || continue
     mtimes+=("$mtime")
     paths+=("$path")
   done <<EOF
@@ -353,10 +366,7 @@ zro_inv_discover() {
 
   local base
   base=$(zro_inv_base_path "$key") || return "$ZRO_E_DENIED"
-  if ! zro_inv_path_ok "$base"; then
-    zro_log error "denied, log path outside the permitted set: $base"
-    return "$ZRO_E_DENIED"
-  fi
+  zro_inv_admit_path "$base" || return "$ZRO_E_DENIED"
 
   # The base has passed admission, so it carries no glob character and the two
   # patterns below can only reach its own rotation variants. This is the only
@@ -377,10 +387,7 @@ zro_inv_discover() {
     # filename reaching the /bin/sh command line the tracer builds. Judging the
     # rotation shape first would drop that file as a merely unrecognised name and
     # say nothing.
-    if ! zro_inv_path_ok "$c"; then
-      zro_log error "denied, log path outside the permitted set: $c"
-      continue
-    fi
+    zro_inv_admit_path "$c" || continue
     if ! zro_inv_variant_ok "$base" "$c"; then
       if zro_inv_unsupported_compression "$c"; then
         zro_log warn "log skipped, compression the tracer cannot read: $c"
