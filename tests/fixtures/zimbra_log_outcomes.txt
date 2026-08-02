@@ -1,0 +1,16 @@
+Aug  2 16:49:03 posta postfix/smtpd[288566]: 90693104B8D: client=localhost[127.0.0.1]
+Aug  2 16:49:03 posta postfix/cleanup[288923]: 90693104B8D: message-id=<delivered-1785678543@capture.example.com>
+Aug  2 16:49:03 posta postfix/qmgr[276753]: 90693104B8D: from=<ahmet.yilmaz@example.com>, size=439, nrcpt=1 (queue active)
+Aug  2 16:49:03 posta amavis[276524]: (276524-01) Passed CLEAN {RelayedInternal}, ORIGINATING/MYNETS LOCAL [127.0.0.1]:53482 <ahmet.yilmaz@example.com> -> <ayse.demir@example.com>, Queue-ID: 90693104B8D, Message-ID: <delivered-1785678543@capture.example.com>, mail_id: j5-QpAH7h831, Hits: -, size: 439, queued_as: B0CC6104BA2, 117 ms
+Aug  2 16:49:03 posta postfix/smtp[288931]: 90693104B8D: to=<ayse.demir@example.com>, relay=127.0.0.1[127.0.0.1]:10026, delay=0.15, delays=0.02/0.01/0/0.12, dsn=2.0.0, status=sent (250 2.0.0 from MTA(smtp:[127.0.0.1]:10025): 250 2.0.0 Ok: queued as B0CC6104BA2)
+Aug  2 16:49:03 posta postfix/qmgr[276753]: 90693104B8D: removed
+Aug  2 16:49:04 posta postfix/lmtp[288967]: B0CC6104BA2: to=<ayse.demir@example.com>, relay=mail01.example.com[192.0.2.12]:7025, delay=0.63, delays=0/0.02/0.08/0.53, dsn=2.1.5, status=sent (250 2.1.5 Delivery OK)
+Aug  2 16:49:04 posta postfix/qmgr[276753]: B0CC6104BA2: removed
+Aug  2 16:49:03 posta postfix/smtp[288939]: 94908104B90: to=<olmayan-kullanici@example.com>, relay=127.0.0.1[127.0.0.1]:10026, delay=0.16, delays=0.02/0.01/0/0.13, dsn=2.0.0, status=sent (250 2.0.0 from MTA(smtp:[127.0.0.1]:10025): 250 2.0.0 Ok: queued as B8E90104BA5)
+Aug  2 16:49:03 posta postfix/error[288975]: B8E90104BA5: to=<olmayan-kullanici@example.com>, relay=none, delay=0.05, delays=0.02/0.02/0/0.01, dsn=5.0.0, status=bounced (example.com)
+Aug  2 16:49:03 posta postfix/bounce[288977]: B8E90104BA5: sender non-delivery notification: C2131104BA8
+Aug  2 16:49:03 posta postfix/qmgr[276753]: B8E90104BA5: removed
+Aug  2 16:49:03 posta postfix/smtp[288983]: C800B104BA4: to=<kullanici@nosuchdomain.invalid>, relay=none, delay=0.06, delays=0.01/0.04/0/0, dsn=4.4.3, status=deferred (Host or domain name not found. Name service error for name=nosuchdomain.invalid type=MX: Host not found, try again)
+Aug  2 16:49:03 posta postfix/smtp[288981]: C5233104BA7: to=<kuyruk-test@dc01.example.com>, relay=none, delay=0.1, delays=0.02/0.03/0.05/0, dsn=4.4.1, status=deferred (connect to dc01.example.com[192.0.2.5]:25: Connection refused)
+Aug  2 16:51:15 posta postfix/smtpd[288566]: NOQUEUE: reject: RCPT from unknown[10.99.99.99]: 550 5.1.1 <olmayan-kullanici@example.com>: Recipient address rejected: example.com; from=<ahmet.yilmaz@example.com> to=<olmayan-kullanici@example.com> proto=ESMTP helo=<foreign.example.net>
+Aug  2 16:51:15 posta postfix/smtpd[288566]: NOQUEUE: reject: RCPT from unknown[10.99.99.99]: 554 5.7.1 <someone@example.org>: Relay access denied; from=<ahmet.yilmaz@example.com> to=<someone@example.org> proto=ESMTP helo=<foreign.example.net>
