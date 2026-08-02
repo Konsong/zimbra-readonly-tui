@@ -193,6 +193,21 @@ What an operation costs at production scale, declared as one of four. Class 1 is
 a directory read about one account, domain or list. Class 2 is a read inside one
 mailbox. Class 3 is a log scan, whose size is the window's, not the server's.
 Class 4 is a server-wide sweep — and class 4 **does not exist in this tool**.
+A class names what the work grows with, never how long it takes. It is declared
+beside the operation, in the one list the menu is built from, so that an
+operation cannot arrive without one; the classes an operation may claim are their
+own declaration, and the two are held equal in both directions. **A class no
+operation claims is not declared** — class 2 is a real class and waits for the
+first screen behind the existence gate, and class 4 waits for nothing, because a
+vocabulary that can name a sweep is a vocabulary that will one day be used to
+offer one.
+
+**Cost unit**:
+What a class's cost is counted in, declared with the class: an **entry** for
+class 1, a **file** for class 3. One invocation buys one unit — a directory read
+per entry, a scan per log file — so a screen's cost can be checked against the
+units its own answer named rather than against a number written down beside it.
+_Avoid_: bound, budget — the unit is what is counted, not a ceiling on it
 _Avoid_: performance, expensive — both invite a judgement call where a class is a
 rule
 

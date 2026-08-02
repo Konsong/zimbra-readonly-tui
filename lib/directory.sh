@@ -7,7 +7,9 @@
 [ -n "${ZRO_LIB_DIRECTORY_LOADED:-}" ] && return 0
 ZRO_LIB_DIRECTORY_LOADED=1
 
-# COST CLASS 1, both screens, and neither of them by a hair.
+# WHAT CLASS 1 MEANS HERE, for both screens, and neither of them by a hair. The
+# class itself is declared beside the operations in the entry point rather than
+# restated as a claim in this comment — this is why each of these two earns it.
 #
 # The domain card is one directory read about one domain, plus at most one more
 # to name the class of service the first one answered with an opaque id. The list

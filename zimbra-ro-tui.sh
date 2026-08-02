@@ -947,8 +947,58 @@ yukseltip yeniden deneyin."
   done
 }
 
+# THE COST CLASSES AN OPERATION MAY CLAIM, as "<class>:<the unit its work is
+# counted in>".
+#
+# A class is not a speed and not a warning: it is what the work grows with, said as
+# the unit one invocation buys. Class 1 is counted in ENTRIES — a directory read
+# about one account, domain or list, plus a read per entry that entry itself names.
+# Class 3 is counted in FILES — one read per log file opened, and which files those
+# are is the operator's arrival window on a trace and the operator's own choice in
+# the viewer. What every declared class has in common is the sentence the whole tool
+# rests on: none of these units is the number of accounts on the server.
+#
+# THE UNIT IS WHAT MAKES THE CLASS CHECKABLE. A screen's cost can then be asserted
+# as a count of the things its own answer named — the entries a record points at,
+# the files a window covers — rather than as a number somebody wrote down and would
+# have updated. A screen that quietly started reading per account fails against the
+# unit it declared, which is the whole reason the class is written here.
+#
+# CLASS 2 IS ABSENT BECAUSE NO OPERATION MAKES ONE YET. A read inside one mailbox
+# is a real class and it is in the glossary; it is not declared here because the
+# suite holds this table and the list below equal in BOTH directions, and a class
+# nothing claims is a declaration nothing checks. It arrives in the commit that
+# adds the first screen behind the existence gate, which is where a maintainer can
+# see what claims it.
+#
+# CLASS 4 IS NOT HERE AND CANNOT BE ADDED. A server-wide sweep is what this tool
+# refuses to be, and the refusal is worth nothing if the vocabulary can still name
+# one: a class that can be declared is a class that will one day be claimed. The
+# suite refuses the digit itself, in this table and in the list below, so the
+# attempt fails the build rather than passing as an ordinary new entry.
+ZRO_COST_CLASSES='1:entry
+3:file'
+
+# The unit a declared class's work is counted in, or a refusal for a class this
+# tool does not declare. Every lookup goes through this, so a class nobody
+# declared — 4 above all — has exactly one answer everywhere: no.
+zro_cost_unit() {
+  local class=${1-} entry
+  [ -n "$class" ] || return "$ZRO_E_INPUT"
+  while IFS= read -r entry; do
+    [ -n "$entry" ] || continue
+    if [ "${entry%%:*}" = "$class" ]; then
+      printf '%s' "${entry#*:}"
+      return 0
+    fi
+  done <<EOF
+$ZRO_COST_CLASSES
+EOF
+  return "$ZRO_E_INPUT"
+}
+
 # THE ONE LIST: every operation this tool offers, in the order it offers them, as
-# "<id>:<scope>:<label>".
+# "<id>:<scope>:<class>:<label>".
 #
 # One list rather than a tree of category menus, because the question an operator
 # arrives with is about an address and not about a category — and a tree makes
@@ -959,9 +1009,11 @@ yukseltip yeniden deneyin."
 # The ID is what comes back from the menu: it is a fixed identifier this program
 # wrote, never operator text, and it is what the dispatch below reads. The SCOPE
 # is what decides whether an address is asked for before the operation runs. The
-# LABEL is what the operator reads, here and again as the title over the result,
-# so those two cannot drift apart. A label may contain a colon; only the first
-# two are separators.
+# CLASS is what the operation costs at production scale, named from the table
+# above. The LABEL is what the operator reads, here and again as the title over
+# the result, so those two cannot drift apart. A label may contain a colon; only
+# the first three are separators.
+#
 # FOUR SCOPES, not two. 'account' needs the selected address to BE an account —
 # an account read on a distribution list fails with "no such account", which is
 # true and useless. 'list' is the mirror of it: a list read on an account fails
@@ -975,15 +1027,24 @@ yukseltip yeniden deneyin."
 # The distinction is what makes the identity worth resolving. Without it every
 # kind would share one mark, and marking a trace unavailable on a list address
 # would take away the one screen that still answers.
-ZRO_MENU_OPS='account-card:account:Hesap karti
-account-quota:account:Kota kullanimi
-account-membership:account:Dagitim listesi uyelikleri
-dl-card:list:Dagitim listesi karti
-domain-card:address:Alan adi karti
-trace-recipient:address:Teslim takibi: bu adrese gelenler
-trace-sender:address:Teslim takibi: bu adresten gidenler
-trace-msgid:server:Teslim takibi: ileti kimligine gore
-logview:server:Log dosyalari (son satirlar)'
+#
+# THE CLASS IS HERE RATHER THAN IN A COMMENT AT THE TOP OF A MODULE, because a
+# comment is not something the program can be held to. Declared here it sits in
+# the one list every operation must already appear in to exist at all, so an
+# operation cannot arrive without a class the way it cannot arrive without a
+# label — and the suite holds this list and the table above equal in both
+# directions, the way it already holds the allowlist and the table of binary
+# roots. An operation with no class fails the build; a class no operation claims
+# fails it too.
+ZRO_MENU_OPS='account-card:account:1:Hesap karti
+account-quota:account:1:Kota kullanimi
+account-membership:account:1:Dagitim listesi uyelikleri
+dl-card:list:1:Dagitim listesi karti
+domain-card:address:1:Alan adi karti
+trace-recipient:address:3:Teslim takibi: bu adrese gelenler
+trace-sender:address:3:Teslim takibi: bu adresten gidenler
+trace-msgid:server:3:Teslim takibi: ileti kimligine gore
+logview:server:3:Log dosyalari (son satirlar)'
 
 # The declared entry for an id, or a refusal. Every lookup below goes through
 # this, so an id that is not in the list has exactly one answer everywhere.
@@ -1020,9 +1081,23 @@ zro_menu_scope() {
   printf '%s' "${entry%%:*}"
 }
 
+# The cost class an operation claims. A class this tool does not declare is not
+# reported as the operation's own — it is refused here, so an entry naming class
+# 4 answers the same way an entry naming nothing does.
+zro_menu_cost() {
+  local entry class
+  entry=$(zro_menu_entry "${1-}") || return "$ZRO_E_INPUT"
+  entry=${entry#*:}
+  entry=${entry#*:}
+  class=${entry%%:*}
+  zro_cost_unit "$class" >/dev/null || return "$ZRO_E_INPUT"
+  printf '%s' "$class"
+}
+
 zro_menu_label() {
   local entry
   entry=$(zro_menu_entry "${1-}") || return "$ZRO_E_INPUT"
+  entry=${entry#*:}
   entry=${entry#*:}
   printf '%s' "${entry#*:}"
 }
