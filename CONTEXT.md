@@ -23,6 +23,15 @@ an audit or access log line, a scratch file, a process cache. Disclosed in the
 documentation, but outside the guarantee.
 _Avoid_: side effect (too broad — it also covers real writes)
 
+**Declared artifact**:
+An incidental artifact a command writes **inside Zimbra's own tree** rather than
+to a log — `zmcontrol status` rewrites `.zmcontrol.cache` and leaves temp files.
+Admitted only when three things hold together: it changes no domain state, the
+screen that runs the command says what it writes, and an ADR records the
+judgement. Three conditions, because the alternative is a guarantee that widens
+one convenient command at a time.
+_Avoid_: harmless write, cache write
+
 **Autocreating read**:
 A command whose name and output present it as a query, but which provisions
 domain state that was absent. `zmprov gmi` and any `zmmailbox` session on an
@@ -62,7 +71,10 @@ _Avoid_: existence check, pre-flight
 
 **Existence oracle**:
 A command used as evidence for the gate. To qualify it must be incapable of
-provisioning a mailbox itself.
+provisioning a mailbox itself. **An attribute is not an oracle.**
+`zimbraLastLogonTimestamp` was tried and refuted: it is written by an
+authentication that need never register a session, so it is set on accounts that
+have no mailbox ([ADR-0003](docs/adr/0003-gis-is-the-existence-oracle.md)).
 _Avoid_: probe, prober — a probe asks about this host, never about a mailbox
 
 **Decisive oracle**:
@@ -155,14 +167,88 @@ unreachable. It is about **where the answer came from**, and its cost is that
 mailbox-derived facts are unavailable.
 _Avoid_: fallback mode, LDAP mode
 
-**One-sided gate**:
-The existence gate running with a one-sided oracle only. It is about **which
-accounts can be served**, and its cost is that some accounts holding real
-mailboxes are refused.
-_Avoid_: degraded gate, partial gate
+**Silent gate**:
+The existence gate unable to answer at all, because its oracle speaks SOAP and
+the mailbox service is unreachable. It is about **whether any account can be
+served**, and its cost is that every mailbox operation is refused until the
+service returns. Not reported as a failure: the commands behind the gate would be
+equally unusable, so the screen names the cause instead.
+_Avoid_: one-sided gate — this design has no one-sided oracle; gate failure
 
 **Partial scan**:
 A trace answered from fewer log files than the arrival window selected, because
 one could not be read. It is about **how much of the evidence was seen**, and its
 cost is that finding nothing stops being proof that nothing happened.
 _Avoid_: incomplete result, silent skip
+
+## Cost
+
+Production is one server carrying more than 100,000 mailboxes. Read-only was
+never the whole risk: a command that changes nothing can still be a production
+event. These words exist so that cost is decided when an operation is designed
+rather than discovered when it runs.
+
+**Cost class**:
+What an operation costs at production scale, declared as one of four. Class 1 is
+a directory read about one account, domain or list. Class 2 is a read inside one
+mailbox. Class 3 is a log scan, whose size is the window's, not the server's.
+Class 4 is a server-wide sweep — and class 4 **does not exist in this tool**.
+_Avoid_: performance, expensive — both invite a judgement call where a class is a
+rule
+
+**Server-wide sweep**:
+A command whose work grows with the number of accounts on the server:
+`zmprov gqu`, `gaa -v`, an unbounded `sa`. Refused by design, not bounded and
+offered. Where one would have answered — bulk quota, bulk status — the tool asks
+the operator for the list of accounts instead.
+_Avoid_: bulk query (that is the screen, not the hazard), full scan
+
+**Declared cost**:
+What a class 3 screen says before it reads anything: how many files, how many
+bytes. An operator who is about to spend two minutes of the mail server's disk is
+entitled to know before it starts, not after.
+_Avoid_: warning, confirmation
+
+## Asking about an address
+
+**Selected address**:
+The address the session is currently about, chosen once and carried in every
+screen title until it is changed. Every account-scoped operation reads it rather
+than asking again — because at two seconds per invocation, retyping is not the
+cost that matters, re-running is. It names **what the session is about, never
+what a screen filtered on**: a server-wide screen carries it too, and every
+report names its own subject on its own first line.
+_Avoid_: current user, context account
+
+**Address identity**:
+What an address turns out to *be* — an account, an alias and the account behind
+it, a distribution list, a resource, or nothing at all. Answered before any
+account-scoped screen runs, because `zmprov ga` on a distribution list fails with
+`no such account`, and an operator who reads that as "the address does not exist"
+goes on to look in the wrong place.
+_Avoid_: lookup, account check
+
+**Provenance**:
+Whether an attribute is set on the entry or inherited from its class of service.
+Only `zmprov ga -e` distinguishes them — `-l` expands COS values exactly as SOAP
+does, so a value's presence proves nothing about where it came from. Asked as a
+separate screen rather than on the card, because it costs a second invocation.
+_Avoid_: source, origin
+
+## Searching logs
+
+**Canned search**:
+A named question whose pattern the **tool** owns — rejected mail, deferred mail,
+bounced mail, local delivery, session activity, mailbox errors. The operator
+chooses the question and supplies at most an address. Nothing an operator types
+becomes a pattern, so no question can be silently mistyped into a different one.
+_Avoid_: preset, filter — a preset is an arrival window, a filter is a tracer flag
+
+**Match-bounded scan**:
+Reading a log file in full and stopping after a fixed number of matches. The
+opposite trade from a bounded read: coverage is complete and the **output** is
+what is capped. It is the answer to a search, where a bounded read is the answer
+to a listing — because a search that quietly examined only the newest lines
+reports an absence nobody bounded.
+_Avoid_: grep, bounded search — the bound is on matches, and saying which one
+matters is the whole point

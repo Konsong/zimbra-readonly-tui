@@ -17,14 +17,26 @@ zro_cap_reset() {
   ZRO_CAP_TRACE_LOG_CACHE=""
 }
 
+# Fills the cache IN THE CALLER'S SHELL, and says whether the host answered.
+#
+# The version is displayed, so every caller reads it inside command substitution
+# — and an assignment made in a subshell dies with it, which left "cached once
+# per session" true of a cache that was never written. The server was asked again
+# on every redraw of the menu, at a JVM start each time. Callers that are about
+# to display it prime the cache through this first; the printer below then finds
+# it filled.
+zro_cap_version_load() {
+  [ -n "$ZRO_CAP_VERSION_CACHE" ] && return 0
+  ZRO_CAP_VERSION_CACHE=$(zro_exec zmcontrol -v 2>/dev/null | head -n 1)
+  [ -n "$ZRO_CAP_VERSION_CACHE" ]
+}
+
 zro_cap_version() {
   if [ -n "${ZRO_CAP_FORCE:-}" ]; then
     printf '%s' "$ZRO_CAP_FORCE"
     return 0
   fi
-  if [ -z "$ZRO_CAP_VERSION_CACHE" ]; then
-    ZRO_CAP_VERSION_CACHE=$(zro_exec zmcontrol -v 2>/dev/null | head -n 1)
-  fi
+  zro_cap_version_load || true
   printf '%s' "$ZRO_CAP_VERSION_CACHE"
 }
 

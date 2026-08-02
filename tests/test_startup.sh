@@ -72,71 +72,15 @@ ZRO_MOCK_ID_USER=zimbra LC_ALL=C LANG=C assert_ok zro_startup_check
 
 export ZRO_MOCK_ID_USER=zimbra
 
-it "cancelling the account prompt returns to the menu instead of exiting"
-queue "1" "__CANCEL__" "__CANCEL__"
-assert_ok zro_menu_account
-
-it "an invalid address is reported and the menu continues"
-queue "1" 'a@b.com; id' "__CANCEL__" "__CANCEL__"
-: >"$ZRO_UI_OUT"; : >"$ZRO_MOCK_LOG"
-zro_menu_account
-assert_contains "$(cat "$ZRO_UI_OUT")" "Gecersiz"
-assert_not_contains "$(cat "$ZRO_MOCK_LOG")" "zmprov"
-
-it "a valid address reaches the summary view"
-queue "1" "ahmet.yilmaz@example.com" "__CANCEL__" "__CANCEL__"
-: >"$ZRO_UI_OUT"
-ZRO_MOCK_ZMPROV_GA_OUT="$FIX/zmprov_ga_active.txt" zro_menu_account
-assert_contains "$(cat "$ZRO_UI_OUT")" "Ahmet Yilmaz"
-
-it "tells the operator a query is running before the wait begins"
-queue "1" "ahmet.yilmaz@example.com" "__CANCEL__" "__CANCEL__"
-: >"$ZRO_UI_OUT"
-ZRO_MOCK_ZMPROV_GA_OUT="$FIX/zmprov_ga_active.txt" zro_menu_account
-transcript=$(cat "$ZRO_UI_OUT")
-assert_contains "$transcript" "bekleyin"
-# The notice has to come before the result, or it is not a notice.
-notice_line=$(grep -n "bekleyin" "$ZRO_UI_OUT" | head -n 1 | cut -d: -f1)
-result_line=$(grep -n "Ahmet Yilmaz" "$ZRO_UI_OUT" | head -n 1 | cut -d: -f1)
-assert_eq "$([ "$notice_line" -lt "$result_line" ] && printf yes || printf no)" "yes"
-
-it "the quota screen is reachable and rendered"
-queue "2" "ahmet.yilmaz@example.com" "__CANCEL__" "__CANCEL__"
-: >"$ZRO_UI_OUT"; : >"$ZRO_MOCK_LOG"
-ZRO_MOCK_ZMPROV_GA_OUT="$FIX/zmprov_ga_active.txt" zro_menu_account
-transcript=$(cat "$ZRO_UI_OUT")
-assert_contains "$transcript" "5.0 GB"
-assert_contains "$transcript" "gosterilmiyor"
-# Reaching this screen must not run the command that creates mailboxes.
-assert_not_contains "$(cat "$ZRO_MOCK_LOG")" "$(printf '\tgmi')"
-
-it "the membership screen is reachable and rendered"
-queue "3" "ahmet.yilmaz@example.com" "__CANCEL__" "__CANCEL__"
-: >"$ZRO_UI_OUT"
-ZRO_MOCK_ZMPROV_GAM_OUT="$FIX/zmprov_gam_ok.txt" zro_menu_account
-assert_contains "$(cat "$ZRO_UI_OUT")" "bilgi-islem@example.com"
-
-it "a missing account is reported without leaving the menu"
-queue "1" "yok@example.com" "__CANCEL__" "__CANCEL__"
-: >"$ZRO_UI_OUT"
-ZRO_MOCK_ZMPROV_GA_ERR="$FIX/zmprov_ga_no_such_account.err" \
-ZRO_MOCK_ZMPROV_GA_RC=1 zro_menu_account
-assert_contains "$(cat "$ZRO_UI_OUT")" "bulunamadi"
-
-it "an empty membership list is reported as no result, not an error"
-empty=$(mktemp); : >"$empty"
-queue "3" "yalniz@example.com" "__CANCEL__" "__CANCEL__"
-: >"$ZRO_UI_OUT"
-ZRO_MOCK_ZMPROV_GAM_OUT="$empty" zro_menu_account
-assert_contains "$(cat "$ZRO_UI_OUT")" "Kayit bulunamadi"
-rm -f -- "$empty"
+# What the menus do with a started tool is tests/test_main_menu.sh. These two are
+# here because they are about the program ending, which is where startup ends.
 
 it "cancelling the main menu exits the loop cleanly"
 queue "__CANCEL__"
 assert_ok zro_menu_main
 
 it "the exit entry leaves the main menu"
-queue "9"
+queue "quit"
 assert_ok zro_menu_main
 
 rm -f -- "$ZRO_MOCK_LOG" "$ZRO_UI_QUEUE" "$ZRO_UI_QUEUE.pos" "$ZRO_UI_OUT"
