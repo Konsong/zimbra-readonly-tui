@@ -1,0 +1,13 @@
+# name ahmet.yilmaz@example.com
+displayName: Ahmet Yilmaz
+zimbraAccountStatus: active
+zimbraIsDelegatedAdminAccount: TRUE
+zimbraMailAlias: a.yilmaz@example.com
+zimbraMailAlias: ayilmaz@example.com
+zimbraMailDeliveryAddress: ahmet.yilmaz@example.com
+zimbraMailForwardingAddress: denetim@example.net
+zimbraMailForwardingAddress: arsiv@example.net
+zimbraMailHost: mail01.example.com
+zimbraMailQuota: 5368709120
+zimbraPasswordModifiedTime: 20260730212937.687Z
+zimbraPrefMailForwardingAddress: kisisel-yedek@example.net

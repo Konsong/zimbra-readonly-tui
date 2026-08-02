@@ -1,0 +1,6 @@
+# name sade@example.com
+displayName: Sade Kullanici
+zimbraAccountStatus: active
+zimbraMailDeliveryAddress: sade@example.com
+zimbraMailHost: mail01.example.com
+zimbraPasswordModifiedTime: 20260730212940.596Z

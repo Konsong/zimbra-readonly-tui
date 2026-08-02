@@ -364,6 +364,37 @@ queue "account-membership" "__CANCEL__"
 run
 assert_contains "$(transcript)" "bilgi-islem@example.com"
 
+it "the provenance screen is reachable and answers per attribute"
+zro_sel_set "$ADDR"
+queue "account-provenance" "__CANCEL__"
+ZRO_MOCK_ZMPROV_GA_OUT="$FIX/zmprov_ga_quota_set.txt" \
+ZRO_MOCK_ZMPROV_GA__E_OUT="$FIX/zmprov_ga_e_quota_set.txt" run
+# READ OFF THE ATTRIBUTE LINE, not off the screen: all three words appear again in
+# the legend at the bottom, so a search of the whole transcript would find them on
+# a screen that had given the same answer sixteen times.
+out=$(grep '^zimbraMailQuota' "$ZRO_UI_OUT" | head -n 1)
+assert_contains "$out" "$ZRO_TXT_ON_ENTRY"
+assert_contains "$(grep '^zimbraCOSId' "$ZRO_UI_OUT" | head -n 1)" "$ZRO_TXT_INHERITED"
+
+it "and it declares what it will spend before it spends it"
+# THE COST, SAID IN ITS OWN SENTENCE. This is the one screen that can be exact
+# about what it will run — two reads of the same entry, always — and saying so is
+# what makes it a screen an operator chooses rather than a wait they discover.
+# The general 'more than one query' line would have been true and useless here.
+assert_contains "$(transcript)" "IKI KEZ"
+notice_line=$(grep -n "IKI KEZ" "$ZRO_UI_OUT" | head -n 1 | cut -d: -f1)
+result_line=$(grep -n '^zimbraMailQuota' "$ZRO_UI_OUT" | head -n 1 | cut -d: -f1)
+assert_eq "$([ "$notice_line" -lt "$result_line" ] && printf yes || printf no)" "yes"
+
+it "and no other account screen borrows that sentence"
+# A cost declared by every screen is a cost no operator reads. The other two say
+# what is true of them, which is that the number of queries depends on what the
+# account turns out to name.
+zro_sel_set "$ADDR"
+queue "account-card" "__CANCEL__"
+run
+assert_not_contains "$(transcript)" "IKI KEZ"
+
 it "a missing account is reported without leaving the menu"
 zro_sel_set "yok@example.com"
 queue "account-card" "__CANCEL__"
@@ -743,6 +774,30 @@ zro_sel_set "$ADDR"
 queue "account-membership" "__CANCEL__" "__CANCEL__"
 run
 assert_cost account-membership "$(spent)" 1
+
+it "the provenance screen spends two reads of the one entry it is about"
+# ONE ENTRY, TWO FORMS — the only screen here that pays more than once for the
+# same entry. Its class is still 1: what its work grows with is entries, and one
+# account costs a fixed two reads however large the directory around it gets.
+#
+# THE UNIT AND THE MULTIPLE ARE STATED SEPARATELY, which is what keeps both claims
+# checkable. The entry count is one because this screen reads about the account and
+# nothing the account names; the multiple is two because it reads that one entry in
+# both forms. A screen that reached for a second entry fails against the first, and
+# one that quietly stopped making the entry-only read fails against the second.
+forms=2
+entries=1
+zro_sel_set "$ADDR"
+queue "account-provenance" "__CANCEL__" "__CANCEL__"
+ZRO_MOCK_ZMPROV_GA_OUT="$FIX/zmprov_ga_quota_set.txt" \
+ZRO_MOCK_ZMPROV_GA__E_OUT="$FIX/zmprov_ga_e_quota_set.txt" run
+assert_cost account-provenance "$(spent)" "$entries" "$forms"
+
+it "and the two of them are the two forms, not the same read twice"
+# Without this the case above would pass just as well against a screen that ran
+# the ordinary account read twice — which would answer 'set on the account' for
+# every attribute the account has, and be wrong about every one of them.
+assert_contains "$(cat "$ZRO_MOCK_LOG")" "$(printf 'zmprov\tga\t-e\t')"
 
 it "the list card spends one read for the list and one per grantee it names"
 # A distribution list's record names more entries than any other: the list

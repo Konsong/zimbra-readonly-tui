@@ -51,6 +51,32 @@ zro_attr_all() {
   '
 }
 
+# Whether the output carries a line for this attribute AT ALL, which is not the
+# same question as what its value is.
+#
+# The provenance screen is why it is a question of its own. That screen decides
+# from the LINE BEING THERE and never from what is on it: zmprov omits an
+# attribute nobody set, so the line's absence is the whole signal.
+#
+# MATCHED ON THE SEPARATOR ALONE, where the two readers above match on the space
+# after it. That is the one place the three may differ, and the difference is the
+# point: a line carrying nothing after its colon is a line the directory really
+# returned, and this answers that it is there while the readers answer that its
+# value is empty. Both are right about the question they were asked. Whether
+# zmprov ever writes such a line has not been measured, which is exactly why the
+# presence test does not depend on the answer.
+#
+# The colon is still what keeps zimbraMailForwardingAddress from matching
+# zimbraMailForwardingAddressMaxLength, because a name is not a prefix of a longer
+# name once the separator is attached.
+zro_attr_present() {
+  local text=$1 name=$2
+  printf '%s\n' "$text" | awk -v key="$name" '
+    index($0, key ":") == 1 { found = 1; exit }
+    END { exit(found ? 0 : 1) }
+  '
+}
+
 # Zimbra stores timestamps as LDAP generalized time. A production server
 # returned 20260728064034.819Z: fourteen digits, then fractional seconds, then
 # a zone. The fraction is optional in the standard and absent from some
@@ -180,7 +206,15 @@ zro_prov_read() {
   first_msg=$(head -c 500 -- "$err" 2>/dev/null)
   mapped=$(zro_prov_fail_code "$err" "$missing_code" "$rc")
 
-  if [ "$mapped" = "$ZRO_E_UNAVAILABLE" ] && zro_prov_ldap_capable "$sub"; then
+  # TWO QUESTIONS, AND THEY ARE DIFFERENT ONES. The first is whether Zimbra can
+  # answer this read from LDAP at all — `gmi` cannot, because mailbox usage does
+  # not live there. The second is whether this program is allowed to ask it that
+  # way, which only the gate knows: the entry-only account read is approved
+  # through mailboxd and in no other spelling, so a retry made without asking
+  # would be refused — and an allowlist denial is logged as a defect. Asking
+  # first is what keeps an ordinary outage from being reported as one.
+  if [ "$mapped" = "$ZRO_E_UNAVAILABLE" ] && zro_prov_ldap_capable "$sub" \
+     && zro_ldap_form_allowed "$sub" "$@"; then
     : >"$err"
     rc=0
     out=$(zro_exec zmprov -l "$sub" "$@" 2>"$err") || rc=$?
@@ -561,6 +595,168 @@ zro_account_quota() {
   printf '\n'
   printf "Guvenli alternatif zmprov gqu sunucu genelinde calisir ve hicbir sey\n"
   printf "yaratmaz; toplu kota ekraniyla birlikte gelecek.\n"
+}
+
+# WHERE A VALUE CAME FROM, which is a different question from what it is.
+#
+# An operator reading a quota is deciding what to change next, and that turns on
+# whether the limit is set on this account or inherited by it: one of those is
+# repaired on the account and the other on a class of service every account on it
+# shares. PRESENCE PROVES NOTHING about which. zmprov expands what a class of
+# service provides in both SOAP and LDAP mode — getAttrs(expandCos) ->
+# setAccountDefaults(true), measured on the lab server rather than read off the
+# source — so the ordinary read answers with the value in force and says nothing
+# whatever about its origin.
+#
+# `zmprov ga -e` is the only thing that answers, and it cannot answer alone. It
+# returns the attributes set on the entry itself and expands nothing, so an
+# attribute missing from it is either inherited or set nowhere at all — and those
+# are different facts about the account. The entry is therefore read TWICE, once
+# in each form, and the difference between the two is the answer:
+#
+#   in both          the value is set on this account
+#   effective only   the account inherits it
+#   in neither       nobody set it, here or anywhere this account inherits from
+#
+# THE SECOND FORM IS WHY THIS IS NOT A FIELD ON THE CARD. A JVM start costs the
+# same whether five attributes are requested or twenty-five, which is what lets
+# the card show everything it shows from one invocation — but a second FORM of the
+# same read is a second invocation however few attributes it names, and a card
+# that doubled its own cost to caveat one line would spend that on every operator
+# who never asked the question. So it is a screen an operator asks for, and it
+# says what it will spend before it spends it.
+
+# The three answers, in the operator's words.
+#
+# 'tanimsiz' is reused from the card rather than invented, but NOT because the two
+# screens are saying the same thing. The card has two words for absence: an
+# attribute nobody set is 'tanimsiz', and an absent LIST is 'yok', because there
+# absence is a fact about the value — nobody is on it. This screen has one word
+# for all sixteen, because it is not answering what the value is. It is answering
+# where a value was set, and 'set nowhere' is one answer whether the attribute
+# holds a quota or a list of aliases.
+ZRO_TXT_ON_ENTRY='hesapta tanimli'
+ZRO_TXT_INHERITED='devralinmis'
+
+# The attributes set on the account entry itself, with nothing expanded into it.
+#
+# THE SAME ATTRIBUTE LIST THE CARD ASKS FOR, deliberately. This screen answers
+# "where did the value I am looking at come from", and a list of its own would
+# answer about attributes the operator has never seen — while quietly failing to
+# answer about one they had.
+zro_account_entry_fetch() {
+  local acct=${1-}
+  zro_validate_email "$acct" || return "$ZRO_E_INPUT"
+  zro_prov_read "$ZRO_E_NO_ACCOUNT" ga -e "$acct" "${ZRO_ACCOUNT_ATTRS[@]}"
+}
+
+# One attribute's provenance, as a state this file decides and the renderer names.
+#
+#   $1  the effective read
+#   $2  the entry-only read
+#   $3  the attribute
+#
+# THE ORDER OF THE TWO TESTS IS THE ANSWER. An attribute carried by the entry is
+# set here whatever the effective read says. One the effective read carries and
+# the entry does not is inherited. One that NEITHER carries is set nowhere — and
+# that case is written out rather than left to fall through to 'inherited',
+# because an attribute nobody set anywhere is not a value waiting on a class of
+# service, and telling an operator it was inherited would send them to read a COS
+# that has nothing to say about it either.
+zro_provenance_state() {
+  local effective=${1-} entry=${2-} name=${3-}
+  if zro_attr_present "$entry" "$name"; then
+    printf 'entry'
+    return 0
+  fi
+  if zro_attr_present "$effective" "$name"; then
+    printf 'inherited'
+    return 0
+  fi
+  printf 'unset'
+}
+
+zro_provenance_word() {
+  case ${1-} in
+    entry)     printf '%s' "$ZRO_TXT_ON_ENTRY" ;;
+    inherited) printf '%s' "$ZRO_TXT_INHERITED" ;;
+    unset)     printf '%s' "$ZRO_TXT_UNSET" ;;
+    # Unreachable while this list and the one above agree, and here so that they
+    # may only disagree loudly: a state added there and missed here would
+    # otherwise reach the operator as an empty column.
+    *)         printf '%s' "$ZRO_TXT_UNKNOWN" ;;
+  esac
+}
+
+# The column the answers start in, as the longest attribute name allows.
+#
+# DERIVED RATHER THAN COUNTED. The names are Zimbra's, the list they come from
+# grows, and a width somebody measured once is a width that is wrong the next time
+# an attribute is added — on the one screen whose readability is a tidy column.
+zro_provenance_label_w() {
+  local a w=0
+  for a in "${ZRO_ACCOUNT_ATTRS[@]}"; do
+    [ "${#a}" -gt "$w" ] && w=${#a}
+  done
+  printf '%s' "$w"
+}
+
+# One line of the answer, in that column. It is not zro_card_line: these labels
+# are Zimbra's attribute names and they are longer than any Turkish label on any
+# card, so they carry a width of their own rather than shrinking the one every
+# other screen shares. Written once here so the loop below states what it shows
+# instead of restating how to print it.
+zro_provenance_line() {
+  printf '%-*s: %s\n' "${1-0}" "${2-}" "${3-}"
+}
+
+# THE PROVENANCE SCREEN: for every attribute the card shows, whether the account
+# carries the value itself or inherits it.
+#
+# Attribute names rather than the card's Turkish labels, and that is the one place
+# this program shows an operator a Zimbra name. What they do next is read or
+# change that attribute somewhere this tool cannot reach, and a screen that named
+# it 'Kota limiti' would have answered the question and withheld the word the
+# answer is about.
+zro_account_provenance() {
+  local acct=$1 entry effective rc=0
+  zro_reset_mode
+
+  # THE ENTRY-ONLY READ FIRST, which is not arbitrary. It is the read with no
+  # approved LDAP form, so it is the one that fails when the mailbox service is
+  # down — and failing on the first invocation instead of the second is one JVM
+  # start an operator does not spend to be told the same thing.
+  entry=$(zro_account_entry_fetch "$acct") || rc=$?
+  [ "$rc" -eq 0 ] || return "$rc"
+  effective=$(zro_account_fetch "$acct") || rc=$?
+  [ "$rc" -eq 0 ] || return "$rc"
+
+  zro_mode_banner
+
+  zro_card_line 'Hesap' "$acct"
+
+  local w attr
+  w=$(zro_provenance_label_w)
+  zro_card_head 'Deger nereden geliyor (Zimbra oznitelik adlariyla)'
+  for attr in "${ZRO_ACCOUNT_ATTRS[@]}"; do
+    zro_provenance_line "$w" "$attr" \
+      "$(zro_provenance_word "$(zro_provenance_state "$effective" "$entry" "$attr")")"
+  done
+
+  # Each word explained where it is read, because the difference between the three
+  # is the entire content of this screen and none of them says it alone.
+  #
+  # In the CARD's column rather than the one above, deliberately. This block is a
+  # legend and not more answers, and setting it in the width every other screen in
+  # the tool uses is what stops it being read as four more attributes.
+  zro_card_head 'Bu ne demek'
+  zro_card_line "$ZRO_TXT_ON_ENTRY" 'deger bu hesabin kendi kaydinda duruyor;'
+  zro_card_more 'degistirmek yalnizca bu hesabi etkiler.'
+  zro_card_line "$ZRO_TXT_INHERITED" 'deger hesabin kendi kaydinda YOK; COS veya'
+  zro_card_more 'alan adi varsayilanindan geliyor. O kayit'
+  zro_card_more 'degisirse bu hesabin degeri de degisir.'
+  zro_card_line "$ZRO_TXT_UNSET" 'iki sorgunun ikisinde de yok; hicbir'
+  zro_card_more 'yerde tanimli degil.'
 }
 
 # The distribution lists an account belongs to, one per line, or nothing at all.
