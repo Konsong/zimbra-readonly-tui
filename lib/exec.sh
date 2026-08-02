@@ -85,9 +85,37 @@ ZRO_LIB_EXEC_LOADED=1
 # file, both computed here: the file comes from the log inventory and never from
 # operator text. `-f` is absent and therefore refused — it follows a growing file
 # and never returns, which on a screen is a tool that has hung.
+#
+# `zmprov:ga:-e` IS AN ENTRY IN THE DATA POSITION, and the only one. What follows
+# an approved subcommand is the caller's already-validated data — but a flag
+# written there is not data at all: it changes what the command does. `zmprov`
+# carries `-t`, which writes binary attribute values to files under the
+# localconfig temp directory and deletes whatever stood at the path first: a
+# local write, performed by a read. Whether that tool's parser honours the flag
+# after the subcommand as well as before it is NOT something we have measured,
+# and the gate does not rest on the answer — a flag in the data position is
+# refused for being absent from this list, the same way an unapproved subcommand
+# is.
+#
+# So the temp-file form, the force-display form and whatever the next release
+# adds to the tool are all refused without anyone having to judge them first.
+#
+# `-e` is approved because the provenance screen cannot be built without it: both
+# SOAP and LDAP mode expand what a class of service provides, so an attribute
+# appearing in the ordinary read proves nothing about where it was set, and this
+# flag is the only thing that answers. It is approved for `ga` in that one
+# spelling: not for `getAccount` and not as `--entry`.
+#
+# It is NOT approved behind `-l`, and that has a consequence worth stating rather
+# than discovering: zro_prov_read retries every read against LDAP when mailboxd
+# is unreachable, so a provenance screen written on top of it would be refused
+# during exactly the outage the retry exists for — and refused as a defect, which
+# is what an allowlist denial means. The screen's ticket decides that
+# deliberately, and pays for a second entry here if the answer is yes.
 ZRO_ALLOW='
 zmprov:ga
 zmprov:getAccount
+zmprov:ga:-e
 zmprov:gam
 zmprov:getAccountMembership
 zmprov:gc
@@ -118,31 +146,79 @@ zro_allow_entries() {
   printf '%s' "$ZRO_ALLOW" | grep -v '^[[:space:]]*$'
 }
 
+# Whether the list carries this entry, matched as one whole line. -x anchors to
+# the whole line and -F takes the needle literally, so a token containing a regex
+# metacharacter cannot widen the match.
+zro_allow_has() {
+  printf '%s' "$ZRO_ALLOW" | grep -qxF -- "${1-}"
+}
+
+# Every flag-shaped token in the data of an approved subcommand, held to the
+# allowlist under the entry that approved that subcommand. Non-flag data is not
+# examined here and never was: it is the caller's, and validating it is the
+# caller's business.
+#
+#   $1  the entry that approved the operation, as the prefix a flag extends
+#   $@  the data following it
+#
+# THE DATA IS READ BECAUSE A FLAG IN IT IS NOT DATA — see the note above
+# ZRO_ALLOW for what one of them does. The only thing keeping one out today is
+# that no validator in this program admits a leading dash: that is the author
+# remembering, and this is the structure refusing.
+#
+# Every position is read, not just the first. The account name comes first and
+# the attribute list after it, so a rule that looked only at the token straight
+# after the subcommand would leave every position behind it open.
+zro_data_flags_approved() {
+  local prefix=${1-} arg
+  shift
+  for arg in "$@"; do
+    case $arg in
+      -*) zro_allow_has "$prefix:$arg" || return 1 ;;
+    esac
+  done
+  return 0
+}
+
 zro_allowed() {
   local bin=${1-} t1=${2-} t2=${3-}
   [ -n "$bin" ] || return 1
   [ -n "$t1" ] || return 1
+  shift 2
 
-  # -x anchors to the whole line and -F takes the needle literally, so a token
-  # containing a regex metacharacter cannot widen the match.
-  #
   # A token shaped like a flag is only ever approved together with the
   # subcommand behind it, because the subcommand is what decides whether the
-  # command reads or writes. Everything else matches on two tokens, where any
-  # further arguments are the caller's already-validated data.
+  # command reads or writes.
   case $t1 in
     -*)
-      if [ -n "$t2" ] && printf '%s' "$ZRO_ALLOW" | grep -qxF -- "$bin:$t1:$t2"; then
-        return 0
+      if [ -n "$t2" ] && zro_allow_has "$bin:$t1:$t2"; then
+        # A subcommand read from LDAP rather than through mailboxd. What follows
+        # it is data, and it is read exactly as the data after a bare subcommand
+        # is: the mode flag changed where the answer comes from, not what may
+        # stand behind it.
+        shift
+        zro_data_flags_approved "$bin:$t1:$t2" "$@"
+        return $?
       fi
       # Falls back to the two-token form for a flag that IS the whole
       # operation, such as `zmcontrol -v`. A mode-selecting flag like
       # `zmprov -l` is kept out of the list, and a test enforces that.
-      printf '%s' "$ZRO_ALLOW" | grep -qxF -- "$bin:$t1"
+      #
+      # ITS DATA IS NOT READ FOR FLAGS, and that is a deliberate limit rather
+      # than an oversight. The tracer takes its arrival window and its year as
+      # flags AFTER the filter — both computed here, from a preset and from the
+      # log inventory — so a rule applied here would refuse every trace this
+      # tool makes. The cost is that `tail -n 500 <file> -f` would pass this
+      # gate: what keeps it from being written is the log viewer building its
+      # own vector out of the inventory, which is the position this rule was
+      # written to stop relying on. Closing it means approving each trace flag
+      # as a third token, and that is a ticket of its own.
+      zro_allow_has "$bin:$t1"
       return $?
       ;;
   esac
-  printf '%s' "$ZRO_ALLOW" | grep -qxF -- "$bin:$t1"
+  zro_allow_has "$bin:$t1" || return 1
+  zro_data_flags_approved "$bin:$t1" "$@"
 }
 
 # Binary locations. Production defaults, overridable so the suite can point at
@@ -292,11 +368,14 @@ zro_exec() {
   local bin=$1 token=$2
   shift 2
 
-  # The third token matters when the second one only selects a mode, so the
-  # gate sees it too. For everything else it is the caller's validated data and
-  # the two-token entry decides.
-  if ! zro_allowed "$bin" "$token" "${1-}"; then
-    zro_log error "denied by allowlist: $bin $token ${1-}"
+  # THE WHOLE VECTOR IS OFFERED TO THE GATE, not just the first two tokens. The
+  # third one decides when the second only selects a mode, and every token after
+  # an approved subcommand is read for a flag that would change what the command
+  # does. The denial names the vector for the same reason: a defect log that
+  # stopped at the first argument would leave the next reader guessing which
+  # token was refused.
+  if ! zro_allowed "$bin" "$token" "$@"; then
+    zro_log error "denied by allowlist: $bin $token $*"
     return "$ZRO_E_DENIED"
   fi
 

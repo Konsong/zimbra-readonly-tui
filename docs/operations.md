@@ -458,6 +458,25 @@ section 5.
 every subcommand behind it through, including every write, so the flag is only
 ever listed together with the subcommand it precedes.
 
+**A flag written after an approved subcommand is not data, and must be approved
+too.** What follows a subcommand is normally the caller's already-validated
+values — an account name, a list of attributes — and those reach the command
+unread. A flag there is different: it changes what the command does. `zmprov`
+carries `-t`, which writes binary attribute values to files under the localconfig
+temp directory and deletes whatever stood at the path first — a local write
+performed by a read. So the gate holds every flag-shaped token after a
+subcommand to the same list, in every position rather than only the first, and
+does not depend on where that tool's own parser happens to accept the flag.
+Exactly one is approved — `zmprov ga -e`, which reads only the attributes set on
+the entry itself — and every other form is refused for being absent from the
+list, including any a future release brings with it.
+
+This rule covers the tokens after a **subcommand**. Where the allowlist approves
+a flag as the whole operation — `tail -n`, `gzip -dc`, the three tracer filters —
+that entry approves the operation entire, and what follows is not re-read: the
+trace passes its arrival window and its year as flags of their own, and every one
+of them is built by this tool from a preset and from the log inventory.
+
 Note that `zmprov gqu` (`getQuotaUsage`) is **not** used. It takes a server, not
 an account, and returns every account on it. Per-account usage comes from `gmi`.
 

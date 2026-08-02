@@ -206,6 +206,104 @@ EOF
 it "a two-token entry still matches when a third argument follows"
 assert_ok zro_allowed zmprov ga 'ahmet.yilmaz@example.com'
 assert_ok zro_allowed zmprov gam 'ahmet.yilmaz@example.com'
+assert_ok zro_allowed zmprov ga 'ahmet.yilmaz@example.com' zimbraMailQuota displayName
+
+# ------------------------------------------- a flag in the data position ------
+#
+# What follows an approved subcommand is the caller's already-validated data. That
+# was read as "and therefore harmless", and it is not: a flag written there is not
+# data at all, it changes what the command DOES. Nothing in this program can
+# produce one today — the attribute list is a fixed array and every validator
+# rejects a leading dash — but that is the author remembering rather than the
+# structure refusing.
+#
+# So the gate reads the data too. A token shaped like a flag must be named in the
+# allowlist under the entry that approved the subcommand, or the operation is
+# refused for being absent from the list, exactly as an unapproved subcommand is.
+
+it "approves the entry-only form of the account read"
+# The provenance screen's whole question: was this value SET on the account, or
+# does the account inherit it. Both modes expand what a class of service provides
+# — measured, not assumed — so presence in the ordinary read proves nothing and
+# `-e` is the only thing that answers.
+assert_ok zro_allowed zmprov ga -e
+assert_ok zro_allowed zmprov ga -e 'ahmet.yilmaz@example.com'
+assert_ok zro_allowed zmprov ga -e 'ahmet.yilmaz@example.com' zimbraMailQuota
+
+it "and in exactly one spelling, on exactly one subcommand"
+# Read as the tracer's filters are: an operation reaches the gate in one
+# spelling, so that a maintainer reading a call site knows which entry approves
+# it. The long spelling of the flag and the long spelling of the subcommand are
+# refused although they name the same operation.
+assert_fail zro_allowed zmprov ga --entry
+assert_fail zro_allowed zmprov getAccount -e
+for sub in gam getAccountMembership gc getCos gdl getDistributionList gd getDomain; do
+  assert_fail zro_allowed zmprov "$sub" -e
+done
+
+it "refuses the form of the account read that writes files"
+# THE ONE THIS RULE EXISTS FOR. `-t` writes binary attribute values to files
+# under the localconfig temp directory, and deletes whatever was at the path
+# first: a local write, performed by a read, reachable today only because nothing
+# happens to put a dash in the data.
+for form in -t --temp; do
+  assert_fail zro_allowed zmprov ga "$form"
+  assert_fail zro_allowed zmprov ga "$form" 'ahmet.yilmaz@example.com'
+done
+
+it "refuses the force-display form, and every other flag of that read"
+# -fd prints attributes a second time and lowercased, which is a different answer
+# to the operator's question rather than a dangerous one. It is refused for the
+# same reason as the rest: it is absent from the list, and what is absent is
+# refused whether or not anyone has judged it.
+for form in -fd --forcedisplay -v --verbose -d --debug -a -l -e2 -; do
+  assert_fail zro_allowed zmprov ga "$form"
+  assert_fail zro_allowed zmprov ga "$form" 'ahmet.yilmaz@example.com'
+done
+
+it "refuses a flag wherever in the data it stands, not only first"
+# The account name comes first and the attribute list after it, so a rule that
+# looked only at the token straight after the subcommand would leave every
+# position behind it open.
+assert_fail zro_allowed zmprov ga 'ahmet.yilmaz@example.com' -t
+assert_fail zro_allowed zmprov ga 'ahmet.yilmaz@example.com' zimbraMailQuota -t
+assert_fail zro_allowed zmprov gam 'ahmet.yilmaz@example.com' -t
+
+it "a flag behind the mode flag must be approved as well"
+# The three-token form approves a subcommand READ FROM LDAP, and the data after
+# it is read exactly as the data after a bare subcommand is. The entry-only form
+# is approved in one spelling and this is not it: a second entry would have to be
+# written down before an operator could ask this question during an outage.
+assert_ok zro_allowed zmprov -l ga 'ahmet.yilmaz@example.com'
+assert_ok zro_allowed zmprov -l ga 'ahmet.yilmaz@example.com' zimbraMailQuota
+assert_fail zro_allowed zmprov -l ga -t
+assert_fail zro_allowed zmprov -l ga -t 'ahmet.yilmaz@example.com'
+assert_fail zro_allowed zmprov -l ga -e
+assert_fail zro_allowed zmprov -l ga 'ahmet.yilmaz@example.com' -t
+
+it "and the data of a flag that IS the whole operation is left alone"
+# The tracer takes its arrival window and its year as flags AFTER the filter, and
+# both are computed by this program from a preset and the log inventory. The rule
+# is about the token following a SUBCOMMAND, where a flag decides what the
+# command does; a two-token flag entry already approves one operation entire.
+assert_ok zro_allowed zmmsgtrace --recipient 'ahmet.yilmaz@example.com' \
+  --time '20260728000000,20260728235959' --year '2026' '/var/log/zimbra.log'
+assert_ok zro_allowed zmmsgtrace --id 'CAabc123@example.com' --year '2026'
+assert_ok zro_allowed tail -n 500 '/var/log/zimbra.log'
+assert_ok zro_allowed gzip -dc '/var/log/zimbra.log.1.gz'
+assert_ok zro_allowed zmcontrol -v
+
+it "the allowlist names exactly one flag in a data position"
+# One entry, and it arrived with the ticket that needs it. A second one added
+# without a ticket behind it fails here — which is the same friction the list
+# itself exists to impose.
+#
+# Both shapes a data-position flag can take are read: a third token behind a
+# subcommand, and a fourth behind a mode flag and its subcommand. Reading only
+# the first would let `zmprov:-l:ga:-t` be added in silence, which is the entry a
+# maintainer would reach for first.
+data_flags=$(zro_allow_entries | grep -E '^[^:]+:[^-][^:]*:-|^[^:]+:-[^:]*:[^:]*:')
+assert_eq "$data_flags" 'zmprov:ga:-e'
 
 # zmprov gmi maps to the admin GetMailboxRequest, whose handler calls
 # MailboxManager.getMailboxByAccount(account) — the AUTOCREATE overload,
