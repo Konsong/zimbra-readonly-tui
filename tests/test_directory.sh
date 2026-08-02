@@ -101,8 +101,11 @@ domain_card_bare >/dev/null
 assert_eq "$(invocations)" "1"
 
 it "and two when a default class of service has to be named"
-# Cost class 1 either way: both are reads about one entry, and neither does any
-# work that grows with the number of accounts on the server.
+# One read per entry either way, which is the unit the class these screens
+# declare is counted in — and neither of them does any work that grows with the
+# number of accounts on the server. The class is asserted against the screens
+# themselves in tests/test_main_menu.sh, where the declaration can be read; this
+# file is about the module, and counts what the module runs.
 domain_card >/dev/null
 assert_eq "$(invocations)" "2"
 

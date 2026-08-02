@@ -16,7 +16,10 @@ ZRO_LIB_IDENTITY_LOADED=1
 # address is gone. So the question "is this an account" is answered before it is
 # assumed, and the four answers that are not "no" are told apart from each other.
 #
-# COST CLASS 1, and bounded by construction: at most two directory reads about
+# COST CLASS 1, DECLARED HERE because resolving an address is not one of the
+# operations in the entry point's list — it is what an operator does before
+# choosing one, and every entry in that list declares its own class there.
+# Bounded by construction all the same: at most two directory reads about
 # one address. An account, an alias and a resource cost ONE — `zmprov ga`
 # resolves an alias to the account behind it and returns a calendar resource as
 # the account it is, both measured rather than assumed. A list and an address

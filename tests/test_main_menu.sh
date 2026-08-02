@@ -26,6 +26,9 @@ export ZRO_CAP_FORCE_TRACE_LOG=ok
 
 # shellcheck source=../zimbra-ro-tui.sh
 . "$ZRO_SRC/zimbra-ro-tui.sh"
+# Sourced after the program, because it reads the program's own declarations.
+# shellcheck source=lib/cost.sh
+. "$ZRO_TEST_ROOT/lib/cost.sh"
 
 ZRO_MOCK_LOG=$(mktemp);  export ZRO_MOCK_LOG
 ZRO_UI_QUEUE=$(mktemp);  export ZRO_UI_QUEUE
@@ -59,7 +62,10 @@ it "and it offers every declared operation, in the order they are declared"
 expected="select Adres sec"
 while IFS= read -r entry; do
   [ -n "$entry" ] || continue
+  # Past the scope and past the class: a label may contain a colon of its own,
+  # and only the first three are separators.
   label=${entry#*:}
+  label=${label#*:}
   expected="$expected ${entry%%:*} ${label#*:}"
 done <<EOF
 $ZRO_MENU_OPS
@@ -95,6 +101,95 @@ assert_out_eq "list"    zro_menu_scope dl-card
 assert_out_eq "address" zro_menu_scope trace-recipient
 assert_out_eq "address" zro_menu_scope domain-card
 assert_out_eq "server"  zro_menu_scope logview
+
+# ------------------------------------------------------- the cost classes --
+
+it "every declared operation names a cost class"
+# Half of an equality held the way the allowlist and the table of binary roots
+# already are. An operation that arrives without a class is the failure this
+# declaration exists to prevent: a screen whose cost nobody decided, offered on a
+# server where the wrong answer is a production event.
+assert_contains "$ZRO_MENU_OPS" ":"   # the loop below has something to check
+classless=""
+while IFS= read -r entry; do
+  [ -n "$entry" ] || continue
+  zro_menu_cost "${entry%%:*}" >/dev/null || classless="$classless [${entry%%:*}]"
+done <<EOF
+$ZRO_MENU_OPS
+EOF
+assert_eq "$classless" ""
+
+it "and the class it names is one this tool declares"
+assert_out_eq "1" zro_menu_cost account-card
+assert_out_eq "1" zro_menu_cost domain-card
+assert_out_eq "3" zro_menu_cost trace-recipient
+assert_out_eq "3" zro_menu_cost logview
+assert_fail zro_menu_cost not-an-operation
+
+it "and a declared class is named by some operation"
+# The other direction, and the half a screen can never show. A class nothing
+# claims is a declaration nothing checks — it reads as vocabulary the tool
+# supports and would sit there being wrong for as long as nobody looked.
+assert_contains "$ZRO_COST_CLASSES" ":"   # and this one too
+claimed=""
+while IFS= read -r entry; do
+  [ -n "$entry" ] || continue
+  claimed="$claimed $(zro_menu_cost "${entry%%:*}" 2>/dev/null)"
+done <<EOF
+$ZRO_MENU_OPS
+EOF
+unclaimed=""
+while IFS= read -r entry; do
+  [ -n "$entry" ] || continue
+  case " $claimed " in
+    *" ${entry%%:*} "*) ;;
+    *) unclaimed="$unclaimed [${entry%%:*}]" ;;
+  esac
+done <<EOF
+$ZRO_COST_CLASSES
+EOF
+assert_eq "$unclaimed" ""
+
+it "and the unit its cost is counted in is declared with it"
+# The class is not a speed. It names the unit one invocation buys, and that word
+# is what lets a case below count a screen's cost out of the answer the screen
+# was given rather than out of what the code was seen to do.
+assert_out_eq "entry" zro_cost_unit 1
+assert_out_eq "file"  zro_cost_unit 3
+
+it "class 4 is not a class this tool can name"
+# A server-wide sweep is what this tool refuses to be, and the refusal is worth
+# nothing while the vocabulary can still name one. Refused in the table, refused
+# in the list, and refused by the lookup every screen goes through — so an entry
+# claiming class 4 fails the build instead of being read as an ordinary new
+# operation with an unusual number on it.
+assert_fail zro_cost_unit 4
+assert_not_contains "$ZRO_COST_CLASSES" "4:"
+# READ AS RAW TEXT, not through zro_menu_cost: the accessor refuses class 4, so
+# asking it would report the entry as classless and say nothing about the digit
+# being in the list. This is the one place that has to look at the declaration
+# rather than at what a lookup makes of it.
+declared_four=""
+while IFS= read -r entry; do
+  [ -n "$entry" ] || continue
+  rest=${entry#*:}
+  case ${rest#*:} in
+    4:*) declared_four="$declared_four [${entry%%:*}]" ;;
+  esac
+done <<EOF
+$ZRO_MENU_OPS
+EOF
+assert_eq "$declared_four" ""
+
+it "and an operation that named it would be an operation with no class at all"
+# The attempt does not fail quietly by being ignored. The lookup every caller
+# uses refuses the entry outright, so the equality above catches it as a missing
+# class rather than letting a fourth class in through the list.
+ZRO_MENU_OPS_REAL=$ZRO_MENU_OPS
+ZRO_MENU_OPS="sweep:server:4:Sunucu genelinde tarama"
+assert_fail zro_menu_cost sweep
+assert_out_eq "server" zro_menu_scope sweep
+ZRO_MENU_OPS=$ZRO_MENU_OPS_REAL
 
 it "every declared operation is dispatched somewhere"
 # The other half of the same equality, and the half a label cannot show: an entry
@@ -597,6 +692,100 @@ said=$(transcript)
 assert_contains "$said" "dizinde bulunamadi"
 assert_contains "$said" "TEXT Alan adi karti"
 assert_not_contains "$(entries)" "Alan adi karti - "
+restore_server
+
+# ------------------------------------------- what each screen actually spends --
+#
+# The class each entry declares, held against what the screen behind it runs. Not
+# one number compared with another: every case below COUNTS THE UNITS OUT OF THE
+# FIXTURE — the entries a record points at — and lets the helper read the unit
+# from the class. A record that grows a second grantee raises the expected cost
+# by itself, and a screen that started reading one entry per account fails
+# against the class it claims rather than against a number somebody would have
+# updated to make the suite quiet again.
+
+spent() { grep -c '^zmprov' "$ZRO_MOCK_LOG"; }
+
+# Whether a captured record names another entry, which is what a class 1 screen
+# spends its second and third invocations on. Asked of the FIXTURE and never of
+# the mock log: a bound read back out of what the code did would agree with the
+# code by construction.
+names_entry() { [ -n "$(zro_attr_get "$(cat "$1")" "$2")" ]; }
+
+it "the account card spends one read per entry the account names"
+# The account, the class of service its record points at, and one more for the
+# memberships — which are recorded on the lists rather than on the account, so no
+# attribute list could have folded that read into the first. Three entries, none
+# of them the server.
+restore_server
+entries=1
+names_entry "$FIX/zmprov_ga_active.txt" zimbraCOSId && entries=$((entries + 1))
+entries=$((entries + 1))
+zro_sel_set "$ADDR"
+queue "account-card" "__CANCEL__" "__CANCEL__"
+ZRO_MOCK_ZMPROV_GC_OUT="$FIX/zmprov_gc_ok.txt" run
+assert_cost account-card "$(spent)" "$entries"
+
+it "the quota screen spends the one read the limit is on"
+# This account's record carries its own quota, so no class of service is named
+# and none is read. A screen of the same class costing less than another is
+# ordinary: the class is the unit the cost is counted in, never how much it is.
+entries=1
+names_entry "$FIX/zmprov_ga_active.txt" zimbraMailQuota || \
+  zro_t_fail "fixture no longer carries the quota this case is about"
+zro_sel_set "$ADDR"
+queue "account-quota" "__CANCEL__" "__CANCEL__"
+run
+assert_cost account-quota "$(spent)" "$entries"
+
+it "the membership screen spends the one read that answers it"
+zro_sel_set "$ADDR"
+queue "account-membership" "__CANCEL__" "__CANCEL__"
+run
+assert_cost account-membership "$(spent)" 1
+
+it "the list card spends one read for the list and one per grantee it names"
+# A distribution list's record names more entries than any other: the list
+# itself, and every distinct address its grants point at. COUNTED OUT OF THE
+# RECORD, so a fixture that grew a grantee would raise the expected cost rather
+# than fail. The public sentinel names no entry and is not among them, which is
+# the one grantee that is read off the record and never looked up.
+grantees=$(grep '^zimbraACE:' "$FIX/zmprov_gdl_grants.txt" \
+           | awk '{print $2}' | grep -v '^99999999-' | sort -u | grep -c .)
+zro_sel_clear
+export ZRO_MOCK_ZMPROV_GA_ERR="$FIX/zmprov_ga_no_such_account.err"
+export ZRO_MOCK_ZMPROV_GA_RC=2
+export ZRO_MOCK_ZMPROV_GDL_OUT="$FIX/zmprov_gdl_grants.txt"
+queue "select" "tum-personel@example.com" "__CANCEL__"
+run
+# The identity is settled now, so this second pass is the card alone. The account
+# read is restored because every grantee lookup is one.
+unset ZRO_MOCK_ZMPROV_GA_ERR ZRO_MOCK_ZMPROV_GA_RC
+export ZRO_MOCK_ZMPROV_GA_OUT="$FIX/zmprov_ga_identity_account.txt"
+queue "dl-card" "__CANCEL__" "__CANCEL__"
+run
+assert_cost dl-card "$(spent)" "$((1 + grantees))"
+restore_server
+
+it "the domain card spends one read, and a second only when a class of service is named"
+# The same screen against two records of the same domain, one naming a default
+# class of service and one written before either was set. Neither number is
+# written here: both are what the record itself names.
+zro_sel_set "$ADDR"
+for fixture in zmprov_gd_bare zmprov_gd_ok; do
+  entries=1
+  names_entry "$FIX/$fixture.txt" zimbraDomainDefaultCOSId && entries=$((entries + 1))
+  queue "domain-card" "__CANCEL__" "__CANCEL__"
+  ZRO_MOCK_ZMPROV_GD_OUT="$FIX/$fixture.txt" \
+  ZRO_MOCK_ZMPROV_GC_OUT="$FIX/zmprov_gc_ok.txt" run
+  assert_cost domain-card "$(spent)" "$entries"
+done
+
+it "and the two records this case rests on are not the same record twice"
+# Without this the loop above would pass just as well against two bare domains,
+# and the second read it exists to prove would never have been made.
+assert_ok names_entry "$FIX/zmprov_gd_ok.txt" zimbraDomainDefaultCOSId
+assert_fail names_entry "$FIX/zmprov_gd_bare.txt" zimbraDomainDefaultCOSId
 restore_server
 
 it "an entry's mark is decided in the loop's own shell, so a probe caches"

@@ -58,6 +58,26 @@ mk "$SYS.2.gz" "$R2"
 
 # shellcheck source=../zimbra-ro-tui.sh
 . "$ZRO_SRC/zimbra-ro-tui.sh"
+# Sourced after the program, because it reads the program's own declarations.
+# shellcheck source=lib/cost.sh
+. "$ZRO_TEST_ROOT/lib/cost.sh"
+
+# THE LOG TREE, COUNTED RATHER THAN REMEMBERED. Class 3 costs one read per file
+# opened, so a case that says how many files a window covers has to say it in the
+# tree's own terms: a file added above must raise what the widest window is
+# expected to cost, not fail the case that has nothing to do with it.
+count_files() {
+  local path n=0
+  for path in "$@"; do
+    [ -f "$path" ] && n=$((n + 1))
+  done
+  printf '%s' "$n"
+}
+log_files()     { count_files "$SYS"*; }
+rotated_files() { count_files "$SYS".*.gz; }
+# The one file still being written, which is all an arrival window of the last
+# hour can reach in a tree whose rotations are a day old.
+live_files()    { printf '%s' "$(( $(log_files) - $(rotated_files) ))"; }
 
 it "this fixture host can trace, which every case below assumes"
 # Asked HERE, before the mock log exists, and remembered for the rest of the file.
@@ -160,11 +180,14 @@ assert_contains "$transcript" "Taranan log"
 assert_contains "$transcript" "$SYS"
 
 it "the last hour reads the file still being written and no rotated one"
+# Held to the cost class the entry declares rather than to a bare number, and
+# counted in that class's own unit: the files this window covers, which in this
+# tree is every file that has not been rotated away.
 queue "${HOUR[@]}"
 : >"$ZRO_MOCK_LOG"
 ZRO_MOCK_ZMMSGTRACE___RECIPIENT_OUT="$ONE" zro_screen_trace trace-recipient
 traced=$(grep '^zmmsgtrace' "$ZRO_MOCK_LOG")
-assert_eq "$(printf '%s\n' "$traced" | wc -l | tr -d ' ')" "1"
+assert_cost trace-recipient "$(printf '%s\n' "$traced" | wc -l | tr -d ' ')" "$(live_files)"
 assert_contains "$traced" "$(printf '\t%s' "$SYS")"
 assert_not_contains "$traced" "$SYS.1.gz"
 
@@ -188,8 +211,8 @@ queue "week" "__CANCEL__" "__CANCEL__"
 : >"$ZRO_MOCK_LOG"
 ZRO_MOCK_ZMMSGTRACE___RECIPIENT_OUT="$ONE" zro_screen_trace trace-recipient
 traced=$(grep '^zmmsgtrace' "$ZRO_MOCK_LOG")
-assert_eq "$(printf '%s\n' "$traced" | wc -l | tr -d ' ')" "3"
-assert_eq "$(printf '%s\n' "$traced" | cut -f8 | sort -u | wc -l | tr -d ' ')" "3"
+assert_cost trace-recipient "$(printf '%s\n' "$traced" | wc -l | tr -d ' ')" "$(log_files)"
+assert_eq "$(printf '%s\n' "$traced" | cut -f8 | sort -u | wc -l | tr -d ' ')" "$(log_files)"
 malformed=""
 while IFS= read -r line; do
   [ -n "$line" ] || continue
@@ -306,6 +329,11 @@ for id in trace-recipient trace-sender trace-msgid; do
   ZRO_MOCK_ZMMSGTRACE___ID_OUT="$ONE" \
     zro_screen_trace "$id"
   seen="$seen $(grep '^zmmsgtrace' "$ZRO_MOCK_LOG" | head -n 1 | cut -f2)"
+  # Each of the three is its own declared operation, so each is held to its own
+  # declared class here. They share a screen, and a screen is not what the one
+  # list declares — an entry wired to a filter that read the whole tree for a
+  # window covering one file would be a class the entry no longer claims.
+  assert_cost "$id" "$(grep -c '^zmmsgtrace' "$ZRO_MOCK_LOG")" "$(live_files)"
 done
 assert_eq "$seen" " --recipient --sender --id"
 

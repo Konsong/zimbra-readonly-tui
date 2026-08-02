@@ -41,6 +41,9 @@ chmod 644 -- "$SYS" "$SYS.1.gz" "$MBOX"
 
 # shellcheck source=../zimbra-ro-tui.sh
 . "$ZRO_SRC/zimbra-ro-tui.sh"
+# Sourced after the program, because it reads the program's own declarations.
+# shellcheck source=lib/cost.sh
+. "$ZRO_TEST_ROOT/lib/cost.sh"
 
 ZRO_MOCK_LOG=$(mktemp);  export ZRO_MOCK_LOG
 ZRO_UI_QUEUE=$(mktemp);  export ZRO_UI_QUEUE
@@ -106,6 +109,11 @@ assert_contains "$out" "line 40"
 assert_not_contains "$out" "line 1
 "
 assert_contains "$(ran)" "$(printf 'tail\t-n\t5\t%s' "$SYS")"
+# ONE FILE, ONE READ, held to the class the viewer's entry declares. Class 3
+# costs one read per file opened, and the operator chose ONE position from one
+# log's list: no answer they could give makes this screen open a second file, let
+# alone one per account. That is the whole of the viewer's claim to the class.
+assert_cost logview "$(ran | grep -c .)" 1
 
 it "and says the search is running before the wait begins"
 assert_contains "$out" "NOTICE"
