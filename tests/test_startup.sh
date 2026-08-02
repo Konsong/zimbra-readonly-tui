@@ -12,6 +12,10 @@ export ZRO_UI_BACKEND=stub
 export ZRO_SOURCED_ONLY=1
 chmod +x "$ZRO_TEST_ROOT"/mocks/bin/* 2>/dev/null || true
 
+# Pointed somewhere of its own before the program is sourced, so a case here that
+# plants a proof cannot reach a session running beside it.
+ZRO_MBOX_PROOF_FILE=$(mktemp); export ZRO_MBOX_PROOF_FILE
+
 # shellcheck source=../zimbra-ro-tui.sh
 . "$ZRO_SRC/zimbra-ro-tui.sh"
 
@@ -64,6 +68,18 @@ assert_contains "$log" "zmcontrol"
 it "refuses to start when the terminal cannot be written to"
 ZRO_MOCK_ID_USER=zimbra ZRO_UI_BACKEND=whiptail ZRO_UI_TTY=/nonexistent/dir/tty \
   assert_status "$ZRO_E_UNAVAILABLE" zro_startup_check
+
+it "starts with no proof of any mailbox in hand"
+# The capability cache lives in variables and a new process starts with it empty.
+# The existence gate's proofs live in a FILE whose name carries a process id, and
+# process ids are reused — so a session could otherwise inherit a proof nobody in
+# it obtained, and go on to open a mailbox on that evidence. Emptied at startup
+# rather than trusted to be absent, because this is the one direction the gate may
+# never fail in.
+printf '%s\n' 'ahmet.yilmaz@example.com' >"$ZRO_MBOX_PROOF_FILE"
+assert_ok zro_mbox_proven 'ahmet.yilmaz@example.com'
+ZRO_MOCK_ID_USER=zimbra assert_ok zro_startup_check
+assert_fail zro_mbox_proven 'ahmet.yilmaz@example.com'
 
 it "warns but does not fail on a non-UTF-8 locale"
 captured=$(ZRO_MOCK_ID_USER=zimbra LC_ALL=C LANG=C zro_startup_check 2>&1)

@@ -143,6 +143,22 @@ zro_mode() {
   cat -- "$ZRO_MODE_FILE" 2>/dev/null
 }
 
+# The two files above outlive a subshell on purpose, and a later module needing
+# one of its own needs it for exactly the same reason: menu code runs operations
+# inside command substitution, so anything the session has to remember across one
+# cannot be a variable. They are removed at exit by name, so a module that adds
+# one REGISTERS IT rather than being known to this file — which is what keeps this
+# module, which depends on nothing, from having to know what a mailbox is.
+ZRO_SESSION_FILES=("$ZRO_ERROR_FILE" "$ZRO_MODE_FILE")
+
+# Registered at load time, in the shell that sources the module. Anywhere else it
+# would be an append made inside a subshell, which is the very failure the file
+# being registered exists to avoid.
+zro_session_file() {
+  [ -n "${1-}" ] || return "$ZRO_E_INPUT"
+  ZRO_SESSION_FILES+=("$1")
+}
+
 ZRO_TMPFILES=()
 
 zro_tmpfile() {
@@ -160,8 +176,9 @@ zro_cleanup() {
     [ -e "$f" ] && rm -f -- "$f"
   done
   ZRO_TMPFILES=()
-  [ -e "$ZRO_ERROR_FILE" ] && rm -f -- "$ZRO_ERROR_FILE"
-  [ -e "$ZRO_MODE_FILE" ] && rm -f -- "$ZRO_MODE_FILE"
+  for f in ${ZRO_SESSION_FILES[@]+"${ZRO_SESSION_FILES[@]}"}; do
+    [ -e "$f" ] && rm -f -- "$f"
+  done
   return 0
 }
 

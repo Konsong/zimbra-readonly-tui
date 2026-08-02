@@ -101,7 +101,9 @@ _Avoid_: weak evidence, partial proof
 **Proven account**:
 An account whose mailbox the gate has established exists. Proof is monotonic in
 practice — a mailbox appears on first use and disappears only by deliberate
-administrative deletion.
+administrative deletion — so it is **kept for the session and an absence never
+is**. The next delivered message falsifies a no, and an operator who has just
+sent a test message must not be told a stale one.
 _Avoid_: verified account, known-good account
 
 ## Delivery tracing
@@ -207,25 +209,32 @@ A class names what the work grows with, never how long it takes. It is declared
 beside the operation, in the one list the menu is built from, so that an
 operation cannot arrive without one; the classes an operation may claim are their
 own declaration, and the two are held equal in both directions. **A class no
-operation claims is not declared** — class 2 is a real class and waits for the
-first screen behind the existence gate, and class 4 waits for nothing, because a
-vocabulary that can name a sweep is a vocabulary that will one day be used to
+operation claims is not declared** — class 2 arrived with the existence gate,
+which is the first operation to make one, and class 4 waits for nothing, because
+a vocabulary that can name a sweep is a vocabulary that will one day be used to
 offer one.
 
 **Cost unit**:
 What a class's cost is counted in, declared with the class: an **entry** for
-class 1, a **file** for class 3. A screen's cost can then be checked against the
-units its own answer named — the entries a record points at, the files a window
-covers — rather than against a number written down beside it.
+class 1, a **mailbox** for class 2, a **file** for class 3. A screen's cost can
+then be checked against the units its own answer named — the entries a record
+points at, the files a window covers — rather than against a number written down
+beside it. The mailbox and the entry are deliberately different units: a
+directory read answers for an account that has never been used, and a class 2
+read is the question of whether there is anything there to read.
 
-One invocation usually buys one unit, and one screen shows why that is a habit
+One invocation usually buys one unit, and two screens show why that is a habit
 rather than the rule. [Provenance](#asking-about-an-address) reads ONE entry
 TWICE, because the difference between the expanding read and the entry-only one
 is the question it asks. It is class 1 all the same: what its work grows with is
 entries, and one account costs a fixed two reads however large the directory
 around it gets. **A screen that pays a multiple declares the multiple**, and the
 suite asserts reads-per-unit rather than a total — so a screen that reached for a
-second entry still fails against the unit it claimed.
+second entry still fails against the unit it claimed. The [existence
+gate](#the-existence-gate) runs the other way: one mailbox costs one read the
+first time and **none at all** afterwards, because a proof is kept for the
+session. That is the only screen whose exact cost is sometimes zero, and it says
+so before it runs.
 _Avoid_: bound, budget — the unit is what is counted, not a ceiling on it
 _Avoid_: performance, expensive — both invite a judgement call where a class is a
 rule

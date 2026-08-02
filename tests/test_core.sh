@@ -77,4 +77,37 @@ assert_out_eq "2.0 GB" zro_human_bytes 2147483648
 it "zro_human_bytes rejects a non-numeric argument"
 assert_status "$ZRO_E_INPUT" zro_human_bytes "12; rm -rf /"
 
+# ------------------------------------------------- the files a session keeps --
+#
+# A value a session has to remember across a command substitution cannot be a
+# variable: menu code runs operations inside $( ), and an assignment made there
+# dies with the subshell. The two this module owns are joined by any a later module
+# needs for the same reason, which is why they are REGISTERED rather than listed
+# here — this module depends on nothing and is not going to learn what a mailbox is.
+
+it "the files this module owns are the ones it starts with"
+assert_contains "$(printf '%s\n' "${ZRO_SESSION_FILES[@]}")" "$ZRO_ERROR_FILE"
+assert_contains "$(printf '%s\n' "${ZRO_SESSION_FILES[@]}")" "$ZRO_MODE_FILE"
+
+it "a module may register one of its own"
+extra=$(mktemp)
+zro_session_file "$extra"
+assert_contains "$(printf '%s\n' "${ZRO_SESSION_FILES[@]}")" "$extra"
+
+it "and every registered file is removed at exit"
+# Registration is worth nothing if the sweep still names two files by hand: a
+# module that added one and was never cleaned up would leave a proof of existence
+# on disk for the next session to read.
+zro_set_error "something"
+zro_reset_mode
+printf 'x\n' >"$extra"
+zro_cleanup
+assert_fail test -e "$extra"
+assert_fail test -e "$ZRO_ERROR_FILE"
+assert_fail test -e "$ZRO_MODE_FILE"
+
+it "a registration with no path is refused rather than sweeping nothing"
+assert_status "$ZRO_E_INPUT" zro_session_file ""
+assert_status "$ZRO_E_INPUT" zro_session_file
+
 zro_t_report

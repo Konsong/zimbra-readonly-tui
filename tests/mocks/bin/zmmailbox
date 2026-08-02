@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+set -uo pipefail
+# shellcheck source=../mock_common.sh
+. "${ZRO_MOCK_LIB:?ZRO_MOCK_LIB is required}/mock_common.sh"
+zro_mock_record zmmailbox "$@"
+zro_mock_respond zmmailbox "$(zro_mock_token "$@")"

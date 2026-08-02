@@ -122,6 +122,12 @@ assert_eq "$classless" ""
 it "and the class it names is one this tool declares"
 assert_out_eq "1" zro_menu_cost account-card
 assert_out_eq "1" zro_menu_cost domain-card
+# The first operation to claim class 2, and the reason the class is declared at
+# all: a read about one account's message store rather than about its directory
+# entry. The unit differs from class 1's for a reason that is not cosmetic — a
+# directory read answers for an account that has never been used, and this one
+# asks whether there is anything there to read.
+assert_out_eq "2" zro_menu_cost mailbox-status
 assert_out_eq "3" zro_menu_cost trace-recipient
 assert_out_eq "3" zro_menu_cost logview
 assert_fail zro_menu_cost not-an-operation
@@ -154,8 +160,9 @@ it "and the unit its cost is counted in is declared with it"
 # The class is not a speed. It names the unit one invocation buys, and that word
 # is what lets a case below count a screen's cost out of the answer the screen
 # was given rather than out of what the code was seen to do.
-assert_out_eq "entry" zro_cost_unit 1
-assert_out_eq "file"  zro_cost_unit 3
+assert_out_eq "entry"   zro_cost_unit 1
+assert_out_eq "mailbox" zro_cost_unit 2
+assert_out_eq "file"    zro_cost_unit 3
 
 it "class 4 is not a class this tool can name"
 # A server-wide sweep is what this tool refuses to be, and the refusal is worth
