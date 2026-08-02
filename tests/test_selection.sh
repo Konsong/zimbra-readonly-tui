@@ -100,5 +100,20 @@ it "and an address that fits is never shortened"
 zro_sel_set "ali@example.com"
 assert_out_eq "Hesap ozeti - ali@example.com" zro_ui_title "Hesap ozeti"
 
+it "a screen name long enough to fill the border is shortened rather than the address"
+# The one outcome this function exists to prevent is whiptail clipping the end of
+# the title, because the end of the title is the address. A long screen name must
+# therefore give way to it, not push it off.
+zro_sel_set "a.very.long.local.part.indeed@subdomain.example.com"
+long=$(zro_ui_title "Log: zimbra-mailbox-audit-2026-07-30-rotated.log.12.gz")
+assert_eq "$([ "${#long}" -le "$ZRO_UI_TITLE_MAX" ] && printf yes || printf no)" "yes"
+assert_contains "$long" "Log: zimbra"
+# Twelve characters of address survive, which is what still names an account.
+assert_eq "${long##* - }" "a.very.lon.."
+
+it "and neither is shortened when both fit"
+zro_sel_set "ali@example.com"
+assert_out_eq "Log: zimbra.log - ali@example.com" zro_ui_title "Log: zimbra.log"
+
 rm -f -- "$ZRO_UI_QUEUE" "$ZRO_UI_QUEUE.pos" "$ZRO_UI_OUT"
 zro_t_report

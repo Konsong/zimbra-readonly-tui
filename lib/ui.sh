@@ -25,14 +25,33 @@ ZRO_UI_TITLE_MAX="${ZRO_UI_TITLE_MAX:-56}"
 zro_ui_title() {
   local base=${1-} addr=${ZRO_SELECTED:-} room
   [ -n "$addr" ] || { printf '%s' "$base"; return 0; }
-  # whiptail clips a title that does not fit, and what it clips is the end —
-  # which on this title is the address. So a very long address is shortened
-  # here instead, and marked as shortened. Nothing decides anything from this
-  # string: every screen that acts on the address reads the variable.
+  # whiptail clips a title that does not fit, and what it clips is the END —
+  # which on this title is the address. So what does not fit is shortened here
+  # instead, and marked as shortened.
+  #
+  # The address is given whatever the screen's name leaves it, and never less
+  # than twelve characters: fewer than that names no account at all. A screen
+  # name long enough to take that room is shortened itself rather than left to
+  # push the address off the border — which is the one outcome this function
+  # exists to prevent. Nothing decides anything from the result: every screen
+  # that acts on the address reads the variable.
   room=$((ZRO_UI_TITLE_MAX - ${#base} - 3))
-  [ "$room" -ge 12 ] || room=12
-  [ "${#addr}" -le "$room" ] || addr="${addr:0:room-2}.."
-  printf '%s - %s' "$base" "$addr"
+  if [ "$room" -lt 12 ]; then
+    room=12
+    base=$(zro_ui_shorten "$base" "$((ZRO_UI_TITLE_MAX - room - 3))")
+  fi
+  printf '%s - %s' "$base" "$(zro_ui_shorten "$addr" "$room")"
+}
+
+# As much of a string as fits, with what was cut said rather than implied.
+zro_ui_shorten() {
+  local s=${1-} max=${2-0}
+  # Room for nothing but the mark that says something was cut, so nothing is
+  # what it returns. Bash reads a negative length as an offset from the end,
+  # which would answer a nonsensical bound with most of the string.
+  [ "$max" -gt 2 ] || return 0
+  [ "${#s}" -le "$max" ] && { printf '%s' "$s"; return 0; }
+  printf '%s..' "${s:0:max-2}"
 }
 
 zro_ui_reset() {

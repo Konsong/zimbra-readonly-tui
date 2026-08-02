@@ -108,7 +108,7 @@ Choosing an account operation with nothing selected asks for the address and the
 **continues to the operation you chose** — you do not pick the entry twice. The
 entry itself reads *Adres sec* until there is one and *Adresi degistir*
 afterwards, and changing it offers the current address ready to edit, so
-comparing two users is a keystroke rather than a restart.
+comparing two accounts is a keystroke rather than a restart.
 
 The address is on the frame because whiptail keeps a title on the border while
 the text inside scrolls: it is the one part of a long answer that cannot be

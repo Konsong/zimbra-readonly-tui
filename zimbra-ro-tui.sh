@@ -256,6 +256,21 @@ Bitis, baslangictan once olamaz."
   printf '%s' "$out"
 }
 
+# A defect in this program, said as one.
+#
+# NOT $ZRO_E_DENIED, which the reporter below renders as "this operation is not
+# on the allowlist" — true of a command the exec gate refused, and a lie about a
+# screen this file failed to wire up. An operator sent to check the allowlist for
+# a dispatch table's mistake reads the wrong file and finds nothing wrong with
+# it. Every caller logs the specifics first; this is what the operator sees.
+zro_report_defect() {
+  zro_ui_msgbox "Ic hata" \
+"Bu islem calistirilamadi: aracin kendisinde bir hata var.
+
+Zimbra'da veya bu sunucuda bir sorun oldugunu GOSTERMEZ ve hicbir sey
+degistirilmedi. Ayrinti icin arac gunlugune bakin."
+}
+
 zro_report_error() {
   # Whatever Zimbra actually said, when it said anything. Without this the
   # operator sees a bare code and has to reproduce the command by hand to learn
@@ -322,10 +337,19 @@ zmprov varsayilan olarak mailboxd servisine SOAP ile baglanir. En sik iki sebep:
 # operator did not choose is exactly the confusion the frame exists to prevent.
 zro_screen_account() {
   local id=${1-} acct out rc=0 title
-  acct=$(zro_sel_address)
   if ! title=$(zro_menu_label "$id"); then
     zro_log error "menu defect, no label for account operation: $id"
-    zro_report_error "$ZRO_E_DENIED"
+    zro_report_defect
+    return 0
+  fi
+  # An address-scoped screen reached with nothing selected is a defect in the
+  # menu above. Refused here rather than passed on, because the modules judge an
+  # empty address as invalid input and the operator would be shown a screen
+  # about what they typed — on a screen where they typed nothing.
+  acct=$(zro_sel_address)
+  if [ -z "$acct" ]; then
+    zro_log error "menu defect, account operation with no selected address: $id"
+    zro_report_defect
     return 0
   fi
 
@@ -345,7 +369,7 @@ Her sorgu birkac saniye surebilir."
     # PREVIOUS answer and the operator would read one question's result under
     # another's heading.
     *) zro_log error "menu defect, no account operation for: $id"
-       zro_report_error "$ZRO_E_DENIED"
+       zro_report_defect
        return 0 ;;
   esac
 
@@ -470,7 +494,7 @@ zro_screen_trace() {
     trace-sender)    filter='--sender';    subject=$(zro_sel_address) ;;
     trace-msgid)     filter='--id';        subject=$(zro_prompt_msgid) || rc=$? ;;
     *) zro_log error "menu defect, no trace filter for: $id"
-       zro_report_error "$ZRO_E_DENIED"
+       zro_report_defect
        return 0 ;;
   esac
   # Cancel is navigation and a rejected identifier has had its own screen; both
@@ -480,7 +504,7 @@ zro_screen_trace() {
   # menu above, not something to search the whole log for.
   if [ -z "$subject" ]; then
     zro_log error "menu defect, trace with no selected address: $id"
-    zro_report_error "$ZRO_E_DENIED"
+    zro_report_defect
     return 0
   fi
   # A filter with no label is a defect in this file, not an operator error, so
@@ -488,7 +512,7 @@ zro_screen_trace() {
   # operator as the menu simply reappearing.
   if ! label=$(zro_trace_label "$filter"); then
     zro_log error "no label for delivery trace filter: $filter"
-    zro_report_error "$ZRO_E_DENIED"
+    zro_report_defect
     return 0
   fi
 
@@ -535,7 +559,7 @@ Genis bir aralik birden fazla log dosyasi okur ve bu islemi uzatabilir."
     # and $rc at zero, and the operator would be shown the last question's
     # answer under this question's label.
     *) zro_log error "no trace function for delivery filter: $filter"
-       zro_report_error "$ZRO_E_DENIED"
+       zro_report_defect
        return 0 ;;
   esac
 
@@ -814,6 +838,17 @@ EOF
   return "$ZRO_E_INPUT"
 }
 
+# The declared ids, in the order they are offered.
+zro_menu_ids() {
+  local entry
+  while IFS= read -r entry; do
+    [ -n "$entry" ] || continue
+    printf '%s\n' "${entry%%:*}"
+  done <<EOF
+$ZRO_MENU_OPS
+EOF
+}
+
 zro_menu_scope() {
   local entry
   entry=$(zro_menu_entry "${1-}") || return "$ZRO_E_INPUT"
@@ -843,10 +878,15 @@ zro_menu_available() {
 # because a cause an operator would repair the same way as another does not earn
 # a message of its own — and one message naming every cause would send most of
 # its readers to the wrong place.
+#
+# The two cases are the same list read twice, so the only way to arrive here
+# without a screen is for them to disagree — which is a defect in this file, and
+# is said as one rather than papered over with a message about this server.
 zro_menu_unavailable() {
   case ${1-} in
     trace-*) zro_delivery_unavailable ;;
-    *) zro_ui_msgbox "Kullanilamaz" "Bu islem bu sunucuda mevcut degil." ;;
+    *) zro_log error "menu defect, no unavailability screen for: ${1-}"
+       zro_report_defect ;;
   esac
 }
 
@@ -866,7 +906,7 @@ zro_menu_select_label() {
 
 # Asks for the address the session is about. The only screen in this program that
 # asks for one: everything else reads what this set. What is already selected is
-# offered typed in, so changing one user for the next is an edit rather than a
+# offered typed in, so changing one address for the next is an edit rather than a
 # retyping — and comparing two accounts is a keystroke rather than a restart.
 zro_menu_select() {
   local addr rc=0
@@ -886,7 +926,7 @@ zro_menu_need_address() {
 }
 
 zro_menu_main() {
-  local choice rc entry id label scope
+  local choice rc id label scope
   local -a items
   # Asked once, here, for the same reason the probes below are: this loop is
   # returned to after every operation, and a version re-read inside the command
@@ -896,11 +936,12 @@ zro_menu_main() {
     # Rebuilt on every pass: the first entry's label changes with the selection,
     # and a mark reads the session's capability cache.
     items=(select "$(zro_menu_select_label)")
-    while IFS= read -r entry; do
-      [ -n "$entry" ] || continue
-      id=${entry%%:*}
-      label=${entry#*:}
-      label=${label#*:}
+    while IFS= read -r id; do
+      [ -n "$id" ] || continue
+      # Read back through the same accessor every other reader uses, rather than
+      # taken apart a second time here: one parser for the declaration means the
+      # entry an operator picks and the title over their answer are one string.
+      label=$(zro_menu_label "$id")
       # The entry says so BEFORE it is selected, which is the whole point: an
       # operator who learns that tracing is unavailable after choosing an address
       # and a window has already spent the search this mark exists to save.
@@ -914,7 +955,7 @@ zro_menu_main() {
       zro_menu_available "$id" || label="$label - KULLANILAMAZ"
       items+=("$id" "$label")
     done <<EOF
-$ZRO_MENU_OPS
+$(zro_menu_ids)
 EOF
     items+=(quit "Cikis")
 
@@ -953,7 +994,8 @@ EOF
       # Declared in the list above and dispatched nowhere: a defect in this file.
       # Silently redrawing the menu would reach the operator as the tool ignoring
       # them, which is how a missing branch survives a release.
-      *) zro_log error "menu defect, no operation for entry: $choice" ;;
+      *) zro_log error "menu defect, no operation for entry: $choice"
+         zro_report_defect ;;
     esac
   done
 }

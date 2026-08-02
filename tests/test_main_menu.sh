@@ -309,6 +309,29 @@ ZRO_CAP_FORCE_TRACE_BIN=no zro_menu_main
 assert_not_contains "$(transcript)" "INPUT Adres"
 assert_fail zro_sel_have
 
+it "an account screen reached with nothing selected asks Zimbra nothing"
+# Unreachable from the menu, which chooses an address before it dispatches an
+# address-scoped operation. Asserted all the same, and as a defect rather than as
+# invalid input: on this path the operator typed nothing, so a screen about what
+# they typed would send them looking for a mistake they did not make.
+zro_sel_clear
+: >"$ZRO_UI_OUT"; : >"$ZRO_MOCK_LOG"
+said=$(zro_screen_account account-summary 2>&1 >/dev/null)
+assert_contains "$said" "menu defect"
+assert_contains "$(transcript)" "Ic hata"
+assert_eq "$(cat "$ZRO_MOCK_LOG")" ""
+
+it "and an operation this file does not answer is reported as the defect it is"
+# Never the allowlist's message: an operator sent to check the allowlist for a
+# dispatch table's mistake reads the wrong file and finds nothing wrong with it.
+zro_sel_set "$ADDR"
+: >"$ZRO_UI_OUT"
+said=$(zro_screen_account account-nonesuch 2>&1 >/dev/null)
+assert_contains "$said" "menu defect"
+out=$(transcript)
+assert_contains "$out" "Ic hata"
+assert_not_contains "$out" "izin listesinde"
+
 it "the server is asked for its version once, however often the menu is drawn"
 # This loop is returned to after every operation. The version is displayed, so
 # it is read inside command substitution — where an assignment to the session
