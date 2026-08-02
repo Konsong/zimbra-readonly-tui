@@ -151,6 +151,7 @@ assert_contains "$declared" "ga"
 assert_contains "$declared" "gam"
 assert_contains "$declared" "gc"
 assert_contains "$declared" "gdl"
+assert_contains "$declared" "gd"
 
 # gmi is the only read-named admin handler that auto-creates a mailbox, so it
 # may not be declared a read anywhere in the tree.
@@ -198,6 +199,7 @@ assert_eq "$bad" ""
 assert_contains "$prov_calls" "ga"
 assert_contains "$prov_calls" "gam"
 assert_contains "$prov_calls" "gdl"
+assert_contains "$prov_calls" "gd"
 
 it "the list read is a read, and the write-named siblings are nowhere"
 # `gdl` arrived so that a distribution list stops being answered with "no such
@@ -206,6 +208,28 @@ it "the list read is a read, and the write-named siblings are nowhere"
 for sub in adlm rdlm cdl ddl addDistributionListMember removeDistributionListMember \
            createDistributionList deleteDistributionList renameDistributionList; do
   assert_not_contains "$allow" "$sub"
+  assert_not_contains "$code" "zro_exec zmprov $sub"
+  assert_not_contains "$declared" " $sub "
+done
+
+it "the domain read is a read, and the write-named siblings are nowhere"
+# `gd` arrived so that a suspended domain and an unrouted address can be
+# explained. The commands that CHANGE a domain live one letter away from it, and
+# none of them may be expressible: not in the allowlist, not at a call site.
+for sub in cd md dd rd createDomain modifyDomain deleteDomain renameDomain; do
+  assert_not_contains "$allow" "zmprov:$sub"
+  assert_not_contains "$code" "zro_exec zmprov $sub"
+  assert_not_contains "$declared" " $sub "
+done
+
+it "no read whose work grows with the account count is expressible anywhere"
+# CLASS 4 DOES NOT EXIST IN THIS TOOL, asserted rather than left to nobody having
+# written one. The domain screen is where the pressure to add one lands: an
+# account count per domain is the obvious next field, and answering it means a
+# sweep of a directory holding more than 100,000 entries.
+for sub in gaa getAllAccounts gqu getQuotaUsage searchAccounts \
+           gad getAllDomains gadl getAllDistributionLists; do
+  assert_not_contains "$allow" "zmprov:$sub"
   assert_not_contains "$code" "zro_exec zmprov $sub"
   assert_not_contains "$declared" " $sub "
 done

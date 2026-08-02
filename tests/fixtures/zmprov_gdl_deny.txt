@@ -1,0 +1,5 @@
+# distributionList bos-liste@example.com memberCount=0
+zimbraACE: 344c2c64-458c-4447-ae21-4a18b4284e28 usr -sendToDistList
+zimbraMailStatus: enabled
+
+members

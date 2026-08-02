@@ -28,6 +28,8 @@ ZRO_ROOT=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 . "$ZRO_ROOT/lib/account.sh"
 # shellcheck source=lib/identity.sh
 . "$ZRO_ROOT/lib/identity.sh"
+# shellcheck source=lib/directory.sh
+. "$ZRO_ROOT/lib/directory.sh"
 # shellcheck source=lib/delivery.sh
 . "$ZRO_ROOT/lib/delivery.sh"
 # shellcheck source=lib/logview.sh
@@ -300,6 +302,17 @@ Ana menuden adresi yeniden secin. Adres dogru gorunuyorsa arac gunlugune
 bakin: adresi bu ekrana tasiyan yolda bir hata olabilir." ;;
     "$ZRO_E_NO_ACCOUNT") zro_ui_msgbox "Bulunamadi" "Hesap bulunamadi.$detail" ;;
     "$ZRO_E_NO_MAILBOX") zro_ui_msgbox "Bulunamadi" "Mailbox bulunamadi.$detail" ;;
+    # AN ANSWER, and one that ends the search rather than continuing it: mail for
+    # an address in a domain this server does not host was never going to arrive
+    # here. Its own screen rather than "kayit bulunamadi", which on a domain reads
+    # as a query that found nothing to say.
+    "$ZRO_E_NO_DOMAIN")
+      zro_ui_msgbox "Alan adi bulunamadi" \
+"Bu alan adi bu sunucuda tanimli degil.
+
+Sorgu calisti ve yanit verdi: bu sunucu bu alan adinin postasini tasimiyor.
+Secili adres bu alan adindaysa, adres yanlis yazilmis olabilir ya da posta
+baska bir sunucuya gidiyordur.$detail" ;;
     "$ZRO_E_NO_RESULT")  zro_ui_msgbox "Sonuc yok" "Kayit bulunamadi." ;;
     # The tool ran but could not read a log it was pointed at, or found none to
     # read at all. Either way NOTHING WAS SCANNED, which is not the same answer as
@@ -424,6 +437,96 @@ zro_screen_alias_note() {
   fi
   printf '%s adresi bir alias; asagidaki bilgiler %s hesabina aittir.\n\n%s' \
     "$(zro_sel_address)" "$(zro_identity_selected_account)" "$body"
+}
+
+# The distribution list card: who receives mail sent to this address, who owns
+# the list, and who may send to it.
+#
+# THE SELECTED ADDRESS IS THE LIST. Nothing here asks for one, and nothing here
+# resolves it a second time either: the menu offers this entry only for an address
+# the session already established is a list, and the card reads the list's own
+# canonical name out of the answer it gets.
+zro_screen_dl() {
+  local id=${1-} addr out rc=0 title
+  if ! title=$(zro_menu_label "$id"); then
+    zro_log error "menu defect, no label for list operation: $id"
+    zro_report_defect
+    return 0
+  fi
+  addr=$(zro_sel_address)
+  if [ -z "$addr" ]; then
+    zro_log error "menu defect, list operation with no selected address: $id"
+    zro_report_defect
+    return 0
+  fi
+
+  # The list read, plus one per grantee named in its grants. Each is a JVM start,
+  # so the terminal is told what it is waiting for rather than sitting blank.
+  zro_ui_notice "Calisiyor" "Zimbra sorgulaniyor, lutfen bekleyin.
+
+Liste: $addr
+Liste kaydi ve yetkili adresleri okunuyor; her sorgu birkac saniye surebilir."
+
+  out=$(zro_dl_card "$addr") || rc=$?
+  if [ "$rc" -eq "$ZRO_E_NO_RESULT" ]; then
+    # Not the shared reporter's bare "kayit bulunamadi": what happened is that
+    # this address is not a distribution list, which is a different sentence and
+    # points at a different next step.
+    zro_ui_msgbox "Liste bulunamadi" \
+"$addr bir dagitim listesi olarak kayitli degil.
+
+Sorgu calisti ve yanit verdi. Adres bir hesap, bir alias veya bir kaynak
+olabilir: ana menuden adresi yeniden secerek ne oldugunu gorebilirsiniz."
+    return 0
+  fi
+  if [ "$rc" -ne 0 ]; then
+    zro_report_error "$rc"
+    return 0
+  fi
+  zro_show_text "$title" "$out"
+}
+
+# The domain card: the status, the type, the catch-all and the default class of
+# service of the domain the selected address belongs to.
+#
+# THE DOMAIN IS DERIVED, NEVER ASKED FOR. Every address carries one, so a screen
+# that prompted for it would be asking the operator to retype half of what they
+# already chose — and an address that is nowhere in the directory still has a
+# domain, which is exactly when this screen answers the question the account read
+# could not: whether this server carries that domain's mail at all.
+zro_screen_domain() {
+  local id=${1-} addr domain out rc=0 title
+  if ! title=$(zro_menu_label "$id"); then
+    zro_log error "menu defect, no label for domain operation: $id"
+    zro_report_defect
+    return 0
+  fi
+  addr=$(zro_sel_address)
+  if [ -z "$addr" ]; then
+    zro_log error "menu defect, domain operation with no selected address: $id"
+    zro_report_defect
+    return 0
+  fi
+  # The selection was validated when it was made, so an address with no domain in
+  # it got past that check — a defect in this program rather than something the
+  # operator typed, and never a directory read for a name nobody has.
+  if ! domain=$(zro_domain_of "$addr"); then
+    zro_log error "menu defect, selected address carries no domain: $addr"
+    zro_report_defect
+    return 0
+  fi
+
+  zro_ui_notice "Calisiyor" "Zimbra sorgulaniyor, lutfen bekleyin.
+
+Alan adi: $domain
+Bu ekran alan adi kaydini okur; sunucudaki hesaplar sayilmaz."
+
+  out=$(zro_domain_card "$domain") || rc=$?
+  if [ "$rc" -ne 0 ]; then
+    zro_report_error "$rc"
+    return 0
+  fi
+  zro_show_text "$title" "$out"
 }
 
 # Why a delivery trace cannot answer on this host, in terms that name the repair.
@@ -859,18 +962,24 @@ yukseltip yeniden deneyin."
 # LABEL is what the operator reads, here and again as the title over the result,
 # so those two cannot drift apart. A label may contain a colon; only the first
 # two are separators.
-# THREE SCOPES, not two. 'account' needs the selected address to BE an account —
+# FOUR SCOPES, not two. 'account' needs the selected address to BE an account —
 # an account read on a distribution list fails with "no such account", which is
-# true and useless. 'address' needs an address of any kind: mail to a list shows
+# true and useless. 'list' is the mirror of it: a list read on an account fails
+# just as flatly, and the screen behind it is the one that answers for the kind
+# 'account' cannot. 'address' needs an address of any kind: mail to a list shows
 # up in the transfer agent's log under the list's own address, so a trace answers
-# there exactly as it does for a mailbox. 'server' needs none.
+# there exactly as it does for a mailbox — and every address has a domain, so the
+# domain card answers even for one the directory has never heard of. 'server'
+# needs none.
 #
-# The distinction is what makes the identity worth resolving. Without it the two
-# kinds would share one mark, and marking a trace unavailable on a list address
+# The distinction is what makes the identity worth resolving. Without it every
+# kind would share one mark, and marking a trace unavailable on a list address
 # would take away the one screen that still answers.
 ZRO_MENU_OPS='account-card:account:Hesap karti
 account-quota:account:Kota kullanimi
 account-membership:account:Dagitim listesi uyelikleri
+dl-card:list:Dagitim listesi karti
+domain-card:address:Alan adi karti
 trace-recipient:address:Teslim takibi: bu adrese gelenler
 trace-sender:address:Teslim takibi: bu adresten gidenler
 trace-msgid:server:Teslim takibi: ileti kimligine gore
@@ -924,11 +1033,16 @@ zro_menu_label() {
 # gate refuses on its own terms — it is what keeps an operator from spending a
 # search to discover something already known.
 #
-# TWO REASONS, and they are about different things. 'nocap' is a fact about this
+# THREE REASONS, and they are about different things. 'nocap' is a fact about this
 # host: a binary this build does not ship, a log nothing can read. 'notaccount'
-# is a fact about the selected address: it resolved to something an account read
-# cannot answer for. A host fact outranks an address fact, because it holds
-# whatever address is chosen next.
+# and 'notlist' are facts about the selected address: it resolved to something the
+# screen behind the entry cannot answer for. A host fact outranks an address fact,
+# because it holds whatever address is chosen next.
+#
+# The two address reasons are separate marks rather than one 'wrong kind', because
+# an operator reads the mark to learn what the address IS. 'this address is not an
+# account' on a list and 'this address is not a list' on an account are the same
+# refusal and opposite pieces of information.
 #
 # An identity nobody could establish refuses NOTHING. A resolution that failed
 # means this program does not know what the address is, and marking an entry from
@@ -950,11 +1064,20 @@ zro_menu_refusal() {
   case $id in
     trace-*) zro_cap_trace_available || { ZRO_MENU_REASON=nocap; return 0; } ;;
   esac
-  if [ "$(zro_menu_scope "$id" 2>/dev/null)" = account ]; then
-    case $(zro_identity_selected_kind) in
-      list|absent) ZRO_MENU_REASON=notaccount ;;
-    esac
-  fi
+  case $(zro_menu_scope "$id" 2>/dev/null) in
+    account)
+      case $(zro_identity_selected_kind) in
+        list|absent) ZRO_MENU_REASON=notaccount ;;
+      esac ;;
+    list)
+      # An alias and a resource are accounts, so they are refused here exactly as
+      # a plain account is. Absence is refused by both scopes, and says so twice
+      # in two different words, which is the only pair of marks that can be read
+      # together and still be right.
+      case $(zro_identity_selected_kind) in
+        account|alias|resource|absent) ZRO_MENU_REASON=notlist ;;
+      esac ;;
+  esac
   return 0
 }
 
@@ -966,6 +1089,7 @@ zro_menu_mark() {
   case ${1-} in
     nocap)      printf ' - KULLANILAMAZ' ;;
     notaccount) printf ' - BU ADRES HESAP DEGIL' ;;
+    notlist)    printf ' - BU ADRES LISTE DEGIL' ;;
   esac
   return 0
 }
@@ -982,7 +1106,10 @@ zro_menu_mark() {
 zro_menu_unavailable() {
   case ${2-} in
     nocap)      zro_delivery_unavailable ;;
-    notaccount) zro_screen_identity ;;
+    # Both address reasons answer with the same screen, and that is the point of
+    # it: what the operator needs is not "this is not a list" but what the address
+    # turned out to be instead, which the session already knows and never re-reads.
+    notaccount|notlist) zro_screen_identity ;;
     *) zro_log error "menu defect, no unavailability screen for: ${1-} (${2-})"
        zro_report_defect ;;
   esac
@@ -1160,9 +1287,11 @@ EOF
     fi
 
     case $choice in
-      account-*) zro_screen_account "$choice" ;;
-      trace-*)   zro_screen_trace "$choice" ;;
-      logview)   zro_menu_logview ;;
+      account-*)   zro_screen_account "$choice" ;;
+      dl-card)     zro_screen_dl "$choice" ;;
+      domain-card) zro_screen_domain "$choice" ;;
+      trace-*)     zro_screen_trace "$choice" ;;
+      logview)     zro_menu_logview ;;
       # Declared in the list above and dispatched nowhere: a defect in this file.
       # Silently redrawing the menu would reach the operator as the tool ignoring
       # them, which is how a missing branch survives a release.

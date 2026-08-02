@@ -68,17 +68,17 @@ expected="$expected quit Cikis"
 assert_eq "$(entries)" "$expected"
 
 it "the operations that need an address come before the ones that do not"
-# Three scopes, and only two positions: what needs an address of any kind comes
-# before what needs none. 'account' and 'address' are both the first group —
-# they differ in what the address has to BE, not in whether one is asked for.
+# Four scopes, and only two positions: what needs an address of any kind comes
+# before what needs none. 'account', 'list' and 'address' are all the first group
+# — they differ in what the address has to BE, not in whether one is asked for.
 seen_server=""
 misplaced=""
 while IFS= read -r entry; do
   [ -n "$entry" ] || continue
   scope=${entry#*:}
   case ${scope%%:*} in
-    server)          seen_server=yes ;;
-    account|address) [ -z "$seen_server" ] || misplaced="$misplaced [${entry%%:*}]" ;;
+    server)               seen_server=yes ;;
+    account|list|address) [ -z "$seen_server" ] || misplaced="$misplaced [${entry%%:*}]" ;;
     *) misplaced="$misplaced [scope? ${entry%%:*}]" ;;
   esac
 done <<EOF
@@ -88,10 +88,12 @@ assert_eq "$misplaced" ""
 
 it "and an operation that needs the address to be an account says so"
 # The scope is what routes an address to the screens that can answer for it, so
-# the two kinds are held apart in the declaration rather than inferred from an
-# id's prefix at the point of use.
+# the kinds are held apart in the declaration rather than inferred from an id's
+# prefix at the point of use.
 assert_out_eq "account" zro_menu_scope account-card
+assert_out_eq "list"    zro_menu_scope dl-card
 assert_out_eq "address" zro_menu_scope trace-recipient
+assert_out_eq "address" zro_menu_scope domain-card
 assert_out_eq "server"  zro_menu_scope logview
 
 it "every declared operation is dispatched somewhere"
@@ -399,6 +401,7 @@ restore_server() {
   export ZRO_MOCK_ZMPROV_GA_OUT="$FIX/zmprov_ga_active.txt"
   unset ZRO_MOCK_ZMPROV_GA_ERR ZRO_MOCK_ZMPROV_GA_RC
   unset ZRO_MOCK_ZMPROV_GDL_OUT ZRO_MOCK_ZMPROV_GDL_ERR ZRO_MOCK_ZMPROV_GDL_RC
+  unset ZRO_MOCK_ZMPROV_GD_OUT ZRO_MOCK_ZMPROV_GD_ERR ZRO_MOCK_ZMPROV_GD_RC
 }
 
 it "choosing an address resolves it and says what it is"
@@ -500,6 +503,101 @@ zro_sel_clear
 queue "select" "$ADDR" "account-card" "__CANCEL__"
 run
 assert_contains "$(transcript)" "Ahmet Yilmaz"
+
+# ------------------------------------- the two screens the answer routes to --
+
+it "a list address is offered the list card, and the account entries are marked"
+zro_sel_clear
+export ZRO_MOCK_ZMPROV_GA_ERR="$FIX/zmprov_ga_no_such_account.err"
+export ZRO_MOCK_ZMPROV_GA_RC=2
+export ZRO_MOCK_ZMPROV_GDL_OUT="$FIX/zmprov_gdl_grants.txt"
+queue "select" "tum-personel@example.com" "__CANCEL__"
+run
+marked=$(entries)
+assert_contains "$marked" "Hesap karti - BU ADRES HESAP DEGIL"
+assert_not_contains "$marked" "Dagitim listesi karti - BU ADRES LISTE DEGIL"
+
+it "and choosing it answers with the members, the owners and who may send"
+zro_sel_clear
+queue "select" "tum-personel@example.com" "dl-card" "__CANCEL__"
+run
+said=$(transcript)
+assert_contains "$said" "TEXT Dagitim listesi karti"
+assert_contains "$said" "Uye sayisi"
+assert_contains "$said" "Sahipler"
+assert_contains "$said" "Gonderim izni"
+restore_server
+
+it "an account address has the list card marked instead"
+# The mirror of the mark that already existed, and the reason it is a second
+# word rather than one 'wrong kind': read together, the two marks tell an
+# operator what the address IS.
+zro_sel_clear
+queue "select" "$ADDR" "__CANCEL__"
+run
+assert_contains "$(entries)" "Dagitim listesi karti - BU ADRES LISTE DEGIL"
+
+it "and choosing it anyway shows what the address is, and runs nothing"
+zro_sel_clear
+queue "select" "$ADDR" "dl-card" "__CANCEL__"
+run
+assert_contains "$(transcript)" "Bu adres bir hesap"
+# One read for the resolution and not one more: no list read was attempted.
+assert_eq "$(grep -c '^zmprov' "$ZRO_MOCK_LOG")" "1"
+
+it "the domain card is offered for any address, and marked for none"
+zro_sel_clear
+queue "select" "$ADDR" "__CANCEL__"
+run
+assert_contains "$(entries)" "domain-card Alan adi karti"
+assert_not_contains "$(entries)" "Alan adi karti - "
+
+it "and it asks about the domain, never about the address"
+# A directory read for the whole address would fail with 'no such domain' — which
+# is what the lab server really answers when one is handed to it in place of a
+# domain, and it would read as a domain this server does not host.
+zro_sel_clear
+queue "select" "$ADDR" "domain-card" "__CANCEL__"
+ZRO_MOCK_ZMPROV_GD_OUT="$FIX/zmprov_gd_ok.txt" \
+ZRO_MOCK_ZMPROV_GC_OUT="$FIX/zmprov_gc_ok.txt" run
+log=$(cat "$ZRO_MOCK_LOG")
+assert_contains "$log" "$(printf 'zmprov\tgd\texample.com')"
+assert_not_contains "$log" "$(printf 'zmprov\tgd\t%s' "$ADDR")"
+assert_contains "$(transcript)" "TEXT Alan adi karti"
+assert_contains "$(transcript)" "Catch-all"
+
+it "and it counts no accounts, on a screen where the count is what is missing"
+assert_not_contains "$log" "gaa"
+assert_not_contains "$(transcript)" "$(zro_card_line 'Hesap sayisi' '')"
+assert_contains "$(transcript)" "Hesap sayisi gosterilmiyor"
+
+it "a domain this server does not host is an answer, not a bare failure code"
+zro_sel_clear
+queue "select" "$ADDR" "domain-card" "__CANCEL__"
+: >"$ZRO_UI_OUT"; : >"$ZRO_MOCK_LOG"
+ZRO_MOCK_ZMPROV_GD_ERR="$FIX/zmprov_gd_no_such_domain.err" \
+ZRO_MOCK_ZMPROV_GD_RC=2 zro_menu_main
+said=$(transcript)
+assert_contains "$said" "Alan adi bulunamadi"
+assert_not_contains "$said" "kod 2"
+
+it "an address that is nowhere still gets a domain card, which is the point of it"
+# The screen that can still say something when the account read could not: an
+# address absent from a domain this server does not host is not a missing
+# account, and the two send an operator to different places.
+zro_sel_clear
+export ZRO_MOCK_ZMPROV_GA_ERR="$FIX/zmprov_ga_no_such_account.err"
+export ZRO_MOCK_ZMPROV_GA_RC=2
+export ZRO_MOCK_ZMPROV_GDL_ERR="$FIX/zmprov_gdl_no_such_list.err"
+export ZRO_MOCK_ZMPROV_GDL_RC=2
+unset ZRO_MOCK_ZMPROV_GDL_OUT
+queue "select" "yok@example.com" "domain-card" "__CANCEL__"
+ZRO_MOCK_ZMPROV_GD_OUT="$FIX/zmprov_gd_bare.txt" run
+said=$(transcript)
+assert_contains "$said" "dizinde bulunamadi"
+assert_contains "$said" "TEXT Alan adi karti"
+assert_not_contains "$(entries)" "Alan adi karti - "
+restore_server
 
 it "an entry's mark is decided in the loop's own shell, so a probe caches"
 # THE REASON THE REFUSAL COMES BACK IN A GLOBAL. The capability probes fill a

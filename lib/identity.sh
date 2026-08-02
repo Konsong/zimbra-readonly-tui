@@ -273,14 +273,21 @@ zro_identity_card() {
       printf 'Zimbra kaynaklari hesap olarak saklar, bu yuzden hesap islemleri\n'
       printf 'bu adres icin de calisir.\n' ;;
     list)
-      # The sentence this module was written to replace, said correctly.
+      # The sentence this module was written to replace, said correctly — and
+      # then the screen that does answer for this kind, because being told what
+      # an address is not is only half of what an operator came for.
       printf 'Hesap islemleri bu adres icin calismaz ve bunu "hesap bulunamadi"\n'
       printf 'diye bildirirler; bu bir hata degil, adresin bir liste olmasidir.\n'
-      printf 'Teslim takibi liste adresi icin de calisir.\n' ;;
+      printf 'Dagitim listesi karti ve teslim takibi bu adres icin calisir.\n' ;;
     absent)
       printf 'Ne hesap, ne alias, ne kaynak, ne de dagitim listesi olarak kayitli.\n'
       printf 'Sorgular calisti ve yanit verdi: bu, dizinde boyle bir kayit\n'
-      printf 'olmadigi anlamina gelir. Adresi kontrol edin.\n' ;;
+      printf 'olmadigi anlamina gelir. Adresi kontrol edin.\n'
+      # The one screen that can still say something about this address: whether
+      # the server carries its domain's mail at all. An address that is nowhere
+      # in a domain the server does not host is not a missing account.
+      printf 'Alan adi karti, bu sunucunun bu alan adini tasiyip tasimadigini\n'
+      printf 'gosterir.\n' ;;
   esac
   return 0
 }

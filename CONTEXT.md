@@ -288,6 +288,51 @@ about this program, and they call for different actions.
 _Avoid_: unknown attribute, error — an error is something a screen reports, this
 is something a field says
 
+## Domains and lists
+
+**Domain**:
+The directory entry for a mail domain this server carries. It holds the status
+that decides whether mail is delivered to the domain at all, the type, the
+catch-all and the default class of service — and it is read for the domain part
+of the selected address, never asked for separately, because every address has
+one and an address that is nowhere in the directory still has a domain.
+_Avoid_: site, tenant, organisation
+
+**Catch-all address**:
+Where mail for an address that does not exist in a domain is delivered. It names
+a **domain**, not a mailbox — Zimbra refuses anything else — and a domain that
+carries none does not deliver such mail at all. Absent reaches the operator as
+`yok` rather than `tanimsiz`: nothing is inherited here, so the empty case is an
+answer to the question rather than a value nobody could read.
+_Avoid_: default mailbox, fallback address
+
+**Distribution list**:
+An address that delivers to several others. It is not an account, and an account
+read on one fails with `no such account` — which is what
+[address identity](#asking-about-an-address) exists to stop being this tool's
+answer. Its members, its owners and who may send to it all live on the one
+directory entry, so one read answers all three.
+_Avoid_: group, mailing list, alias
+
+**Grant**:
+One access control entry on a list: a grantee, the kind of thing the grantee is,
+and the right it holds. Two rights are grouped by name — `ownDistList` is an
+owner, `sendToDistList` is send permission — and **everything else is kept
+verbatim rather than dropped**. A **denial** is why: it is written as the right's
+own name with a leading minus, so it is not either grouped right, and a card that
+showed only what it understood would report a restricted list as an open one. An
+**empty** send permission means anyone may send — the opposite of what an empty
+list of anything else means — and only where the entry carries no ungrouped grant
+to contradict it.
+_Avoid_: permission, ACL — and never `right` for the whole entry: the right is
+one field of it
+
+**Grantee**:
+Whoever a grant is made to. The directory records it as an identifier, so naming
+it costs one read per **distinct** grantee — bounded, and every grantee is still
+shown: past the bound they appear by identifier and the screen says so.
+_Avoid_: user, owner — an owner is one thing a grantee can be
+
 ## Searching logs
 
 **Canned search**:

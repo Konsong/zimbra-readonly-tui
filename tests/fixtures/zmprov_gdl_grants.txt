@@ -1,0 +1,19 @@
+# distributionList tum-personel@example.com memberCount=1
+mail: tum-personel@example.com
+objectClass: zimbraDistributionList
+objectClass: zimbraMailRecipient
+uid: tum-personel
+zimbraACE: 60b41207-8f1d-470f-8128-d5717e8f29a0 usr sendToDistList
+zimbraACE: 99999999-9999-9999-9999-999999999999 pub sendToDistList
+zimbraACE: eee27787-0043-4d18-b07f-bbddcf628f5e grp sendToDistList
+zimbraACE: 60b41207-8f1d-470f-8128-d5717e8f29a0 usr ownDistList
+zimbraACE: eee27787-0043-4d18-b07f-bbddcf628f5e grp ownDistList
+zimbraCreateTimestamp: 20260802010122.857Z
+zimbraId: d3e4c5d5-8b1e-4f8a-aefc-be4a62672bab
+zimbraMailAlias: tum-personel@example.com
+zimbraMailForwardingAddress: ahmet.yilmaz@example.com
+zimbraMailHost: mail01.example.com
+zimbraMailStatus: enabled
+
+members
+ahmet.yilmaz@example.com

@@ -96,9 +96,14 @@ zro_zimbra_error_code() {
 # `ERROR: account.NO_SUCH_DISTRIBUTION_LIST (...)`, and without this line that
 # would fall through to the raw exit status — which the identity resolver would
 # have to read as a question it could not ask rather than as an answer.
+#
+# NO_SUCH_DOMAIN is here for the same reason and carries more weight: measured on
+# TEST-C, `zmprov gd` answers it both for a domain nobody has heard of and for an
+# address handed to it in place of a domain. Without this line the domain screen
+# would report "islem basarisiz (kod 2)" for the one answer that ends the search.
 zro_prov_fail_code() {
   local errfile=$1 missing_code=$2 rc=$3
-  if grep -qE 'NO_SUCH_ACCOUNT|NO_SUCH_MAILBOX|NO_SUCH_COS|NO_SUCH_DISTRIBUTION_LIST' \
+  if grep -qE 'NO_SUCH_ACCOUNT|NO_SUCH_MAILBOX|NO_SUCH_COS|NO_SUCH_DISTRIBUTION_LIST|NO_SUCH_DOMAIN' \
        "$errfile" 2>/dev/null; then
     printf '%s' "$missing_code"
     return 0
@@ -116,14 +121,16 @@ zro_prov_fail_code() {
 # to `zmprov -l gmi` with "can only be used with SOAP", because mailbox usage
 # lives in the mailbox database rather than in LDAP.
 # gdl is here on evidence, not by analogy: `zmprov -l gdl` answered on TEST-C
-# with the same record SOAP returns, members and all.
-ZRO_LDAP_READS=' ga getAccount gam getAccountMembership gc getCos gdl getDistributionList '
+# with the same record SOAP returns, members and all. So did `zmprov -l gd`,
+# byte for byte with the SOAP answer for the attributes the domain card asks
+# for — measured on 2026-08-02, not assumed from the family resemblance.
+ZRO_LDAP_READS=' ga getAccount gam getAccountMembership gc getCos gdl getDistributionList gd getDomain '
 
 # The complete set of subcommands zro_prov_read may hand to the gate. It exists
 # because that one call site passes a variable, which a static reader cannot
 # resolve — so the set of values that variable may hold is written down here,
 # enforced at runtime, and checked against the allowlist by the scanner.
-ZRO_PROV_READS=' ga gam gc gdl '
+ZRO_PROV_READS=' ga gam gc gdl gd '
 
 zro_prov_ldap_capable() {
   [ -n "${1-}" ] || return 1
@@ -439,14 +446,9 @@ zro_account_card() {
   cosid=$(zro_attr_get "$raw" zimbraCOSId)
 
   # One COS lookup serves both the name and the quota fallback below.
-  local cos_raw="" cos_name=$ZRO_TXT_UNSET
-  if [ -n "$cosid" ]; then
-    cos_raw=$(zro_account_cos_fetch "$cosid" 2>/dev/null) || cos_raw=""
-    cos_name=$(zro_attr_get "$cos_raw" cn)
-    # The id was set, so a name that did not come back is a lookup this program
-    # could not complete — not a class of service the account does not have.
-    [ -n "$cos_name" ] || cos_name=$ZRO_TXT_UNKNOWN
-  fi
+  local cos_raw cos_name
+  cos_raw=$(zro_cos_record "$cosid")
+  cos_name=$(zro_cos_name_field "$cosid" "$cos_raw")
 
   local quota=""
   quota=$(zro_account_quota_limit "$raw" "$cos_raw") || quota=""
@@ -617,4 +619,36 @@ zro_account_cos_name() {
   local name
   name=$(zro_attr_get "$out" cn)
   printf '%s' "${name:--}"
+}
+
+# The class of service record an entry points at, or nothing at all.
+#
+# AN ENTRY THAT NAMES NO CLASS OF SERVICE COSTS NO INVOCATION, which is the whole
+# reason this is a function rather than a call: both cards ask, and a guard
+# written twice is a guard one of them will one day be missing.
+zro_cos_record() {
+  local cosid=${1-} raw
+  [ -n "$cosid" ] || return 0
+  raw=$(zro_account_cos_fetch "$cosid" 2>/dev/null) || return 0
+  printf '%s' "$raw"
+}
+
+# THE NAME OF A CLASS OF SERVICE, AS A CARD FIELD. Two screens ask — an account's
+# and a domain's — and the three-way answer is the same on both, which is why it
+# is decided once rather than beside each of them.
+#
+# Absence and failure are different words here, as they are everywhere else on a
+# card. No id at all is 'tanimsiz': the entry names no class of service, and on a
+# domain that is an ordinary state with a consequence worth reading. An id that
+# WAS set and did not resolve is 'bilinmiyor': a lookup this program could not
+# complete, never a class of service the entry does not have.
+#
+# It takes the record rather than fetching one, so the caller that needs the rest
+# of it — the account card reads the quota out of the same lookup — pays for one
+# invocation instead of two.
+zro_cos_name_field() {
+  local cosid=${1-} raw=${2-} name
+  [ -n "$cosid" ] || { printf '%s' "$ZRO_TXT_UNSET"; return 0; }
+  name=$(zro_attr_get "$raw" cn)
+  printf '%s' "${name:-$ZRO_TXT_UNKNOWN}"
 }
