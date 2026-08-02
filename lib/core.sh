@@ -17,6 +17,11 @@ ZRO_E_NO_ACCOUNT=11
 ZRO_E_NO_MAILBOX=12
 ZRO_E_NO_FOLDER=13
 ZRO_E_NO_RESULT=14
+# A domain the directory does not hold. Its own code rather than NO_RESULT,
+# because it is an ANSWER an operator acts on — mail for an address in a domain
+# this server does not host was never going to arrive here, and that ends the
+# search in Zimbra rather than continuing it.
+ZRO_E_NO_DOMAIN=15
 # Environment
 ZRO_E_PERM=20
 ZRO_E_UNAVAILABLE=21

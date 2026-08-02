@@ -96,9 +96,14 @@ zro_zimbra_error_code() {
 # `ERROR: account.NO_SUCH_DISTRIBUTION_LIST (...)`, and without this line that
 # would fall through to the raw exit status — which the identity resolver would
 # have to read as a question it could not ask rather than as an answer.
+#
+# NO_SUCH_DOMAIN is here for the same reason and carries more weight: measured on
+# TEST-C, `zmprov gd` answers it both for a domain nobody has heard of and for an
+# address handed to it in place of a domain. Without this line the domain screen
+# would report "islem basarisiz (kod 2)" for the one answer that ends the search.
 zro_prov_fail_code() {
   local errfile=$1 missing_code=$2 rc=$3
-  if grep -qE 'NO_SUCH_ACCOUNT|NO_SUCH_MAILBOX|NO_SUCH_COS|NO_SUCH_DISTRIBUTION_LIST' \
+  if grep -qE 'NO_SUCH_ACCOUNT|NO_SUCH_MAILBOX|NO_SUCH_COS|NO_SUCH_DISTRIBUTION_LIST|NO_SUCH_DOMAIN' \
        "$errfile" 2>/dev/null; then
     printf '%s' "$missing_code"
     return 0
@@ -116,14 +121,16 @@ zro_prov_fail_code() {
 # to `zmprov -l gmi` with "can only be used with SOAP", because mailbox usage
 # lives in the mailbox database rather than in LDAP.
 # gdl is here on evidence, not by analogy: `zmprov -l gdl` answered on TEST-C
-# with the same record SOAP returns, members and all.
-ZRO_LDAP_READS=' ga getAccount gam getAccountMembership gc getCos gdl getDistributionList '
+# with the same record SOAP returns, members and all. So did `zmprov -l gd`,
+# byte for byte with the SOAP answer for the attributes the domain card asks
+# for — measured on 2026-08-02, not assumed from the family resemblance.
+ZRO_LDAP_READS=' ga getAccount gam getAccountMembership gc getCos gdl getDistributionList gd getDomain '
 
 # The complete set of subcommands zro_prov_read may hand to the gate. It exists
 # because that one call site passes a variable, which a static reader cannot
 # resolve — so the set of values that variable may hold is written down here,
 # enforced at runtime, and checked against the allowlist by the scanner.
-ZRO_PROV_READS=' ga gam gc gdl '
+ZRO_PROV_READS=' ga gam gc gdl gd '
 
 zro_prov_ldap_capable() {
   [ -n "${1-}" ] || return 1

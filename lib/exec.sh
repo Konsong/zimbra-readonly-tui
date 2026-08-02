@@ -33,6 +33,13 @@ ZRO_LIB_EXEC_LOADED=1
 # write-named siblings that touch a list (`adlm`, `rdlm`, `cdl`, `ddl`) are
 # absent from this list and therefore refused.
 #
+# `zmprov gd` (getDomain) is here so that a suspended domain and an unrouted
+# address can be explained without leaving the tool. It is a read in effect as
+# well as in name — the handler returns the domain entry and nothing else — and
+# the write-named siblings (`cd`, `md`, `dd`, `rd`) are absent from this list and
+# therefore refused. What it may NOT be used for is the count of accounts in a
+# domain: that is `gaa`, it is a server-wide sweep, and it is nowhere here.
+#
 # `zmmsgtrace` is the delivery trace. Every filter that binary takes is a flag
 # which is the whole operation, so each is approved the same way `zmcontrol -v`
 # is: as a two-token entry, with the operator's already-validated value following
@@ -87,6 +94,8 @@ zmprov:gc
 zmprov:getCos
 zmprov:gdl
 zmprov:getDistributionList
+zmprov:gd
+zmprov:getDomain
 zmprov:-l:ga
 zmprov:-l:getAccount
 zmprov:-l:gam
@@ -95,6 +104,8 @@ zmprov:-l:gc
 zmprov:-l:getCos
 zmprov:-l:gdl
 zmprov:-l:getDistributionList
+zmprov:-l:gd
+zmprov:-l:getDomain
 zmcontrol:-v
 zmmsgtrace:--recipient
 zmmsgtrace:--sender

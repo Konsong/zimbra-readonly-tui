@@ -16,6 +16,35 @@ assert_ok zro_allowed zmprov gc
 assert_ok zro_allowed zmprov getCos
 assert_ok zro_allowed zmcontrol -v
 
+it "allows the directory reads behind the identity, list and domain screens"
+assert_ok zro_allowed zmprov gdl
+assert_ok zro_allowed zmprov getDistributionList
+assert_ok zro_allowed zmprov gd
+assert_ok zro_allowed zmprov getDomain
+assert_ok zro_allowed zmprov -l gdl
+assert_ok zro_allowed zmprov -l gd
+
+it "and refuses everything that would change a domain or a list"
+# Every one of these is one letter away from a read above, which is why they are
+# written down here rather than left to the absence of an entry.
+for sub in cd md dd rd createDomain modifyDomain deleteDomain renameDomain \
+           cdl ddl adlm rdlm createDistributionList deleteDistributionList \
+           addDistributionListMember removeDistributionListMember; do
+  assert_fail zro_allowed zmprov "$sub"
+  assert_fail zro_allowed zmprov -l "$sub"
+done
+
+it "and refuses every read whose work grows with the number of accounts"
+# Class 4 does not exist in this tool. The domain screen is where the pressure to
+# add one lands — an account count per domain is the obvious next field — so the
+# sweeps that would answer it are refused by the gate rather than by nobody
+# having written them yet.
+for sub in gaa getAllAccounts gqu getQuotaUsage sa searchAccounts \
+           gad getAllDomains gadl getAllDistributionLists; do
+  assert_fail zro_allowed zmprov "$sub"
+  assert_fail zro_allowed zmprov -l "$sub"
+done
+
 it "denies every write verb"
 for sub in ca ma da dm mm mmr ef df createAccount modifyAccount deleteAccount \
            deleteMessage moveMessage markMessageRead emptyFolder addMessage; do

@@ -1,0 +1,5 @@
+# name example.com
+zimbraDomainDefaultCOSId: e00428a1-0c00-11d9-836a-000d93afea2a
+zimbraDomainStatus: active
+zimbraDomainType: local
+zimbraMailCatchAllAddress: @example.com
