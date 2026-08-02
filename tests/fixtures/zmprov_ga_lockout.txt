@@ -1,16 +1,16 @@
-# name ahmet.yilmaz@example.com
-displayName: Ahmet Yilmaz
-zimbraAccountStatus: active
+# name kilitlenen@example.com
+displayName: Kilitlenen Kullanici
+zimbraAccountStatus: lockout
 zimbraCOSId: e00428a1-0c00-11d9-836a-000d93afea2a
 zimbraFeatureTwoFactorAuthAvailable: FALSE
 zimbraIsDelegatedAdminAccount: TRUE
-zimbraLastLogonTimestamp: 20260729181213.513Z
 zimbraMailAlias: a.yilmaz@example.com
 zimbraMailAlias: ayilmaz@example.com
-zimbraMailDeliveryAddress: ahmet.yilmaz@example.com
+zimbraMailDeliveryAddress: kilitlenen@example.com
 zimbraMailForwardingAddress: denetim@example.net
 zimbraMailForwardingAddress: arsiv@example.net
 zimbraMailHost: mail01.example.com
 zimbraMailQuota: 5368709120
+zimbraPasswordLockoutLockedTime: 20260801091500.000Z
 zimbraPasswordModifiedTime: 20260730212937.687Z
 zimbraPrefMailForwardingAddress: kisisel-yedek@example.net

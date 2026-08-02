@@ -102,33 +102,41 @@ assert_contains "$(zro_last_error)" "Connection refused"
 
 # When mailboxd is down, EVERY SOAP call fails — not just the first. These
 # scenarios script that faithfully, or the fallback would only look tested.
-it "the account summary works end to end with mailboxd down"
+it "the account card works end to end with mailboxd down"
 out=$(ZRO_MOCK_ZMPROV_GA_ERR="$FIX/zmprov_io_error_refused.err" \
       ZRO_MOCK_ZMPROV_GA_RC=1 \
       ZRO_MOCK_ZMPROV_GC_ERR="$FIX/zmprov_io_error_refused.err" \
       ZRO_MOCK_ZMPROV_GC_RC=1 \
+      ZRO_MOCK_ZMPROV_GAM_ERR="$FIX/zmprov_io_error_refused.err" \
+      ZRO_MOCK_ZMPROV_GAM_RC=1 \
       ZRO_MOCK_ZMPROV__L_GA_OUT="$FIX/zmprov_l_ga_active.txt" \
       ZRO_MOCK_ZMPROV__L_GC_OUT="$FIX/zmprov_gc_ok.txt" \
-      zro_account_summary 'ahmet.yilmaz@example.com')
+      ZRO_MOCK_ZMPROV__L_GAM_OUT="$FIX/zmprov_l_gam_ok.txt" \
+      zro_account_card 'ahmet.yilmaz@example.com')
 assert_contains "$out" "Ahmet Yilmaz"
 assert_contains "$out" "active"
 assert_contains "$out" "mail01.example.com"
 assert_contains "$out" "default"
+assert_contains "$out" "sistem@example.com"
 
 it "warns that LDAP values may not include what a COS provides"
 out=$(ZRO_MOCK_ZMPROV_GA_ERR="$FIX/zmprov_io_error_refused.err" \
       ZRO_MOCK_ZMPROV_GA_RC=1 \
       ZRO_MOCK_ZMPROV_GC_ERR="$FIX/zmprov_io_error_refused.err" \
       ZRO_MOCK_ZMPROV_GC_RC=1 \
+      ZRO_MOCK_ZMPROV_GAM_ERR="$FIX/zmprov_io_error_refused.err" \
+      ZRO_MOCK_ZMPROV_GAM_RC=1 \
       ZRO_MOCK_ZMPROV__L_GA_OUT="$FIX/zmprov_l_ga_active.txt" \
       ZRO_MOCK_ZMPROV__L_GC_OUT="$FIX/zmprov_gc_ok.txt" \
-      zro_account_summary 'ahmet.yilmaz@example.com')
+      ZRO_MOCK_ZMPROV__L_GAM_OUT="$FIX/zmprov_l_gam_ok.txt" \
+      zro_account_card 'ahmet.yilmaz@example.com')
 assert_contains "$out" "LDAP"
 
 it "no warning when the answer came from SOAP"
 out=$(ZRO_MOCK_ZMPROV_GA_OUT="$FIX/zmprov_ga_active.txt" \
       ZRO_MOCK_ZMPROV_GC_OUT="$FIX/zmprov_gc_ok.txt" \
-      zro_account_summary 'ahmet.yilmaz@example.com')
+      ZRO_MOCK_ZMPROV_GAM_OUT="$FIX/zmprov_gam_ok.txt" \
+      zro_account_card 'ahmet.yilmaz@example.com')
 assert_not_contains "$out" "LDAP"
 
 # The COS fixture here is 10 GB while the account fixture is 5 GB, so these two
@@ -138,14 +146,14 @@ assert_not_contains "$out" "LDAP"
 it "reads the quota limit from the COS when the account does not carry one"
 out=$(ZRO_MOCK_ZMPROV_GA_OUT="$FIX/zmprov_l_ga_no_quota.txt" \
       ZRO_MOCK_ZMPROV_GC_OUT="$FIX/zmprov_gc_10gb.txt" \
-      zro_account_summary 'kotasiz@example.com')
+      zro_account_card 'kotasiz@example.com')
 assert_contains "$out" "10.0 GB"
 assert_not_contains "$out" "sinirsiz"
 
 it "an explicit account quota still wins over the COS"
 out=$(ZRO_MOCK_ZMPROV_GA_OUT="$FIX/zmprov_ga_active.txt" \
       ZRO_MOCK_ZMPROV_GC_OUT="$FIX/zmprov_gc_10gb.txt" \
-      zro_account_summary 'ahmet.yilmaz@example.com')
+      zro_account_card 'ahmet.yilmaz@example.com')
 assert_contains "$out" "5.0 GB"
 assert_not_contains "$out" "10.0 GB"
 
@@ -164,7 +172,7 @@ it "the banner claims no more than LDAP mode actually costs"
 out=$(ZRO_MOCK_ZMPROV_GA_ERR="$FIX/zmprov_io_error_refused.err" \
       ZRO_MOCK_ZMPROV_GA_RC=1 \
       ZRO_MOCK_ZMPROV__L_GA_OUT="$FIX/zmprov_l_ga_active.txt" \
-      zro_account_summary 'ahmet.yilmaz@example.com')
+      zro_account_card 'ahmet.yilmaz@example.com')
 # zmprov expands COS-inherited values in BOTH modes -- getAttrs(expandCos)
 # reaching setAccountDefaults(true) -- and only `-e` suppresses it. The banner
 # used to warn that inherited settings might be missing, which was untrue.

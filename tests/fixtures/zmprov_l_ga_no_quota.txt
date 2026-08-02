@@ -1,6 +1,7 @@
 # name kotasiz@example.com
 displayName: Kota Yok
-mail: kotasiz@example.com
 zimbraAccountStatus: active
 zimbraCOSId: e00428a1-0c00-11d9-836a-000d93afea2a
+zimbraFeatureTwoFactorAuthAvailable: FALSE
+zimbraMailDeliveryAddress: kotasiz@example.com
 zimbraMailHost: mail01.example.com

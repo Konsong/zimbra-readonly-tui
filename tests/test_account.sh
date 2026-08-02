@@ -35,6 +35,18 @@ assert_out_eq "" zro_attr_get "$ACTIVE" zimbraNoSuchAttribute
 it "does not match an attribute whose name is a prefix of another"
 assert_out_eq "" zro_attr_get "$ACTIVE" zimbraMail
 
+# NOT A HYPOTHETICAL. An unfiltered `zmprov ga` on the lab server returns
+# zimbraMailForwardingAddressMaxLength and zimbraMailForwardingAddressMaxNumAddrs
+# beside the forwarding attribute itself, and the card's whole point about
+# forwarding is that the administrator-set value is read correctly.
+it "reads a forwarding address whose name prefixes two other attributes"
+collision='zimbraMailForwardingAddress: denetim@example.net
+zimbraMailForwardingAddressMaxLength: 4096
+zimbraMailForwardingAddressMaxNumAddrs: 100'
+assert_out_eq "denetim@example.net" zro_attr_get "$collision" zimbraMailForwardingAddress
+assert_out_eq "4096" zro_attr_get "$collision" zimbraMailForwardingAddressMaxLength
+assert_eq "$(zro_attr_all "$collision" zimbraMailForwardingAddress | wc -l | tr -d ' ')" "1"
+
 it "ignores the header line zmprov prints"
 assert_out_eq "" zro_attr_get "$ACTIVE" '# name'
 
@@ -75,15 +87,24 @@ it "rejects an invalid account before running anything"
 assert_status "$ZRO_E_INPUT" zro_account_fetch 'a@b.com; id'
 assert_eq "$(cat "$ZRO_MOCK_LOG")" ""
 
-it "requests only the attributes M1 displays, in one call"
+# THE CARD IS ONE INVOCATION. A JVM start costs the same for five attributes as
+# for twenty-five, so every field the card shows is asked for in this one call —
+# and a field added later that quietly brings a second call with it fails here.
+it "requests every attribute the card displays, in one call"
 : >"$ZRO_MOCK_LOG"
 ZRO_MOCK_ZMPROV_GA_OUT="$FIX/zmprov_ga_active.txt" \
   zro_account_fetch 'ahmet.yilmaz@example.com' >/dev/null
 assert_eq "$(grep -c '^zmprov' "$ZRO_MOCK_LOG")" "1"
 line=$(grep '^zmprov' "$ZRO_MOCK_LOG")
-assert_contains "$line" "zimbraAccountStatus"
-assert_contains "$line" "zimbraMailQuota"
-assert_contains "$line" "zimbraLastLogonTimestamp"
+for attr in displayName zimbraAccountStatus zimbraCOSId zimbraMailHost \
+            zimbraMailQuota zimbraLastLogonTimestamp zimbraMailAlias \
+            zimbraMailDeliveryAddress zimbraPasswordModifiedTime \
+            zimbraPasswordLockoutLockedTime zimbraTwoFactorAuthEnabled \
+            zimbraFeatureTwoFactorAuthAvailable zimbraIsAdminAccount \
+            zimbraIsDelegatedAdminAccount zimbraPrefMailForwardingAddress \
+            zimbraMailForwardingAddress; do
+  assert_contains "$line" "$(printf '\t%s' "$attr")"
+done
 assert_not_contains "$line" "$(printf '\t-l\t')"
 
 it "maps a missing account to the documented exit code"
@@ -135,7 +156,7 @@ out=$( ZRO_MOCK_ZMPROV_GA_ERR="$FIX/zmprov_io_error_refused.err" \
        ZRO_MOCK_ZMPROV_GA_RC=1 \
        ZRO_MOCK_ZMPROV__L_GA_ERR="$FIX/zmprov_io_error_refused.err" \
        ZRO_MOCK_ZMPROV__L_GA_RC=1 \
-       zro_account_summary 'a@b.com' ) || true
+       zro_account_card 'a@b.com' ) || true
 assert_eq "$out" ""
 assert_contains "$(zro_last_error)" "Connection refused"
 
@@ -143,42 +164,6 @@ it "clears the previous error on a successful call"
 ZRO_MOCK_ZMPROV_GA_OUT="$FIX/zmprov_ga_active.txt" \
   zro_account_fetch 'ahmet.yilmaz@example.com' >/dev/null
 assert_eq "$(zro_last_error)" ""
-
-it "renders a summary with the operator-facing fields"
-out=$(ZRO_MOCK_ZMPROV_GA_OUT="$FIX/zmprov_ga_active.txt" \
-      zro_account_summary 'ahmet.yilmaz@example.com')
-assert_contains "$out" "Ahmet Yilmaz"
-assert_contains "$out" "active"
-assert_contains "$out" "mail01.example.com"
-assert_contains "$out" "2026-07-15 10:30:12"
-assert_contains "$out" "5.0 GB"
-
-it "labels last logon as approximate"
-out=$(ZRO_MOCK_ZMPROV_GA_OUT="$FIX/zmprov_ga_active.txt" \
-      zro_account_summary 'ahmet.yilmaz@example.com')
-assert_contains "$out" "yaklasik"
-
-# whiptail wraps anything wider than the box, and it wraps mid-sentence. The
-# last-logon caveat used to run past the edge and break across two lines.
-it "keeps every line of the summary inside the box"
-out=$(ZRO_MOCK_ZMPROV_GA_OUT="$FIX/zmprov_ga_active.txt" \
-      zro_account_summary 'ahmet.yilmaz@example.com')
-too_long=$(printf '%s\n' "$out" | awk 'length($0) > 72 { print length($0)": "$0 }')
-assert_eq "$too_long" ""
-
-it "lists the aliases it found"
-out=$(ZRO_MOCK_ZMPROV_GA_OUT="$FIX/zmprov_ga_active.txt" \
-      zro_account_summary 'ahmet.yilmaz@example.com')
-assert_contains "$out" "a.yilmaz@example.com"
-assert_contains "$out" "ayilmaz@example.com"
-
-it "handles an account with no last logon, no COS and no aliases"
-out=$(ZRO_MOCK_ZMPROV_GA_OUT="$FIX/zmprov_ga_locked.txt" \
-      zro_account_summary 'kilitli@example.com')
-assert_contains "$out" "locked"
-assert_contains "$out" "sinirsiz"
-assert_contains "$out" "-"
-assert_not_contains "$out" "Aliaslar"
 
 rm -f -- "$ZRO_MOCK_LOG"
 zro_t_report

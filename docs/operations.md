@@ -126,8 +126,32 @@ report is the claim.
 
 ### About the selected address
 
-- **Hesap ozeti** — display name, status, mailbox host, quota limit, COS name,
-  last logon, mail aliases.
+- **Hesap karti** — every directory fact about the address, on one screen, from
+  one account read: display name, status, canonical delivery address, mailbox
+  host, class of service, quota limit, last logon, aliases and distribution list
+  memberships, plus the security fields an incident turns on — when the password
+  last changed, whether the account is locked out, whether two-factor
+  authentication is enabled, and whether it holds administrative rights.
+
+  **The two kinds of forwarding are on separate lines and are never merged.**
+  `Kullanici tanimli` is the preference the account holder set themselves;
+  `Yonetici tanimli` is the attribute an administrator set, which does **not**
+  appear in the account holder's own client. That second line is the one an
+  incident turns on, and folding it into the first would hide it from you as
+  well as from them.
+
+  **Absence is shown as absence.** Zimbra simply omits an attribute nobody set,
+  so a field can read `tanimsiz` (the directory carries no such value), `yok`
+  (an empty list of aliases, forwards or memberships) or `bilinmiyor` (this tool
+  could not read one). None of the three is ever a default, and none of them is
+  zero — an unreadable quota reads as `bilinmiyor`, never as `sinirsiz`, because
+  Zimbra writes `0` to mean unlimited and an unknown limit is not no limit.
+
+  The quota line says which read answered it. `hesap sorgusundan` means the
+  account read carried the value; it does **not** mean the value is set on the
+  account, because `zmprov` expands what a class of service provides in both
+  modes. `COS kaydindan` means the account read carried none and the class of
+  service was asked instead.
 - **Kota kullanimi** — mailbox id, bytes used, quota limit, percentage full.
   Accounts with no quota are shown as `sinirsiz` rather than divided by zero.
 - **Dagitim listesi uyelikleri** — the distribution lists the account belongs to.
@@ -335,7 +359,7 @@ What still works, and what does not:
 
 | Screen | With mailboxd down |
 |---|---|
-| Hesap ozeti | works in full |
+| Hesap karti | works in full |
 | Dagitim listesi uyelikleri | works in full |
 | Kota limiti | works in full |
 

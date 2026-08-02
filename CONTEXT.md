@@ -235,6 +235,34 @@ does, so a value's presence proves nothing about where it came from. Asked as a
 separate screen rather than on the card, because it costs a second invocation.
 _Avoid_: source, origin
 
+**Account card**:
+The one screen carrying every directory fact about the selected address, drawn
+from a single account read. It is named for what it is — a complete record, not a
+selection from one — which is why the attributes it displays are requested
+together: a JVM start costs the same for five as for twenty-five, and a field
+that arrived with a query of its own would be a field nobody added.
+_Avoid_: account summary, account details — a summary implies something was left
+out, and what this screen leaves out is only what a second invocation would cost
+
+**Unset**:
+An attribute the directory does not carry. `zmprov` omits it entirely rather than
+returning it empty, so an account asked for sixteen attributes and answering with
+nine is the ordinary case. It reaches the operator as `tanimsiz`, or as `yok`
+where the field is a list — aliases, forwarding and memberships are never
+inherited, so an absent attribute there means the list is empty. **Never rendered
+as a default and never as zero**: Zimbra writes `zimbraMailQuota: 0` to mean
+unlimited, and an unknown limit is not no limit.
+_Avoid_: empty, null, missing — missing is what an unreadable value is
+
+**Unreadable**:
+A value this tool could not obtain or could not parse — a quota nothing answered
+for, a timestamp in a shape the reader does not accept, a membership lookup that
+failed. It reaches the operator as `bilinmiyor`, and it is deliberately a
+different word from unset: one is a fact about the account, the other is a fact
+about this program, and they call for different actions.
+_Avoid_: unknown attribute, error — an error is something a screen reports, this
+is something a field says
+
 ## Searching logs
 
 **Canned search**:

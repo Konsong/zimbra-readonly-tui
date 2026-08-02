@@ -1,6 +1,7 @@
 # name kilitli@example.com
 displayName: Kilitli Kullanici
-mail: kilitli@example.com
 zimbraAccountStatus: locked
+zimbraFeatureTwoFactorAuthAvailable: FALSE
+zimbraMailDeliveryAddress: kilitli@example.com
 zimbraMailHost: mail01.example.com
 zimbraMailQuota: 0

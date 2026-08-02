@@ -50,7 +50,7 @@ it "the first entry on the main menu is the address"
 zro_sel_clear
 queue "__CANCEL__"
 run
-assert_contains "$(entries)" "select Adres sec account-summary"
+assert_contains "$(entries)" "select Adres sec account-card"
 
 it "and it offers every declared operation, in the order they are declared"
 # Two declarations held equal: the list the operator is shown, and the list this
@@ -104,7 +104,7 @@ assert_eq "$undispatched" ""
 
 it "and an id this program never drew runs nothing at all"
 zro_sel_set "$ADDR"
-queue "account-summary; id" "__CANCEL__"
+queue "account-card; id" "__CANCEL__"
 : >"$ZRO_MOCK_LOG"
 said=$(zro_menu_main 2>&1 >/dev/null)
 assert_contains "$said" "not a declared operation"
@@ -122,7 +122,7 @@ assert_ok zro_menu_main
 
 it "an account operation chosen with nothing selected asks for the address"
 zro_sel_clear
-queue "account-summary" "$ADDR" "__CANCEL__"
+queue "account-card" "$ADDR" "__CANCEL__"
 run
 assert_contains "$(transcript)" "INPUT Adres"
 
@@ -135,7 +135,7 @@ assert_contains "$(cat "$ZRO_MOCK_LOG")" "$ADDR"
 
 it "the next operation does not ask again"
 zro_sel_clear
-queue "account-summary" "$ADDR" "account-membership" "__CANCEL__"
+queue "account-card" "$ADDR" "account-membership" "__CANCEL__"
 run
 out=$(transcript)
 assert_eq "$(grep -c 'INPUT Adres' "$ZRO_UI_OUT")" "1"
@@ -144,7 +144,7 @@ assert_contains "$out" "bilgi-islem@example.com"
 
 it "the selection can be changed without leaving the tool"
 zro_sel_clear
-queue "select" "$ADDR" "select" "$OTHER" "account-summary" "__CANCEL__"
+queue "select" "$ADDR" "select" "$OTHER" "account-card" "__CANCEL__"
 run
 assert_eq "$(zro_sel_address)" "$OTHER"
 assert_contains "$(cat "$ZRO_MOCK_LOG")" "$OTHER"
@@ -168,7 +168,7 @@ assert_contains "$(entries)" "select Adresi degistir"
 
 it "cancelling the address prompt returns to the menu and runs nothing"
 zro_sel_clear
-queue "account-summary" "__CANCEL__" "__CANCEL__"
+queue "account-card" "__CANCEL__" "__CANCEL__"
 run
 # Drawn once before the prompt and once after it: the operator is back where they
 # were, not one screen further out and not inside a screen with no address.
@@ -180,7 +180,7 @@ assert_fail zro_sel_have
 
 it "an address that is not one is refused, and nothing is run"
 zro_sel_clear
-queue "account-summary" 'ahmet@example.com; id' "__CANCEL__" "__CANCEL__"
+queue "account-card" 'ahmet@example.com; id' "__CANCEL__" "__CANCEL__"
 run
 assert_contains "$(transcript)" "Gecersiz"
 assert_not_contains "$(cat "$ZRO_MOCK_LOG")" "zmprov"
@@ -200,7 +200,7 @@ it "every screen drawn after an address is chosen carries it on the frame"
 # the one part of a long answer that cannot be pushed out of view — and reading
 # one account's answer believing it is another's is the failure this prevents.
 zro_sel_clear
-queue "select" "$ADDR" "account-summary" "__CANCEL__"
+queue "select" "$ADDR" "account-card" "__CANCEL__"
 run
 missing=""
 while IFS= read -r line; do
@@ -220,7 +220,7 @@ assert_eq "$missing" ""
 it "the result is titled with the entry the operator chose"
 # One label, read back from the list rather than written out a second time: an
 # answer under a heading nobody chose is the confusion the frame exists to stop.
-assert_contains "$(transcript)" "TEXT Hesap ozeti - $ADDR"
+assert_contains "$(transcript)" "TEXT Hesap karti - $ADDR"
 
 it "and so does the menu the operator is returned to"
 assert_contains "$(transcript)" "MENU Ana menu - $ADDR"
@@ -229,7 +229,7 @@ assert_contains "$(transcript)" "MENU Ana menu - $ADDR"
 
 it "the summary is rendered for the selected address"
 zro_sel_set "$ADDR"
-queue "account-summary" "__CANCEL__"
+queue "account-card" "__CANCEL__"
 run
 assert_contains "$(transcript)" "Ahmet Yilmaz"
 
@@ -258,7 +258,7 @@ assert_contains "$(transcript)" "bilgi-islem@example.com"
 
 it "a missing account is reported without leaving the menu"
 zro_sel_set "yok@example.com"
-queue "account-summary" "__CANCEL__"
+queue "account-card" "__CANCEL__"
 : >"$ZRO_UI_OUT"
 ZRO_MOCK_ZMPROV_GA_OUT="" \
 ZRO_MOCK_ZMPROV_GA_ERR="$FIX/zmprov_ga_no_such_account.err" \
@@ -288,7 +288,7 @@ assert_contains "$marked" "Teslim takibi: ileti kimligine gore - KULLANILAMAZ"
 # And only the ones it is about: the log viewer reads the same files by a path
 # neither probe is about, and marking it with them would hide a screen that works.
 assert_not_contains "$marked" "Log dosyalari (son satirlar) - KULLANILAMAZ"
-assert_not_contains "$marked" "Hesap ozeti - KULLANILAMAZ"
+assert_not_contains "$marked" "Hesap karti - KULLANILAMAZ"
 
 it "and selecting it explains why instead of asking for anything"
 queue "trace-recipient" "__CANCEL__"
@@ -316,10 +316,32 @@ it "an account screen reached with nothing selected asks Zimbra nothing"
 # they typed would send them looking for a mistake they did not make.
 zro_sel_clear
 : >"$ZRO_UI_OUT"; : >"$ZRO_MOCK_LOG"
-said=$(zro_screen_account account-summary 2>&1 >/dev/null)
+said=$(zro_screen_account account-card 2>&1 >/dev/null)
 assert_contains "$said" "menu defect"
 assert_contains "$(transcript)" "Ic hata"
 assert_eq "$(cat "$ZRO_MOCK_LOG")" ""
+
+it "an address a module refused is its own screen, not a bare code"
+# The third of the three failures the account card has to tell apart — a missing
+# account, an unreachable mailbox service, and an address that is not one. The
+# first two already had screens; this one used to fall through to "Islem
+# basarisiz (kod 10)", which names no repair and reads like a Zimbra fault.
+#
+# Reached through the shared reporter rather than through the menu, because the
+# menu validates an address before it dispatches: this is the screen for a value
+# that got past selection, which makes it as much a defect in this program as a
+# mistyped address, and the message has to serve both readings.
+: >"$ZRO_UI_OUT"
+# A message left on file by an EARLIER screen, which is the whole point of the
+# assertion below: nothing ran on this path, so whatever is there belongs to
+# something else and would be read as this screen's explanation.
+zro_set_error "ERROR: zclient.IO_ERROR (Connection refused)"
+zro_report_error "$ZRO_E_INPUT"
+said=$(transcript)
+assert_contains "$said" "Gecersiz adres"
+assert_not_contains "$said" "kod 10"
+assert_not_contains "$said" "Connection refused"
+zro_clear_error
 
 it "and an operation this file does not answer is reported as the defect it is"
 # Never the allowlist's message: an operator sent to check the allowlist for a
@@ -339,7 +361,7 @@ it "the server is asked for its version once, however often the menu is drawn"
 # drawn. It is filled in the menu's own shell instead.
 zro_cap_reset
 zro_sel_set "$ADDR"
-queue "account-summary" "account-summary" "__CANCEL__"
+queue "account-card" "account-card" "__CANCEL__"
 run
 assert_eq "$(grep -c '^zmcontrol' "$ZRO_MOCK_LOG")" "1"
 # Three draws of the menu, one reading of the version.
@@ -347,7 +369,7 @@ assert_eq "$(grep -c 'MENU Ana menu' "$ZRO_UI_OUT")" "3"
 
 it "no menu screen opens a mailbox"
 zro_sel_clear
-queue "select" "$ADDR" "account-summary" "account-membership" "__CANCEL__"
+queue "select" "$ADDR" "account-card" "account-membership" "__CANCEL__"
 run
 log=$(cat "$ZRO_MOCK_LOG")
 assert_contains "$log" "zmprov"

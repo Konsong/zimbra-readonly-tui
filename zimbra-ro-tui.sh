@@ -283,6 +283,19 @@ Zimbra ciktisi:
 $detail"
 
   case $1 in
+    # An address a module refused. It reaches here rather than through the
+    # prompt's own rejection screen when a value got past selection — which makes
+    # it a defect in this program as often as it is a mistyped address, so the
+    # message says what to do about both. The Zimbra detail is deliberately left
+    # off: nothing was run, so anything in that file belongs to an earlier screen
+    # and would read as this one's explanation.
+    "$ZRO_E_INPUT")
+      zro_ui_msgbox "Gecersiz adres" \
+"Bu islem icin secili adres gecerli bir e-posta adresi degil, bu nedenle
+hicbir sorgu calistirilmadi.
+
+Ana menuden adresi yeniden secin. Adres dogru gorunuyorsa arac gunlugune
+bakin: adresi bu ekrana tasiyan yolda bir hata olabilir." ;;
     "$ZRO_E_NO_ACCOUNT") zro_ui_msgbox "Bulunamadi" "Hesap bulunamadi.$detail" ;;
     "$ZRO_E_NO_MAILBOX") zro_ui_msgbox "Bulunamadi" "Mailbox bulunamadi.$detail" ;;
     "$ZRO_E_NO_RESULT")  zro_ui_msgbox "Sonuc yok" "Kayit bulunamadi." ;;
@@ -353,15 +366,17 @@ zro_screen_account() {
     return 0
   fi
 
-  # Each zmprov call starts a JVM and takes seconds; these screens make two.
-  # Without this the terminal sits blank and looks frozen.
+  # Each zmprov call starts a JVM and takes seconds, and these screens make more
+  # than one: the card asks for the account, the class of service it names and
+  # the lists it belongs to. Without this the terminal sits blank and looks
+  # frozen for the whole of it.
   zro_ui_notice "Calisiyor" "Zimbra sorgulaniyor, lutfen bekleyin.
 
 Hesap: $acct
-Her sorgu birkac saniye surebilir."
+Bu ekran birden fazla sorgu calistirir; her biri birkac saniye surebilir."
 
   case $id in
-    account-summary)    out=$(zro_account_summary "$acct") || rc=$? ;;
+    account-card)       out=$(zro_account_card "$acct") || rc=$? ;;
     account-quota)      out=$(zro_account_quota "$acct") || rc=$? ;;
     account-membership) out=$(zro_account_membership "$acct") || rc=$? ;;
     # Declared in the one list and not answered here: a defect in this file, and
@@ -813,7 +828,7 @@ yukseltip yeniden deneyin."
 # LABEL is what the operator reads, here and again as the title over the result,
 # so those two cannot drift apart. A label may contain a colon; only the first
 # two are separators.
-ZRO_MENU_OPS='account-summary:address:Hesap ozeti
+ZRO_MENU_OPS='account-card:address:Hesap karti
 account-quota:address:Kota kullanimi
 account-membership:address:Dagitim listesi uyelikleri
 trace-recipient:address:Teslim takibi: bu adrese gelenler
