@@ -152,6 +152,40 @@ report is the claim.
   account, because `zmprov` expands what a class of service provides in both
   modes. `COS kaydindan` means the account read carried none and the class of
   service was asked instead.
+- **Deger nereden geliyor (hesap mi, devralma mi)** — for every attribute the card
+  shows, whether the value is set on this account or inherited from a class of
+  service. That is what decides where a change would have to be made: one of the
+  two is repaired on the account, the other on a record every account sharing that
+  class also reads.
+
+  **Presence proves nothing about origin.** `zmprov` expands what a class of
+  service provides in *both* SOAP and LDAP mode, so the ordinary read answers with
+  the value in force and says nothing whatever about where it was set. That is why
+  this is a screen of its own rather than a note on the card.
+
+  **It reads the same entry twice**, once ordinarily and once with `zmprov ga -e`,
+  which returns the attributes set on the entry itself and expands nothing. The
+  difference between the two answers is the whole screen: `hesapta tanimli`,
+  `devralinmis`, or `tanimsiz` for an attribute carried by **neither** read. That
+  third answer is not a weaker form of the second — an attribute nobody set
+  anywhere is not a value waiting on a class of service, and reporting it as
+  inherited would send you to read a COS that has nothing to say about it either.
+
+  A second *form* of the same read is a second invocation however few attributes
+  it names, so **the screen says what it will spend before it spends it**. It is
+  the one screen in the tool whose cost is exact: two reads, always, whatever the
+  account turns out to hold.
+
+  It shows Zimbra's attribute names rather than the card's Turkish labels — the one
+  place in this tool that does — because what you do next is read or change that
+  attribute somewhere this tool cannot reach, and `Kota limiti` is not a name you
+  can search for.
+
+  **It is the one directory screen that cannot fall back to LDAP.**
+  `zmprov -l ga -e` has never been run on the lab server, so it is not on the
+  allowlist; the retry asks the allowlist before it runs, and the screen reports
+  the outage that stopped it rather than being retried into a denial. See *Commands
+  this release can run* below.
 - **Dagitim listesi uyelikleri** — the distribution lists the account belongs to.
 - **Mailbox var mi** — whether the account has a mailbox at all. Three answers,
   three screens: the mailbox is there; the account has none *yet*, meaning it is
@@ -176,8 +210,10 @@ report is the claim.
   unknown limit is not no limit.
 
   The limit comes from the directory and the usage from the mailbox, and the
-  screen says which is which. **The whole-server quota command is not used**: it
-  takes a server rather than an account and answers for every account on it.
+  screen says which is which. Usage was absent from this screen for one release
+  and the command that used to report it is still nowhere in this tool — what
+  answers now, and why the whole-server quota command was not taken instead, is
+  *How usage came back* in section 5.
 - **Mailbox boyutu** — the size of the whole mailbox, in bytes and in readable
   form. Both, always: the readable form is what you read and the byte count is
   what you can check against a quota or a previous reading.
@@ -211,6 +247,70 @@ report is the claim.
   **Every one of these five refuses before it opens anything** if the account has
   no mailbox. What you get then is the existence gate's own screen — the account
   is provisioned and has never been used — rather than a failure box.
+- **Dagitim listesi karti** — who receives mail sent to this address, who owns the
+  list, and who may send to it: the three facts a message rejected by a list is
+  explained by. Members, owners and send permissions all live on the list's own
+  entry — the last two as access control entries rather than as fields of their
+  own — so one read answers all three questions, plus one read per **distinct**
+  grantee to turn an identifier into an address.
+
+  **An empty send permission means the opposite of what an empty anything else
+  means.** Zimbra enforces that right only when somebody holds it, so a list nobody
+  was granted it on accepts mail from everyone; the line reads *kisitlama yok
+  (herkes gonderebilir)* rather than `yok`. This is the one line on the card that
+  states Zimbra's rule instead of reporting a measurement — the lab server carries
+  no MTA, so no message can be sent to a list on it at all. The fields above it
+  report only what the directory holds.
+
+  **Unless the list carries a grant this tool did not recognise, and a denial is
+  exactly that.** Measured on the lab server: a denial is written as the right's
+  own name with a leading minus, so it is neither of the two rights the card groups
+  and it appears under *Diger yetkiler* instead. The send line then reads
+  *belirsiz* and the screen says in as many words not to read it as "no
+  restriction" — a list whose only send grant is a denial is a restricted list, and
+  the sentence underneath is the one place the card could have described it as an
+  open one. Nothing is dropped for not being understood, so a right a later Zimbra
+  release adds lands there too rather than vanishing.
+
+  Grantees are stored as identifiers. Twenty are named; past that they are shown as
+  the identifier the directory holds and the screen says so, because a list with
+  fifty owners is otherwise fifty invocations on a screen nobody expected to wait
+  for. **None is ever omitted.** A `pub` grant names no entry at all — it is a fixed
+  sentinel — so it is said in words instead of looked up.
+
+  Members are read from the directory. A list that is a member of this one appears
+  under its own address and is not opened, and the screen says so. The entry reads
+  `BU ADRES LISTE DEGIL` for an address that is not a list.
+- **Alan adi karti** — the domain of the selected address: its status, its type in
+  the directory's own word, its catch-all, and the class of service accounts
+  created in it get by default. The domain is derived from the address and never
+  asked for.
+
+  **It is the only screen that still answers for an address the directory has never
+  heard of.** Every address carries a domain, so when the account read has nothing
+  to say this one still answers whether this server carries that domain's mail at
+  all.
+
+  Status is where a delivery problem often turns out to end: a domain that is not
+  `active` has its mail blocked by Zimbra itself, and the screen says so rather than
+  leaving you to look further down the delivery path. A catch-all shown as `yok` is
+  a real answer and not an unread one — nothing inherits a catch-all — and it means
+  mail to an address that does not exist in this domain is delivered nowhere. A
+  domain type this tool does not recognise is shown **as it stands**, because it is
+  a fact the directory carries and a newer Zimbra than this tool is not a value
+  nobody could read.
+
+  It costs one read, plus one more to name the class of service the first one
+  answers with an opaque id. **Its five attributes are requested by name**, and here
+  that is not only about cost: an unfiltered `zmprov gd` answered with 111 lines on
+  the lab server, and among them, in the clear, the bind password of the directory
+  the domain authenticates against. A screen is a thing an operator takes a
+  screenshot of.
+
+  **The account count is deliberately absent, and the screen says so** where
+  somebody who came for the number will read it. Counting the entries in a domain on
+  a server carrying more than 100,000 accounts is a server-wide sweep, and this tool
+  has no operation whose work grows with the number of accounts.
 - **Teslim takibi: bu adrese gelenler** — asks for an arrival window, then shows
   what the mail transfer agent's log says about messages **for** that address. No
   mailbox is opened, so this is safe on an account that has never logged in.
@@ -407,8 +507,8 @@ which goes straight to LDAP and needs neither. You will see this banner above
 the result:
 
 ```
-UYARI: mailboxd yanit vermedi; degerler LDAP uzerinden okundu.
-       COS uzerinden miras alinan ayarlar eksik gorunebilir.
+UYARI: mailboxd yanit vermedi; degerler dogrudan LDAP uzerinden okundu.
+       Dizinde tutulmayan bilgiler bu ekranda gorunmez.
 ```
 
 What still works, and what does not:
@@ -416,12 +516,20 @@ What still works, and what does not:
 | Screen | With mailboxd down |
 |---|---|
 | Hesap karti | works in full |
+| Deger nereden geliyor | **refused** — the entry-only read has no approved LDAP form |
 | Dagitim listesi uyelikleri | works in full |
-| Kota limiti | works in full |
+| Dagitim listesi karti | works in full |
+| Alan adi karti | works in full |
 | Mailbox var mi | **refused**, with the cause named |
+| Every screen behind the existence gate | **refused** by the gate, before anything is opened |
 
-Every directory screen keeps working, because none of them needs the mailbox
-service any more.
+Every directory screen that has an approved LDAP form keeps working, and all but
+one of them has. The exception is provenance, and it is refused for a reason of
+its own rather than by the gate: `zmprov -l ga -e` has never been measured, so it
+is not on the allowlist, and this tool does not add an entry on a family
+resemblance. Asking the allowlist before the retry is what makes that a reported
+outage instead of an allowlist denial — which would be logged as a defect in the
+middle of an ordinary incident.
 
 **The one screen that cannot is the existence gate, and that is called a silent
 gate.** Its oracle speaks SOAP and has no LDAP form at all — `zmprov -l gis`
