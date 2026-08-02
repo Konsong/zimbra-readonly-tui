@@ -26,6 +26,8 @@ ZRO_ROOT=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 . "$ZRO_ROOT/lib/ui.sh"
 # shellcheck source=lib/account.sh
 . "$ZRO_ROOT/lib/account.sh"
+# shellcheck source=lib/mailbox.sh
+. "$ZRO_ROOT/lib/mailbox.sh"
 # shellcheck source=lib/identity.sh
 . "$ZRO_ROOT/lib/identity.sh"
 # shellcheck source=lib/directory.sh
@@ -87,6 +89,14 @@ zro_startup_check() {
   # survives: every screen that displays the version reads it inside command
   # substitution, and a cache filled in a subshell is a cache nobody has.
   zro_cap_reset
+  # AND THE PROOFS THE EXISTENCE GATE KEEPS, for a reason the capability cache
+  # does not have. That one lives in variables, so a new process starts with it
+  # empty; this one lives in a file whose name carries a process id, and process
+  # ids are reused. A session that inherited a file left behind by an earlier run
+  # would start believing a mailbox exists on the strength of a proof nobody in
+  # this session obtained — which is the one direction this gate may never fail
+  # in. Emptied here rather than trusted to be absent.
+  zro_mbox_forget
   if ! zro_cap_version_load; then
     zro_log error "Zimbra servisine erisilemedi ($ZRO_ZIMBRA_BIN/zmcontrol -v)"
     return "$ZRO_E_UNAVAILABLE"
@@ -460,6 +470,113 @@ zro_screen_alias_note() {
   fi
   printf '%s adresi bir alias; asagidaki bilgiler %s hesabina aittir.\n\n%s' \
     "$(zro_sel_address)" "$(zro_identity_selected_account)" "$body"
+}
+
+# THE EXISTENCE GATE AS A SCREEN: whether the selected account has a mailbox.
+#
+# The first operation in this tool that asks about anything other than the
+# directory, and the precondition every later mailbox screen is built on. It is
+# offered on its own for two reasons. The answer is one an operator wants for its
+# own sake — "this user says their mail has vanished" ends in a different place for
+# an account that has never had a mailbox than for one whose mailbox is empty — and
+# a gate whose answer can be read is a gate an operator can reasonably trust.
+#
+# THE ACCOUNT, NOT THE ADDRESS, exactly as the directory screens do it: an alias
+# answers, and the answer is the account's.
+zro_screen_mailbox() {
+  local id=${1-} acct out rc=0 title
+  if ! title=$(zro_menu_label "$id"); then
+    zro_log error "menu defect, no label for mailbox operation: $id"
+    zro_report_defect
+    return 0
+  fi
+  acct=$(zro_identity_selected_account)
+  if [ -z "$acct" ]; then
+    zro_log error "menu defect, mailbox operation with no selected address: $id"
+    zro_report_defect
+    return 0
+  fi
+
+  # ONE READ, AND IT SAYS SO. This is the one account screen whose cost is exact
+  # before it runs — a single invocation, and none at all for an account this
+  # session has already proven — so it says that rather than the general sentence
+  # about the number of queries depending on what the account turns out to name.
+  zro_ui_notice "Calisiyor" "Zimbra sorgulaniyor, lutfen bekleyin.
+
+Hesap: $acct
+$(zro_mailbox_cost_note)"
+
+  case $id in
+    mailbox-status) out=$(zro_mbox_card "$acct") || rc=$? ;;
+    # One arm today and a refusal for everything else, which is not the same as
+    # having no case at all. The dispatch above routes every id beginning
+    # `mailbox-` here, and the screens behind the gate arrive with their own
+    # tickets — so the second one to be declared and not wired up would otherwise
+    # be drawn as this one, under its own label. An answer shown under a heading
+    # the operator did not choose is the confusion the frame exists to prevent.
+    *) zro_log error "menu defect, no mailbox operation for: $id"
+       zro_report_defect
+       return 0 ;;
+  esac
+
+  # THE SILENT GATE, TOLD APART FROM AN ORDINARY OUTAGE. The shared reporter would
+  # say the query could not be run, which is true and is not what an operator needs
+  # here: what they need is that no mailbox question can be answered at all until
+  # the service returns, and that this costs them nothing they could otherwise have
+  # had.
+  if [ "$rc" -eq "$ZRO_E_UNAVAILABLE" ]; then
+    zro_mailbox_silent_gate
+    return 0
+  fi
+  if [ "$rc" -ne 0 ]; then
+    zro_report_error "$rc"
+    return 0
+  fi
+  zro_show_text "$title" "$(zro_screen_alias_note "$out")"
+}
+
+# What the gate will spend, said before it spends it. Its own sentence rather than
+# the account screens' general one, because this is the second screen in the tool
+# that can be exact — and the only one whose exact answer is sometimes nothing.
+zro_mailbox_cost_note() {
+  printf 'Bu ekran mailbox dizin istatistigini BIR KEZ okur ve mailboxun icine\n'
+  printf 'bakmaz. Bu oturumda daha once yanitlanmis bir hesap icin hic sorgu\n'
+  printf 'calismaz.'
+}
+
+# THE SILENT GATE. The oracle talks SOAP to the mailbox service and has no other
+# form, so a service that does not answer leaves the gate unable to answer for any
+# account at all.
+#
+# ITS OWN SCREEN RATHER THAN THE SHARED FAILURE, because it is not the same
+# sentence. The shared one says a query could not be run and names the two usual
+# causes, which is right and incomplete: what an operator needs to know here is
+# that every mailbox question is refused until the service returns, that this costs
+# them nothing — the commands behind the gate reach the same service — and that
+# the directory screens are unaffected. A bare refusal reads as a broken tool
+# during the incident the tool exists to diagnose.
+zro_mailbox_silent_gate() {
+  local detail
+  detail=$(zro_last_error)
+  [ -n "$detail" ] && detail="
+
+Zimbra ciktisi:
+$detail"
+
+  zro_ui_msgbox "Mailbox sorusu yanitlanamiyor" \
+"Bu hesabin mailboxu olup olmadigi su anda ogrenilemiyor. Bu soruyu yanitlayan
+tek komut mailboxd servisine SOAP ile baglanir, ve servis yanit vermiyor.
+
+Bu bir eksiklik degil, bir sonuc: mailbox ekranlarinin calistirdigi komutlar da
+ayni servise baglanir, yani servis donene kadar hicbiri zaten yanit veremezdi.
+Kaybedilen bir bilgi yok.
+
+Dizin ekranlari etkilenmez: hesap karti, uyelikler ve alan adi karti LDAP
+uzerinden calismaya devam eder.
+
+Kontrol edin:
+  - mailbox servisi durmus     (kontrol: zmcontrol status)
+  - admin sertifikasi gecersiz (kontrol: zmcertmgr viewdeployedcrt)$detail"
 }
 
 # The distribution list card: who receives mail sent to this address, who owns
@@ -976,10 +1093,12 @@ yukseltip yeniden deneyin."
 # A class is not a speed and not a warning: it is what the work grows with, said as
 # the unit one invocation buys. Class 1 is counted in ENTRIES — a directory read
 # about one account, domain or list, plus a read per entry that entry itself names.
-# Class 3 is counted in FILES — one read per log file opened, and which files those
-# are is the operator's arrival window on a trace and the operator's own choice in
-# the viewer. What every declared class has in common is the sentence the whole tool
-# rests on: none of these units is the number of accounts on the server.
+# Class 2 is counted in MAILBOXES — a read about the message store of one account,
+# which is one invocation per account and is cached for the session once it has
+# answered. Class 3 is counted in FILES — one read per log file opened, and which
+# files those are is the operator's arrival window on a trace and the operator's own
+# choice in the viewer. What every declared class has in common is the sentence the
+# whole tool rests on: none of these units is the number of accounts on the server.
 #
 # THE UNIT IS WHAT MAKES THE CLASS CHECKABLE. A screen's cost can then be asserted
 # as a count of the things its own answer named — the entries a record points at,
@@ -995,12 +1114,14 @@ yukseltip yeniden deneyin."
 # directory around it gets. A screen that pays more than once per entry says so at
 # its own declaration, and the suite asserts the multiple rather than the total.
 #
-# CLASS 2 IS ABSENT BECAUSE NO OPERATION MAKES ONE YET. A read inside one mailbox
-# is a real class and it is in the glossary; it is not declared here because the
-# suite holds this table and the list below equal in BOTH directions, and a class
-# nothing claims is a declaration nothing checks. It arrives in the commit that
-# adds the first screen behind the existence gate, which is where a maintainer can
-# see what claims it.
+# CLASS 2 ARRIVED WITH THE OPERATION THAT MAKES ONE. It was left out while nothing
+# claimed it, because the suite holds this table and the list below equal in BOTH
+# directions and a class nothing claims is a declaration nothing checks. What claims
+# it is the existence gate: one read about one account's message store, cached once
+# it has answered, and the precondition every later mailbox screen is built on. Its
+# unit is the mailbox rather than the entry, and the difference is not cosmetic — a
+# directory read answers for an account that has never been used, and this one is
+# the question of whether there is anything there to read.
 #
 # CLASS 4 IS NOT HERE AND CANNOT BE ADDED. A server-wide sweep is what this tool
 # refuses to be, and the refusal is worth nothing if the vocabulary can still name
@@ -1008,6 +1129,7 @@ yukseltip yeniden deneyin."
 # suite refuses the digit itself, in this table and in the list below, so the
 # attempt fails the build rather than passing as an ordinary new entry.
 ZRO_COST_CLASSES='1:entry
+2:mailbox
 3:file'
 
 # The unit a declared class's work is counted in, or a refusal for a class this
@@ -1071,6 +1193,7 @@ ZRO_MENU_OPS='account-card:account:1:Hesap karti
 account-quota:account:1:Kota kullanimi
 account-provenance:account:1:Deger nereden geliyor (hesap mi, devralma mi)
 account-membership:account:1:Dagitim listesi uyelikleri
+mailbox-status:account:2:Mailbox var mi
 dl-card:list:1:Dagitim listesi karti
 domain-card:address:1:Alan adi karti
 trace-recipient:address:3:Teslim takibi: bu adrese gelenler
@@ -1395,6 +1518,7 @@ EOF
 
     case $choice in
       account-*)   zro_screen_account "$choice" ;;
+      mailbox-*)   zro_screen_mailbox "$choice" ;;
       dl-card)     zro_screen_dl "$choice" ;;
       domain-card) zro_screen_domain "$choice" ;;
       trace-*)     zro_screen_trace "$choice" ;;

@@ -162,6 +162,7 @@ assert_contains "$declared" "gam"
 assert_contains "$declared" "gc"
 assert_contains "$declared" "gdl"
 assert_contains "$declared" "gd"
+assert_contains "$declared" "gis"
 
 # gmi is the only read-named admin handler that auto-creates a mailbox, so it
 # may not be declared a read anywhere in the tree.
@@ -276,10 +277,94 @@ for verb in create modify delete remove move mark flag tag empty import post rec
 done
 
 it "the allowlist exposes no mailbox binary at all"
-# Not an M1 statement any more: M5 traces delivery from logs precisely so that
-# the question can be answered without a mailbox, which is what keeps the
-# existence gate out of it.
+# STILL TRUE AFTER THE GATE ARRIVED, and deliberately so. The gate is the
+# precondition for reaching that binary, not a reason to reach it: an operation
+# arrives with the ticket that exposes it, never because the binary it belongs to
+# became reachable. So the function that owns the prefix exists and every call it
+# makes is refused one step after the oracle has already proven it would have been
+# safe — which is exactly the friction the list is for.
 assert_not_contains "$allow" "zmmailbox"
+
+it "the mailbox binary is named in the gate's own file and nowhere else"
+# THE STRUCTURAL HALF OF THE EXISTENCE GATE. A module that could write the binary's
+# name could open a session without the oracle having run, and the oracle is the
+# only thing standing between this tool and creating a mailbox it was asked to
+# describe. So the name is a declaration in one file, read from a variable
+# everywhere else, and a second literal anywhere in the tree fails the build.
+#
+# Comments and double-quoted spans are stripped first, as everywhere in this file:
+# documentation and operator text may name the binary, because neither runs.
+for f in "${SOURCES[@]}"; do
+  case $f in
+    */lib/exec.sh) continue ;;
+  esac
+  assert_not_contains "$(zro_scan_file "$f")" "zmmailbox"
+done
+
+it "and inside that file only as declarations, never as something run"
+# What may name it there is the binary's own declaration and the table entries
+# about it. What may not is a call: the gate builds its vector from the declared
+# name, so a literal appearing in executable position would be a second path to
+# the same binary — and the one that skipped the caller check.
+gate_lines=$(printf '%s\n' "$(zro_scan_file "$ZRO_SRC/lib/exec.sh")" | grep 'zmmailbox')
+assert_contains "$gate_lines" "zmmailbox"
+undeclared=""
+while IFS= read -r line; do
+  [ -n "$line" ] || continue
+  case $line in
+    ZRO_GATED_BIN=zmmailbox) ;;
+    zmmailbox:*) ;;
+    *) undeclared="$undeclared [$line]" ;;
+  esac
+done <<EOF
+$gate_lines
+EOF
+assert_eq "$undeclared" ""
+
+it "and no call site anywhere hands it to the exec gate by name"
+assert_eq "$(printf '%s\n' "$code" | grep -cE 'zro_exec[[:space:]]+zmmailbox')" "0"
+
+it "it reaches the exec gate through one call site, in the file that owns the gate"
+# The call site is dynamic — the binary arrives as the declared name — so the
+# generic extraction above cannot decide it, exactly as it cannot decide the
+# tracer's filters. What is decided here instead is that there is ONE of them, and
+# that it is in the module the exec gate names as the only permitted caller. A
+# second call site would be a second path to a binary that provisions, and it would
+# be invisible to every other case in this file.
+# SC2016: the dollar sign is the point. This pattern is looking for the literal
+# text of a call site, not expanding the variable that call site names.
+# shellcheck disable=SC2016
+GATE_SITE='zro_exec[[:space:]]+"\$ZRO_GATED_BIN"'
+gate_sites=$(printf '%s\n' "$raw_code" | grep -cE "$GATE_SITE")
+assert_eq "$gate_sites" "1"
+assert_eq "$(zro_strip_comments "$ZRO_SRC/lib/mailbox.sh" | grep -cE "$GATE_SITE")" "1"
+
+it "and the caller the exec gate permits is a function that really exists"
+# The permitted caller is compared by name at run time, so a rename that missed one
+# of the two would not fail anything — it would quietly refuse every mailbox
+# operation, or quietly permit whatever function now carries the old name.
+assert_contains "$(zro_scan_file "$ZRO_SRC/lib/exec.sh")" "ZRO_GATE_OWNER=zro_mbox_run"
+assert_contains "$(zro_scan_file "$ZRO_SRC/lib/mailbox.sh")" "zro_mbox_run()"
+
+it "the existence oracle is declared with no LDAP form"
+# `zmprov -l gis` fails with "can only be used with SOAP" — index statistics are
+# not in the directory. TWO INDEPENDENT REFUSALS, because they answer different
+# questions: absence from the LDAP-capable set is what stops the degraded read
+# path ASKING, and absence from the allowlist is what would refuse it if something
+# did. An entry for it would approve a call that can only ever fail, and would turn
+# the outage the gate cannot see through into a second failure on top of it.
+assert_not_contains "$allow" "zmprov:-l:gis"
+ldap_reads=$(printf '%s\n' "$raw_code" | sed -n "s/^ZRO_LDAP_READS='\(.*\)'/\1/p")
+assert_contains "$ldap_reads" " ga "
+assert_not_contains "$ldap_reads" " gis "
+
+it "and the gate consults no attribute in place of it"
+# `zimbraLastLogonTimestamp` was the cheap first layer of an earlier oracle and is
+# refuted: an authentication that registers no session stamps it and creates no
+# mailbox, so it is set on precisely the accounts that have none. It stays on the
+# account card as an operational fact; what it may never be is evidence, and the
+# gate not naming it at all is how that is kept true rather than remembered.
+assert_not_contains "$(zro_scan_file "$ZRO_SRC/lib/mailbox.sh")" "LastLogon"
 
 # The delivery trace hands the gate a literal filter followed by a variable
 # holding the operator's already-validated value. The generic extraction above

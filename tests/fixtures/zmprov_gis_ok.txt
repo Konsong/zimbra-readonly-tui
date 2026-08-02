@@ -1,0 +1,1 @@
+stats: maxDocs:0 numDeletedDocs:0

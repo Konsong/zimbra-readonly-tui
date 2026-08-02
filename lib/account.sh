@@ -150,13 +150,20 @@ zro_prov_fail_code() {
 # with the same record SOAP returns, members and all. So did `zmprov -l gd`,
 # byte for byte with the SOAP answer for the attributes the domain card asks
 # for — measured on 2026-08-02, not assumed from the family resemblance.
+#
+# gis is absent for gmi's reason and not for a reason of its own: index statistics
+# are not in the directory either, and `zmprov -l gis` answers with the same
+# sentence — measured on TEST-C, captured as a fixture. Being absent HERE is what
+# stops the retry from being attempted; being absent from the allowlist is what
+# would refuse it if it were. Two independent refusals, and the existence gate
+# rests on the second.
 ZRO_LDAP_READS=' ga getAccount gam getAccountMembership gc getCos gdl getDistributionList gd getDomain '
 
 # The complete set of subcommands zro_prov_read may hand to the gate. It exists
 # because that one call site passes a variable, which a static reader cannot
 # resolve — so the set of values that variable may hold is written down here,
 # enforced at runtime, and checked against the allowlist by the scanner.
-ZRO_PROV_READS=' ga gam gc gdl gd '
+ZRO_PROV_READS=' ga gam gc gdl gd gis '
 
 zro_prov_ldap_capable() {
   [ -n "${1-}" ] || return 1

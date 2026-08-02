@@ -40,6 +40,36 @@ ZRO_LIB_EXEC_LOADED=1
 # therefore refused. What it may NOT be used for is the count of accounts in a
 # domain: that is `gaa`, it is a server-wide sweep, and it is nowhere here.
 #
+# `zmprov gis` (getIndexStats) is the EXISTENCE ORACLE, and it is the only reason
+# any mailbox screen can exist at all. `zmmailbox` creates a mailbox for an account
+# that has none, during session setup rather than inside any subcommand, so a
+# session may be opened only after a command INCAPABLE OF PROVISIONING has proven
+# the mailbox is already there. This is that command: GetIndexStats passes
+# DO_NOT_AUTOCREATE, and on the lab server the `mailbox` table held the same rows
+# with the same ids either side of it while `mailbox.log` gained no line about
+# creating one. It does not write the index either — the index directory of an
+# unindexed mailbox was snapshotted with nanosecond mtimes and came back
+# byte-identical.
+#
+# It proxies to the account's home server, and it reports a missing account and a
+# missing mailbox IN DIFFERENT WORDS, which is what lets the gate answer three
+# questions rather than two. See docs/adr/0003-gis-is-the-existence-oracle.md.
+#
+# `zimbraLastLogonTimestamp` was the cheap first layer of that oracle and is not
+# here in any form, because it is not a command: an attribute cannot be an oracle,
+# and that one is written by an authentication that never registers a session. The
+# accounts it gets wrong are exactly the accounts the gate exists to protect.
+#
+# `zmprov:-l:gis` IS DELIBERATELY ABSENT, AND THAT WAS DECIDED RATHER THAN LEFT.
+# LDAP mode cannot answer it at all: measured on TEST-C, `zmprov -l gis` fails with
+# `invalid request: can only be used with SOAP`, because index statistics do not
+# live in the directory. An entry for it would approve a call that can only ever
+# fail — and it would do worse than that, because zro_prov_read reaches for LDAP
+# mode on its own whenever mailboxd is unreachable: the outage this oracle cannot
+# see through would arrive as a second failure instead of as itself. So the gate is
+# SILENT while the mailbox service is down, the screen names that as the cause, and
+# nothing behind the gate is offered meanwhile.
+#
 # `zmmsgtrace` is the delivery trace. Every filter that binary takes is a flag
 # which is the whole operation, so each is approved the same way `zmcontrol -v`
 # is: as a two-token entry, with the operator's already-validated value following
@@ -133,6 +163,8 @@ zmprov:gdl
 zmprov:getDistributionList
 zmprov:gd
 zmprov:getDomain
+zmprov:gis
+zmprov:getIndexStats
 zmprov:-l:ga
 zmprov:-l:getAccount
 zmprov:-l:gam
@@ -380,6 +412,43 @@ zro_bin_available() {
   [ -x "$path" ]
 }
 
+# ------------------------------------------------ the binary behind the gate --
+#
+# One binary in this program may not be reached by whoever wants it. It CREATES A
+# MAILBOX for an account that has none — during session setup rather than inside
+# any subcommand, so no choice of subcommand avoids it — which means a session may
+# be opened only after the oracle above has proven the mailbox was already there.
+#
+# Two facts about it are declared here rather than left to a caller, because both
+# are things a caller could forget once and never be told about.
+#
+# ITS VECTOR DOES NOT BEGIN WITH ITS OPERATION. What it really takes is
+# `-z -m <account> <subcommand>`, which puts the subcommand fourth — out of reach
+# of the two- and three-token prefix model this list is built on, and an entry
+# like `zmmailbox:-z:-m` would approve everything behind it, which is exactly what
+# `zmprov:-l` is kept out of the list for. So a caller hands the gate the
+# SUBCOMMAND in the token position and the account behind it, where the allowlist
+# reads both, and the layout below is what turns that back into the vector the
+# binary needs. The allowlist sees an operation; the binary gets its prefix; and
+# no module writes `-z` or `-m` at all.
+#
+# ONE FUNCTION MAY REACH IT. An oracle is worth nothing if a screen can open a
+# session without running it, so this binary is refused from every caller but the
+# function that owns the gate — and refused BEFORE the allowlist is consulted,
+# because who is asking and what is approved are different questions. The day an
+# operation behind the gate is approved is the day a bypass would otherwise start
+# reading as an ordinary allowlist denial.
+#
+# Literals rather than overridable variables, for the reason lib/capability.sh
+# gives about the account every command runs as: a safety check may not have an
+# off switch. Nothing here says where the binary lives — that is the root table
+# above, and this binary has no entry there until an operation behind the gate
+# needs one, which is the same ticket that will put its first subcommand on the
+# allowlist.
+ZRO_GATED_BIN=zmmailbox
+ZRO_GATED_PREFIX=(-z -m)
+ZRO_GATE_OWNER=zro_mbox_run
+
 # The only path from this program to an external command.
 #
 #   $1  binary name, resolved under the root it declares in $ZRO_BIN_ROOTS
@@ -398,6 +467,26 @@ zro_exec() {
   fi
   local bin=$1 token=$2
   shift 2
+
+  # WHO IS ASKING, BEFORE WHAT IS APPROVED. Reaching the gated binary from
+  # anywhere but the function that owns the existence gate is a BYPASS, not an
+  # unapproved operation, and the two have to arrive in the log as different
+  # sentences: a maintainer sent to check the allowlist about a call that skipped
+  # the oracle would read the wrong file and find nothing wrong with it.
+  if [ "$bin" = "$ZRO_GATED_BIN" ]; then
+    if [ "${FUNCNAME[1]-}" != "$ZRO_GATE_OWNER" ]; then
+      zro_log error \
+        "denied, the gated binary is reachable only through the existence gate, not from: ${FUNCNAME[1]-top level}"
+      return "$ZRO_E_DENIED"
+    fi
+    # The account it is about stands first in the data, which is where the layout
+    # below takes it from. Refused rather than defaulted: a vector missing it
+    # would run the binary against whatever the subcommand happened to be.
+    if [ $# -lt 1 ]; then
+      zro_log error "denied, the gated binary needs the account it is about"
+      return "$ZRO_E_DENIED"
+    fi
+  fi
 
   # THE WHOLE VECTOR IS OFFERED TO THE GATE, not just the first two tokens. The
   # third one decides when the second only selects a mode, and every token after
@@ -427,8 +516,18 @@ zro_exec() {
 
   [ -n "$ZRO_TIMEOUT_BIN" ] || return "$ZRO_E_UNAVAILABLE"
 
+  # THE FIXED PREFIX, PUT BACK WHERE THE BINARY EXPECTS IT. The allowlist has
+  # already read this vector with the subcommand in the token position, which is
+  # the whole reason the two orders differ — and the account it names has been
+  # read there as data, so the flag rule above saw it exactly as it sees an
+  # account name after `zmprov ga`.
   local -a argv
-  argv=("$ZRO_TIMEOUT_BIN" -k 5 "$ZRO_TIMEOUT" "$path" "$token" "$@")
+  argv=("$ZRO_TIMEOUT_BIN" -k 5 "$ZRO_TIMEOUT" "$path")
+  if [ "$bin" = "$ZRO_GATED_BIN" ]; then
+    argv+=("${ZRO_GATED_PREFIX[@]}" "$1")
+    shift
+  fi
+  argv+=("$token" "$@")
 
   if [ "$mode" = runuser ]; then
     [ -n "$ZRO_RUNUSER" ] || return "$ZRO_E_UNAVAILABLE"

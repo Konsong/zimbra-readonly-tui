@@ -318,6 +318,56 @@ assert_fail zro_allowed zmprov gmi
 assert_fail zro_allowed zmprov getMailboxInfo
 assert_fail zro_allowed zmprov -l gmi
 
+# ------------------------------------------------------ the existence oracle --
+
+it "approves the read the existence gate is built on, in both spellings"
+# GetIndexStats passes DO_NOT_AUTOCREATE where GetMailbox one letter away does
+# not: the same question asked of a mailbox that is not there throws instead of
+# provisioning. Both spellings are real — the server's own help line reads
+# `getIndexStats(gis)` — and this list carries both, as it does for every other
+# zmprov read.
+assert_ok zro_allowed zmprov gis
+assert_ok zro_allowed zmprov gis 'ahmet.yilmaz@example.com'
+assert_ok zro_allowed zmprov getIndexStats
+assert_ok zro_allowed zmprov getIndexStats 'ahmet.yilmaz@example.com'
+
+it "and refuses its LDAP form, which was decided rather than left out"
+# `zmprov -l gis` fails with `invalid request: can only be used with SOAP`,
+# measured on the lab server and captured as a fixture: index statistics are not
+# in the directory. An entry would approve a call that can only ever fail — and
+# the degraded read path reaches for LDAP mode on its own, so it would turn the
+# outage this oracle cannot see through into a second failure on top of it. The
+# gate is silent while the mailbox service is down, and the screen says so.
+assert_fail zro_allowed zmprov -l gis
+assert_fail zro_allowed zmprov -l gis 'ahmet.yilmaz@example.com'
+assert_fail zro_allowed zmprov -l getIndexStats
+assert_fail zro_ldap_form_allowed gis 'ahmet.yilmaz@example.com'
+
+it "and refuses the flags it would otherwise carry into the data position"
+for form in -t --temp -e -fd -v -a; do
+  assert_fail zro_allowed zmprov gis "$form"
+  assert_fail zro_allowed zmprov gis 'ahmet.yilmaz@example.com' "$form"
+done
+
+it "the mailbox binary is on the list in no form at all"
+# The gate arrived without an operation behind it, deliberately: it is the
+# precondition for reaching that binary, not a reason to reach it. Every call the
+# prefix owner makes is refused here, one step after the oracle has already proven
+# it would have been safe — which is exactly the friction this list is for.
+entries=$(zro_allow_entries)
+assert_not_contains "$entries" "zmmailbox"
+for sub in gaf gms search gc gmi gru sf gm; do
+  assert_fail zro_allowed zmmailbox "$sub"
+  assert_fail zro_allowed zmmailbox -z
+  assert_fail zro_allowed zmmailbox -m 'ahmet.yilmaz@example.com'
+done
+
+it "and the binary it names is the one the gate refuses from a foreign caller"
+# Two declarations that have to agree, and nothing else holds them together: the
+# name the gate compares against and the name that is absent from this list.
+assert_eq "$ZRO_GATED_BIN" "zmmailbox"
+assert_eq "$(printf '%s\n' "${ZRO_GATED_PREFIX[@]}")" "$(printf -- '-z\n-m')"
+
 it "denies a binary that is not on the list at all"
 assert_fail zro_allowed zmmailbox search
 assert_fail zro_allowed bash -c

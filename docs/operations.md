@@ -155,6 +155,22 @@ report is the claim.
 - **Kota kullanimi** — mailbox id, bytes used, quota limit, percentage full.
   Accounts with no quota are shown as `sinirsiz` rather than divided by zero.
 - **Dagitim listesi uyelikleri** — the distribution lists the account belongs to.
+- **Mailbox var mi** — whether the account has a mailbox at all. Three answers,
+  three screens: the mailbox is there; the account has none *yet*, meaning it is
+  provisioned and has never been logged into or delivered to; or there is no such
+  account.
+
+  **An account with no mailbox is a result, not an error.** A mailbox is created
+  on first login or first delivery, not when the account is, so an account that
+  answers `mailboxu yok` is one nobody has used. The screen says so, and it says
+  out loud that this tool will not create one: opening a mailbox that is not
+  there is exactly how it would be created.
+
+  This screen is the **existence gate** every later mailbox screen is built on.
+  It runs one command — `zmprov gis`, which asks for index statistics and throws
+  rather than provisioning — and it **remembers a yes for the session**. Asking a
+  second time about the same account costs nothing. A *no* is never remembered,
+  because the next message delivered to that account makes it wrong.
 - **Teslim takibi: bu adrese gelenler** — asks for an arrival window, then shows
   what the mail transfer agent's log says about messages **for** that address. No
   mailbox is opened, so this is safe on an account that has never logged in.
@@ -362,9 +378,31 @@ What still works, and what does not:
 | Hesap karti | works in full |
 | Dagitim listesi uyelikleri | works in full |
 | Kota limiti | works in full |
+| Mailbox var mi | **refused**, with the cause named |
 
-Every screen keeps working, because none of them needs the mailbox service any
-more.
+Every directory screen keeps working, because none of them needs the mailbox
+service any more.
+
+**The one screen that cannot is the existence gate, and that is called a silent
+gate.** Its oracle speaks SOAP and has no LDAP form at all — `zmprov -l gis`
+answers `invalid request: can only be used with SOAP`, because index statistics
+are not in the directory. So while `mailboxd` is unreachable the gate cannot
+establish anything about any account, and it refuses instead of guessing:
+
+```
+Mailbox sorusu yanitlanamiyor
+```
+
+**Read that as a refusal, never as an absence.** An outage reported as "this
+account has no mailbox" would be the most damaging sentence this tool could
+produce, so it is not a sentence the tool can produce: the gate distinguishes a
+message it recognises from a question it could not ask, and only the first is an
+answer.
+
+**It costs you nothing you could otherwise have had.** Every command behind the
+gate reaches the same service, so with `mailboxd` down none of them could have
+answered either. The screen says this too, because a bare refusal during the
+incident the tool exists to diagnose reads as a broken tool.
 
 **Read the banner as a caveat, not as a failure.** `zmprov` expands values
 inherited from a COS in *both* modes, so those are not what LDAP mode costs.
@@ -383,8 +421,12 @@ The complete set, enforced centrally in `lib/exec.sh`:
 
 ```
 zmprov ga        getAccount                 zmprov -l ga    same, from LDAP
+zmprov ga -e     entry-only account read    (no LDAP form — see below)
 zmprov gam       getAccountMembership       zmprov -l gam   same, from LDAP
 zmprov gc        getCos                     zmprov -l gc    same, from LDAP
+zmprov gdl       getDistributionList        zmprov -l gdl   same, from LDAP
+zmprov gd        getDomain                  zmprov -l gd    same, from LDAP
+zmprov gis       getIndexStats              (no LDAP form — see below)
 zmcontrol -v     version
 zmmsgtrace --recipient                      delivery trace by recipient
 zmmsgtrace --sender                         delivery trace by sender
@@ -392,6 +434,22 @@ zmmsgtrace --id                             delivery trace by message-id
 tail -n                                     the log viewer's bounded read
 gzip -dc                                    decompress a rotated log TO STDOUT
 ```
+
+**Two of these have no LDAP form, and in both cases that was decided rather than
+left out.** `zmprov -l gis` cannot answer at all — index statistics are not in
+the directory — and `zmprov -l ga -e` has never been run on the lab server, so it
+is not written down here on the strength of resembling one that has. The tool
+asks the allowlist *before* it retries a read against LDAP, so a question it can
+only answer through `mailboxd` reports the outage that stopped it rather than an
+allowlist denial, which would mean a defect nobody committed.
+
+**`zmmailbox` is not on this list, and the gate that guards it is already
+built.** That binary creates a mailbox for an account that has none during
+session setup, so a single function owns its whole argument prefix, the exec gate
+refuses the binary from any other caller, and a static test fails the build if
+another call site so much as names it. No subcommand behind it is approved yet:
+an operation arrives with the ticket that exposes it, never because the binary it
+belongs to became reachable.
 
 `zmcontrol -v` runs **once per session**, at startup. Its answer is shown on the
 main menu, which is returned to after every operation, so re-reading it there
@@ -536,6 +594,31 @@ directory is safe — `zmprov` fails at the account lookup and never reaches the
 mailbox code. An account present only in Active Directory and not synced into
 Zimbra is therefore also safe. The population at risk is accounts that exist in
 Zimbra's directory but have never logged in or received mail.
+
+### The oracle the existence gate rests on
+
+A fourth question follows from the first: if every `zmmailbox` call can create a
+mailbox, what may be trusted to prove one already exists? It was answered on
+2026-08-02, from the `zm-mailbox` source and then by experiment on a live
+Zimbra 9.0.0 server, and recorded in
+[`docs/research/2026-08-02-existence-gate-settled.md`](research/2026-08-02-existence-gate-settled.md).
+
+| Question | Answer |
+|---|---|
+| Does `zmprov gis` provision a mailbox for an account that has none? | **No.** `GetIndexStats` passes `DO_NOT_AUTOCREATE`. The `mailbox` table held the same five rows with the same ids either side of the run, and `mailbox.log` gained no `Creating mailbox with id` line. |
+| Does it write the search index it reports on? | **No.** The index directory of an unindexed mailbox was snapshotted with nanosecond mtimes before and after: byte-identical, directory mtime included. |
+| Does it answer for an account homed on another server? | **Yes.** It extends `AdminDocumentHandler`, declares `TARGET_ACCOUNT_PATH` and does not override `proxyIfNecessary()`, so the request is proxied to the account's home host. |
+| Is `zimbraLastLogonTimestamp` evidence that a mailbox exists? | **No — this was believed and is refuted.** A SOAP `AuthRequest` sent with no `<context>` header, or with `<nosession/>`, stamps the attribute and creates no mailbox. The accounts that gets wrong are exactly the provisioned-but-never-used population the gate protects. The attribute stays on the account card as an operational fact and decides nothing. |
+
+The four outcomes the gate classifies — mailbox present, mailbox absent, account
+absent, and the LDAP-mode refusal — were captured from that server verbatim and
+are committed as the fixtures the tests run against. All three failures exit `2`,
+which is why the gate reads Zimbra's message and never its exit status.
+
+**One claim is bounded rather than closed.** Whether `gis` would *create* an
+index directory that was absent could not be observed: every mailbox on the test
+server already owns one, created with the mailbox, and no state is known that
+produces a mailbox without it.
 
 ### Why usage is no longer shown
 
