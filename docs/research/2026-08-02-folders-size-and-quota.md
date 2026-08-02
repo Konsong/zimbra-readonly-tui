@@ -40,6 +40,36 @@ sensitive to exactly the kind of change it was looking for, and saw none from th
 **Bounded claim.** This says nothing about a mailbox that does **not** exist: the gate is what stands between
 these reads and that case, and ADR-0001 records why no `zmmailbox` invocation may be used to find out.
 
+### The global count of `Creating mailbox` lines is not the check — the per-account one is
+
+`mailbox.log`'s count of `Creating mailbox with id` lines moved from 1 to 3 during this work, and **none of it
+was this tool**. The three lines name Zimbra's own accounts and Zimbra's own initiators:
+
+```
+16:49:04  [LmtpServer-1]  Creating mailbox with id 10 … for zimbra.auth.test@sirket.lcl
+22:00:06  [qtp…/service/soap/SearchRequest] [name=spam.zvj192rt@sirket.lcl;aname=zimbra;…]
+22:00:08  [qtp…/service/soap/SearchRequest] [name=ham.gdsglt1op@sirket.lcl;aname=zimbra;…]
+```
+
+A delivery, and the 22:00 spam/ham training run. So on a live server that count is a **server fact, not a
+run fact**, and an acceptance procedure resting on it would raise a false alarm on any box where the trainer
+happens to fire mid-session.
+
+What decides is asked per account. After every screen had been run against it, the never-used fixture account
+still had no mailbox:
+
+```
+$ zmprov gis zimscope-fixture-ldaponly-20260731@sirket.lcl
+ERROR: service.FAILURE (system failure: mailbox not found for account 344c2c64-…)   (exit 2)
+$ select count(*) from zimbra.mailbox where account_id='344c2c64-…'   →  0
+```
+
+Two independent readings, one through the oracle and one straight at the table the oracle reports on.
+**The gate held.**
+
+`mailbox.log` is also worth a note for whoever reads it next: it carries a byte that makes `grep` treat it as
+binary, so a plain `grep` prints `Binary file … matches` and shows nothing. Use `grep -a`.
+
 ## 2. `gms` and the locale hazard — the reason `-v` is on the allowlist
 
 | Command | Output |

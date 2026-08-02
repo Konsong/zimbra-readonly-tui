@@ -80,11 +80,24 @@ field() { printf '%s' "$1" | awk -F'\t' -v n="$2" '{print $n}'; }
 # ------------------------------------------------ the folder table, parsed --
 
 it "reads every folder the listing prints, and nothing else"
-# Thirteen folders and two header lines. The headers are refused by what is IN
+# Fifteen folders and two header lines. The headers are refused by what is IN
 # the columns rather than by being the first two lines: a reader that skipped two
 # lines would take the first folder for a header the day a blank line appears
 # above it.
-assert_eq "$(rows_of "$GAF" | wc -l)" "13"
+assert_eq "$(rows_of "$GAF" | wc -l)" "15"
+
+it "and a nested folder is a row like any other, with its whole path"
+# MEASURED ON THE LAB SERVER, because the reader cuts the path at a fixed column
+# and an INDENTED path would arrive with leading spaces — every mailbox with
+# subfolders would then answer 'unknown folder' on the folder screens. Two nested
+# folders were created there and the listing printed them flush: hierarchy is in
+# the path and nowhere else, and `gf` took the full path back unchanged.
+rows=$(rows_of "$GAF")
+assert_contains "$rows" "/Projeler/2026"
+assert_contains "$rows" "/Projeler/2026/Q3 Raporlar"
+row=$(printf '%s\n' "$rows" | grep 'Q3 Raporlar$')
+assert_eq "$(field "$row" 1)" "261"
+assert_eq "$(field "$row" 5)" "/Projeler/2026/Q3 Raporlar"
 
 it "and keeps a folder path that contains a space"
 # '/Emailed Contacts' ships with every mailbox Zimbra creates. A reader that split
@@ -361,7 +374,7 @@ assert_ok zro_validate_folder_path '/'
 
 it "the folder card counts what the listing named, and says what it counted"
 out=$(zro_store_folders_body "$ACCT" "$(rows_of "$GAF")")
-assert_contains "$out" "Klasor sayisi        : 13"
+assert_contains "$out" "Klasor sayisi        : 15"
 assert_contains "$out" "Toplam oge           : 2"
 assert_contains "$out" "Okunmamis            : 1"
 assert_contains "$out" "/Emailed Contacts"
@@ -417,6 +430,40 @@ it "the size card gives both forms and names the option it asked for"
 out=$(zro_store_size_body "$ACCT" 700)
 assert_contains "$out" "Boyut                : 700 B (700 bayt)"
 assert_contains "$out" "HAM BAYT"
+
+it "and a size this program refused to read is a field on it, not a missing screen"
+fresh
+out=$(ZRO_MOCK_ZMMAILBOX_GMS__V_OUT="$GMS_LOCALE" proven zro_store_size_card "$ACCT")
+assert_contains "$out" "Boyut                : $ZRO_TXT_UNKNOWN"
+assert_contains "$out" "sayi olarak vermedi"
+assert_not_contains "$out" "1,44"
+
+it "and every other failure of that read is still a failure"
+# The refusal above is about ONE shape of answer. A read the gate stopped, or one
+# the service could not answer at all, has nothing to draw and says so.
+fresh
+assert_status "$ZRO_E_NO_MAILBOX" no_mailbox zro_store_size_card "$BARE"
+fresh
+assert_status "$ZRO_E_UNAVAILABLE" outage zro_store_size_card "$ACCT"
+
+it "the quota screen keeps the limit when the usage is the unreadable half"
+fresh
+out=$(ZRO_MOCK_ZMMAILBOX_GMS__V_OUT="$GMS_LOCALE" \
+      ZRO_MOCK_ZMPROV_GA_OUT="$FIX/zmprov_ga_active.txt" \
+      proven zro_store_quota_card "$ACCT")
+assert_contains "$out" "Kota limiti          : 5.0 GB"
+assert_contains "$out" "Kullanilan           : $ZRO_TXT_UNKNOWN"
+assert_contains "$out" "Doluluk              : $ZRO_TXT_UNKNOWN (kullanim okunamadi)"
+
+it "and neither half is ever rendered as zero"
+# An unreadable usage shown as 0 would report a full mailbox as empty; an
+# unreadable limit shown as 0 would report a limited account as unlimited. Both
+# are the same mistake in opposite directions.
+out=$(zro_store_quota_body "$ACCT" 'mail01.example.com' \
+      "$(printf '5368709120%saccount' "$ZRO_TAB")" "")
+assert_contains "$out" "Kullanilan           : $ZRO_TXT_UNKNOWN"
+assert_not_contains "$(printf '%s\n' "$out" | grep '^Doluluk')" "%0"
+assert_not_contains "$(printf '%s\n' "$out" | grep '^Kullanilan')" "0 B"
 
 # ---------------------------------------------------------- quota usage --
 
@@ -484,6 +531,12 @@ assert_contains "$out" "5.0 GB"
 assert_contains "$out" "700 B"
 assert_eq "$(ran | grep -c '^zmmailbox')" "1"
 assert_eq "$(ran | grep -c "$(printf '^zmprov\tga')")" "1"
+
+it "and it never asks where the limit was set, which is a screen of its own"
+# The entry-only read is a second invocation of the same entry, and this screen
+# already pays for two reads of two different things. Asking here would make it
+# three, for a caveat the operator did not ask for.
+assert_not_contains "$(ran)" "$(printf '\t-e')"
 
 rm -f -- "$ZRO_MOCK_LOG" "$ZRO_MBOX_PROOF_FILE"
 zro_t_report

@@ -564,11 +564,17 @@ zro_mailbox_report() {
 # What a mailbox screen will spend, said before it spends it.
 #
 # THE GATE'S OWN SENTENCE IS NOT THE OTHERS', and the difference is the point of
-# saying anything. The existence screen reads one index statistic and nothing else,
-# and costs NOTHING at all for an account this session has already proven — the
-# only exact zero in the tool. Every screen behind it pays that gate once and then
-# opens the mailbox, and the two folder screens pay twice on top: the listing they
-# offer a folder from, and the folder itself.
+# saying anything. The existence screen reads one index statistic and nothing
+# else, and costs NOTHING at all for an account this session has already proven —
+# the only exact zero in the tool.
+#
+# EVERY SCREEN BEHIND IT PAYS THAT GATE FIRST, and says so, because a screen that
+# promised two queries and made three would be understating the one cost this
+# program can be exact about. It is paid once per account per session, so the
+# second screen an operator opens about the same account does not pay it again.
+ZRO_TXT_GATE_COST='Bu hesabin mailboxu bu oturumda ilk kez soruluyorsa kapi bir sorgu daha ekler;
+daha once soruldiysa eklemez.'
+
 zro_mailbox_cost_note() {
   case ${1-} in
     mailbox-status)
@@ -577,11 +583,23 @@ zro_mailbox_cost_note() {
       printf 'calismaz.' ;;
     mailbox-folder|mailbox-folder-grants)
       printf 'Bu ekran once klasor listesini, sonra sectiginiz klasoru okur: iki\n'
-      printf 'sorgu. Her biri birkac saniye surebilir.' ;;
+      printf 'sorgu. %s' "$ZRO_TXT_GATE_COST" ;;
     mailbox-quota)
+      # THE COS READ IS NAMED because it is a third invocation this screen cannot
+      # predict: an account whose limit is inherited costs one more than an
+      # account carrying its own, and which of the two it is is what the screen
+      # went to find out.
       printf 'Bu ekran mailbox boyutunu ve hesap kaydini okur: iki sorgu.\n'
-      printf 'Kullanim degeri mailboxtan, limit ise dizinden gelir.' ;;
+      printf 'Kullanim mailboxtan, limit dizinden gelir; limit COS kaydindan\n'
+      printf 'devralinmissa bir sorgu daha. %s' "$ZRO_TXT_GATE_COST" ;;
+    mailbox-size|mailbox-folders)
+      printf 'Bu ekran mailboxun icini BIR KEZ okur. %s' "$ZRO_TXT_GATE_COST" ;;
+    # Reached only by an operation declared in the one list and not named here,
+    # which is a defect in this file rather than a screen with no cost. Said as
+    # the general sentence rather than silently: an operator is told a query is
+    # running, and the log carries the name nobody wrote a note for.
     *)
+      zro_log error "menu defect, no cost note for mailbox operation: ${1-}"
       printf 'Bu ekran mailboxun icini okur; sorgu birkac saniye surebilir.' ;;
   esac
 }
@@ -607,7 +625,6 @@ okunmamis oge sayisidir.'
 # value that is not one of those positions names nothing and is refused.
 zro_menu_folder() {
   local id=${1-} acct title rows rc=0 choice line i=0 path out
-  local unread count
   local -a paths=() items=()
 
   if ! title=$(zro_menu_label "$id"); then
@@ -632,17 +649,12 @@ $(zro_mailbox_cost_note "$id")"
 
   while IFS= read -r line; do
     [ -n "$line" ] || continue
-    # The id and the view are read past rather than read: the row is positional,
-    # so the fields in front of the ones this menu shows still have to be stepped
-    # over. Both are on the folder listing, which is the screen for looking at
-    # them; here they would be noise on a line an operator picks a folder from.
-    line=${line#*"$ZRO_TAB"}
-    line=${line#*"$ZRO_TAB"}
-    unread=${line%%"$ZRO_TAB"*};  line=${line#*"$ZRO_TAB"}
-    count=${line%%"$ZRO_TAB"*};   path=${line#*"$ZRO_TAB"}
+    # A row is taken apart by the module that decides what a row is. Written out
+    # here it would be the third reader of that format, and the one a column added
+    # to the listing would silently leave behind.
     i=$((i + 1))
-    paths+=("$path")
-    items+=("$i" "$path ($count oge, $unread okunmamis)")
+    paths+=("$(zro_store_row_path "$line")")
+    items+=("$i" "$(zro_store_row_label "$line")")
   done <<EOF
 $rows
 EOF

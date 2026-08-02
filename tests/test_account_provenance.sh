@@ -216,9 +216,16 @@ ZRO_MOCK_ZMPROV_GA_OUT="$EFFECTIVE" ZRO_MOCK_ZMPROV_GC_OUT="$FIX/zmprov_gc_ok.tx
   zro_account_card "$POPULATED" >/dev/null
 assert_not_contains "$(ran)" "$(printf '\t-e')"
 
-it "and neither does the quota screen, which is where the question comes up"
+it "and neither does the read the quota screen takes its limit from"
+# The quota screen is where the question comes up — is this limit set on the
+# account or inherited — and it still answers with the value in force and nothing
+# about its origin. That screen is a mailbox screen now and lives in
+# tests/test_store.sh, which counts its reads; what belongs here is the limit
+# read it shares with the card.
 : >"$ZRO_MOCK_LOG"
-ZRO_MOCK_ZMPROV_GA_OUT="$EFFECTIVE" zro_account_quota "$POPULATED" >/dev/null
+ZRO_MOCK_ZMPROV_GA_OUT="$EFFECTIVE" \
+  zro_account_quota_limit "$(ZRO_MOCK_ZMPROV_GA_OUT="$EFFECTIVE" \
+                             zro_account_fetch "$POPULATED")" >/dev/null
 assert_not_contains "$(ran)" "$(printf '\t-e')"
 
 it "it validates the address before running anything"

@@ -141,6 +141,12 @@ recognised**, because a card that showed only the grantee kinds this tool knows
 would report a folder shared with a whole domain as a folder shared with nobody.
 A `public` grant names nobody, and that empty grantee is the answer rather than a
 value nobody read.
+
+**Two words on screen, because they are two things.** A folder's grants reach the
+operator as `paylasim` and a distribution list's as `yetki`, each used throughout
+its own screen and never mixed inside one: an operator looking at a folder is
+asking who can see it, and an operator looking at a list is asking who may act on
+it.
 _Avoid_: share, permission — a share is what a grant produces
 
 **Quota usage**:

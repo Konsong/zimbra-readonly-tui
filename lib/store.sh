@@ -56,10 +56,16 @@ ZRO_STORE_COL_PATH=42
 # `gfg` prints its own fixed-width table, and it is a different one:
 # `%11.11s  %8.8s  %s`. Two tables, two sets of offsets, declared apart — sharing
 # one set would be a folder listing and a grant listing agreeing by accident.
+#
+# EACH OFFSET IS THE FORMAT STRING'S OWN, never a field widened to swallow the
+# separator beside it. A field that covered its own two spaces would still read
+# correctly — the values are trimmed — and it would document a table that is not
+# the one above, which is exactly the accident declaring them separately is meant
+# to prevent.
 ZRO_STORE_COL_PERMS=0
 ZRO_STORE_W_PERMS=11
-ZRO_STORE_COL_GTYPE=11
-ZRO_STORE_W_GTYPE=10
+ZRO_STORE_COL_GTYPE=13
+ZRO_STORE_W_GTYPE=8
 ZRO_STORE_COL_GRANTEE=23
 
 # One level of the folder serializer's indentation. `gf` answers in JSON, pretty
@@ -124,7 +130,11 @@ zro_store_parse_folders() {
 zro_store_parse_grants() {
   local line perms kind grantee
   while IFS= read -r line; do
-    [ "${#line}" -ge "$ZRO_STORE_COL_GTYPE" ] || continue
+    # Long enough to carry a grantee KIND, which every row has and the shortest
+    # possible row ends with: a public grant names nobody, so its line stops where
+    # that field does. A bound written as a column offset would be a length by
+    # coincidence rather than by meaning.
+    [ "${#line}" -ge $((ZRO_STORE_COL_GTYPE + ZRO_STORE_W_GTYPE)) ] || continue
     perms=$(zro_store_trim "${line:$ZRO_STORE_COL_PERMS:$ZRO_STORE_W_PERMS}")
     kind=$(zro_store_trim "${line:$ZRO_STORE_COL_GTYPE:$ZRO_STORE_W_GTYPE}")
     grantee=$(zro_store_trim "${line:$ZRO_STORE_COL_GRANTEE}")
@@ -136,6 +146,29 @@ zro_store_parse_grants() {
     case $perms in *[A-Za-z]*) ;; *) continue ;; esac
     printf '%s\t%s\t%s\n' "$perms" "$kind" "$grantee"
   done
+}
+
+# A ROW'S FIELDS, FOR A CALLER THAT WANTS ONE OF THEM. The rows above are
+# positional, and a caller stepping over the fields it does not want is a second
+# reader of this format — so the two the menu needs are read here, in the module
+# that decides what a row is. The screens that draw the whole table take it apart
+# themselves, because they want every field and would gain nothing.
+zro_store_row_path() {
+  local row=${1-}
+  printf '%s' "${row##*"$ZRO_TAB"}"
+}
+
+# What one folder reads as on the screen an operator picks from: the path, then
+# what is in it. The counts are the reason the label exists at all — a list of
+# bare paths gives nobody a reason to choose one.
+zro_store_row_label() {
+  local row=${1-} rest unread count
+  rest=${row#*"$ZRO_TAB"}          # past the id
+  rest=${rest#*"$ZRO_TAB"}         # past the view
+  unread=${rest%%"$ZRO_TAB"*}
+  rest=${rest#*"$ZRO_TAB"}
+  count=${rest%%"$ZRO_TAB"*}
+  printf '%s (%s oge, %s okunmamis)' "$(zro_store_row_path "$row")" "$count" "$unread"
 }
 
 # One key of the folder the operator asked about, and never a key of a child.
@@ -252,8 +285,8 @@ zro_store_settle() {
 # The subcommand is written literally here and at the three call sites below, and
 # never handed in by a caller: a static reader can then prove which operations
 # this module is able to ask for, exactly as it proves which filters the delivery
-# trace can pass. ZRO_STORE_READS above is the same claim in a form the suite can
-# hold against the allowlist.
+# trace can pass. The suite extracts those four words and holds them equal to the
+# allowlist's entries for that binary, in both directions.
 zro_store_folders_fetch() {
   local acct=${1-} err out rows rc=0
   zro_validate_email "$acct" || return "$ZRO_E_INPUT"
@@ -327,11 +360,21 @@ ZRO_TXT_STORE_PUBLIC='(herkes)'
 # A size in both forms, always. The human form is what an operator reads and the
 # byte count is what they can check against anything else — a quota, a previous
 # reading, a colleague's number — and neither is enough on its own.
+#
+# A VALUE THIS PROGRAM COULD NOT READ IS A FIELD, NOT A FAILURE. It reaches the
+# operator as 'bilinmiyor', which is the word this tool reserves for a fact about
+# ITSELF — the size arrived in a shape the reader refuses — as against 'tanimsiz',
+# which is a fact about the account. The distinction is CONTEXT.md's and it is
+# what keeps the rest of a screen readable when one number is not.
 zro_store_size_field() {
   local bytes=${1-} human
   human=$(zro_human_bytes "$bytes") || { printf '%s' "$ZRO_TXT_UNKNOWN"; return 0; }
   printf '%s (%s bayt)' "$human" "$bytes"
 }
+
+# Said where a size should have been, and only there. The screen still draws.
+ZRO_TXT_STORE_SIZE_UNREADABLE='Sunucu boyutu sayi olarak vermedi; bu arac bicimlenmis bir degeri
+okumaz, cunku ondalik ayraci sunucunun yerel ayarina baglidir.'
 
 # THE FOLDER LIST, with the counts read off the rows rather than asked for again.
 #
@@ -441,7 +484,7 @@ EOF
   if [ "$count" -eq 0 ]; then
     printf '%s\n' "$ZRO_TXT_STORE_NO_GRANTS"
     printf '\n'
-    printf 'Sorgu calisti ve yanit verdi: bu klasorde tanimli bir yetki yok.\n'
+    printf 'Sorgu calisti ve yanit verdi: bu klasorde tanimli bir paylasim yok.\n'
     return 0
   fi
 
@@ -449,7 +492,7 @@ EOF
   printf '%s' "$body"
   printf '\n'
   printf 'Izin harfleri Zimbranin kendi harfleridir: r okuma, w yazma, i ekleme,\n'
-  printf 'd silme, a yonetme, x eylem. Tur, yetkinin kime verildigini soyler;\n'
+  printf 'd silme, a yonetme, x eylem. Tur, paylasimin kime verildigini soyler;\n'
   printf 'public satiri baglantiyi bilen herkesi kapsar ve kimseyi adlandirmaz.\n'
 }
 
@@ -459,6 +502,10 @@ zro_store_size_body() {
   zro_card_line 'Hesap' "$acct"
   zro_card_line 'Boyut' "$(zro_store_size_field "$bytes")"
   printf '\n'
+  if [ -z "$bytes" ]; then
+    printf '%s\n' "$ZRO_TXT_STORE_SIZE_UNREADABLE"
+    printf '\n'
+  fi
   printf 'Bu deger mailboxun tamamini kapsar: butun klasorler, cop kutusu ve\n'
   printf 'gonderilenler dahil.\n'
   printf '\n'
@@ -485,25 +532,39 @@ zro_store_quota_body() {
   zro_card_line 'Kota limiti' "$(zro_quota_field "$limit")"
   zro_card_line 'Kullanilan' "$(zro_store_size_field "$bytes")"
 
-  limit_bytes=${limit%%"$ZRO_TAB"*}
-  case $limit_bytes in
+  # A PROPORTION NEEDS BOTH NUMBERS, and each can be missing for its own reason.
+  # Neither absence may become a figure: an unreadable limit rendered as zero
+  # would report an account as unlimited, and an unreadable usage rendered as zero
+  # would report a full mailbox as empty. So the field names which of the two is
+  # missing and computes nothing.
+  #
+  # The limit comes out of the pair through the accessor that owns its shape,
+  # rather than by splitting it a second time here.
+  limit_bytes=$(zro_quota_limit_bytes "$limit") || limit_bytes=""
+  case $bytes in
     ''|*[!0-9]*)
-      # A limit nobody could read is not a limit of zero and not no limit either,
-      # so no proportion is computed from it and the field says which of the two
-      # numbers is missing.
-      zro_card_line 'Doluluk' "$ZRO_TXT_UNKNOWN (limit okunamadi)" ;;
-    0)
-      zro_card_line 'Doluluk' 'oran yok (kota sinirsiz)' ;;
+      zro_card_line 'Doluluk' "$ZRO_TXT_UNKNOWN (kullanim okunamadi)" ;;
     *)
-      pct=$(( bytes * 100 / limit_bytes ))
-      if [ "$pct" -eq 0 ] && [ "$bytes" -gt 0 ]; then
-        zro_card_line 'Doluluk' "%1'den az"
-      else
-        zro_card_line 'Doluluk' "%$pct"
-      fi ;;
+      case $limit_bytes in
+        '')
+          zro_card_line 'Doluluk' "$ZRO_TXT_UNKNOWN (limit okunamadi)" ;;
+        0)
+          zro_card_line 'Doluluk' 'oran yok (kota sinirsiz)' ;;
+        *)
+          pct=$(( bytes * 100 / limit_bytes ))
+          if [ "$pct" -eq 0 ] && [ "$bytes" -gt 0 ]; then
+            zro_card_line 'Doluluk' "%1'den az"
+          else
+            zro_card_line 'Doluluk' "%$pct"
+          fi ;;
+      esac ;;
   esac
 
   printf '\n'
+  if [ -z "$bytes" ]; then
+    printf '%s\n' "$ZRO_TXT_STORE_SIZE_UNREADABLE"
+    printf '\n'
+  fi
   # The closing paragraph deliberately does not begin with a field's own label:
   # a prose line starting 'Kota limiti' reads as another card line, and a case
   # asserting on the field would match the explanation instead of the value.
@@ -553,11 +614,20 @@ zro_store_grants_card() {
   zro_store_grants_body "$acct" "$path" "$rows"
 }
 
+# A SIZE NOBODY COULD READ IS STILL THIS SCREEN'S ANSWER. The read ran and the
+# server replied; what came back was a formatted string rather than a number, and
+# that is a fact about this program's refusal to guess at it — so the field says
+# 'bilinmiyor' and the screen explains, instead of a failure box saying the query
+# found no result. Every other status is a real failure and travels out as itself.
 zro_store_size_card() {
   local acct=${1-} bytes rc=0
   zro_reset_mode
   bytes=$(zro_store_size_fetch "$acct") || rc=$?
-  [ "$rc" -eq 0 ] || return "$rc"
+  case $rc in
+    0) ;;
+    "$ZRO_E_NO_RESULT") bytes="" ;;
+    *) return "$rc" ;;
+  esac
   zro_store_size_body "$acct" "$bytes"
 }
 
@@ -571,7 +641,14 @@ zro_store_quota_card() {
   local acct=${1-} bytes raw host limit="" rc=0
   zro_reset_mode
   bytes=$(zro_store_size_fetch "$acct") || rc=$?
-  [ "$rc" -eq 0 ] || return "$rc"
+  case $rc in
+    0) ;;
+    # A usage figure nobody could read must not take the LIMIT down with it: the
+    # limit is a real answer to half the operator's question, and this screen is
+    # the one place both halves are shown together.
+    "$ZRO_E_NO_RESULT") bytes=""; rc=0 ;;
+    *) return "$rc" ;;
+  esac
 
   raw=$(zro_account_fetch "$acct") || rc=$?
   [ "$rc" -eq 0 ] || return "$rc"

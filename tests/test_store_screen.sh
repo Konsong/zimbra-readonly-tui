@@ -99,7 +99,8 @@ run
 out=$(transcript)
 assert_contains "$out" "/Inbox"
 assert_contains "$out" "/Emailed Contacts"
-assert_contains "$out" "Klasor sayisi        : 13"
+assert_contains "$out" "Klasor sayisi        : 15"
+assert_contains "$out" "/Projeler/2026/Q3 Raporlar"
 assert_contains "$out" "Toplam oge           : 2"
 assert_contains "$out" "Okunmamis            : 1"
 
@@ -128,18 +129,36 @@ it "and it asked the server for raw bytes rather than for a formatted string"
 assert_contains "$(ran)" "$(printf 'gms\t-v')"
 assert_cost mailbox-size "$(opened)" 1
 
-it "and a size the server answered in the formatted form is refused, not misread"
-# If anything ever answers this read in the human shape, the screen says the value
-# could not be read. Reporting 1,44 GB as 144 GB is the failure this prevents, and
-# it would be invisible on the screen.
+it "and a size the server answered in the formatted form is a field, not a failure"
+# If anything ever answers this read in the human shape, the field says the value
+# could not be read and the screen explains why. Reporting 1,44 GB as 144 GB is
+# what that prevents, and it would be invisible on the screen.
+#
+# 'bilinmiyor' rather than a failure box, because this is a fact about THIS
+# PROGRAM — it refuses to guess at a decimal separator — and the screen it belongs
+# to still has something to say.
 exists_server
 zro_sel_set "$ADDR"
 queue "mailbox-size" "__CANCEL__"
 ZRO_MOCK_ZMMAILBOX_GMS__V_OUT="$FIX/zmmailbox_gms_synthetic_locale.txt" run
 out=$(transcript)
-assert_contains "$out" "MSG Sonuc yok"
+assert_contains "$out" "Boyut                : $ZRO_TXT_UNKNOWN"
+assert_not_contains "$out" "MSG Sonuc yok"
 assert_not_contains "$out" "144"
 assert_not_contains "$out" "1,44"
+
+it "and on the quota screen it does not take the limit down with it"
+# Half an answer is still an answer: the limit was read and is worth showing, and
+# the proportion is the one thing that cannot be computed from it alone.
+exists_server
+zro_sel_set "$ADDR"
+queue "mailbox-quota" "__CANCEL__"
+ZRO_MOCK_ZMMAILBOX_GMS__V_OUT="$FIX/zmmailbox_gms_synthetic_locale.txt" run
+out=$(transcript)
+assert_contains "$out" "Kota limiti          : 5.0 GB"
+assert_contains "$out" "Kullanilan           : $ZRO_TXT_UNKNOWN"
+assert_contains "$out" "kullanim okunamadi"
+assert_not_contains "$out" "Doluluk              : %0"
 
 # ----------------------------------------------------------- quota usage --
 

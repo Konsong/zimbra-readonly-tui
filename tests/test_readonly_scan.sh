@@ -362,6 +362,17 @@ $(printf '%s\n' "$raw_code" | grep 'zro_mbox_run[[:space:]]')
 EOF
 assert_eq "$unresolved" ""
 
+it "and the size read is asked for in the raw form at the only call site it has"
+# The bare `zmmailbox:gms` entry exists because the matcher needs the subcommand
+# on the list before a flag under it can be approved — so the locale-formatted
+# form of this read is approved as a side effect. What keeps it from being ASKED
+# FOR is here: one call site, and it names the flag. A second call site without it
+# would be a screen reading a size whose decimal separator depends on the server's
+# locale, and this is what fails the build for it.
+assert_contains "$mbox_calls" "gms -v"
+assert_eq "$(printf '%s\n' "$mbox_calls" | awk '$3 == "gms"' | wc -l)" "1"
+assert_eq "$(printf '%s\n' "$mbox_calls" | awk '$3 == "gms" && $4 != "-v"' | wc -l)" "0"
+
 it "and every approved mailbox read has a call site, in exactly one spelling"
 # The two sets are held equal in both directions, as the tracer's filters are. An
 # approved read with no call site is an operation that reads as available and can

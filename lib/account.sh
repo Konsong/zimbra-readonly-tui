@@ -464,6 +464,24 @@ zro_account_quota_limit() {
 # in both SOAP and LDAP mode — measured on the lab server, not assumed — so
 # presence proves nothing about where a value came from. That question costs a
 # second invocation and has a screen of its own.
+# The limit out of the pair above, for a caller that needs the NUMBER rather than
+# the sentence. It exists so that the pair's shape is known in one module: the
+# quota screen computes a proportion from it, and a second hand-written split
+# there would be two places that have to agree about a TAB.
+#
+# Prints nothing and fails when the pair carries no readable limit, which is the
+# same refusal zro_account_quota_limit makes for the same reason: absence is not
+# zero, and zero means unlimited.
+zro_quota_limit_bytes() {
+  local pair=${1-} bytes
+  [ -n "$pair" ] || return "$ZRO_E_NO_RESULT"
+  bytes=${pair%%"$ZRO_TAB"*}
+  case $bytes in
+    ''|*[!0-9]*) return "$ZRO_E_NO_RESULT" ;;
+  esac
+  printf '%s' "$bytes"
+}
+
 zro_quota_field() {
   local pair=${1-} bytes source human
   [ -n "$pair" ] || { printf '%s' "$ZRO_TXT_UNKNOWN"; return 0; }

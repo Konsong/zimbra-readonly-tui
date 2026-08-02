@@ -711,8 +711,17 @@ has no operation whose work grows with the number of accounts.
 
 If you ran an earlier build of this tool against an account that had never
 logged in and had no mailbox, **that account may now have an empty mailbox that
-this tool created.** Check `mailbox.log` for `Creating mailbox with id` lines
-around the times you used it.
+this tool created.** Ask about the account rather than about the server:
+`zmprov gis <account>` answers `mailbox not found` for an account that has none,
+and that is the whole check.
+
+**Do not decide it from the count of `Creating mailbox with id` lines in
+`mailbox.log`.** That count moves on a live server for reasons that have nothing
+to do with this tool — a delivery creates a mailbox, and Zimbra's own spam and
+ham training accounts are created by the trainer at 22:00. Measured on the lab
+server: the count rose by two during a session in which this tool created
+nothing. (`mailbox.log` also carries a byte that makes `grep` treat it as binary,
+so read it with `grep -a` or you will see nothing at all.)
 
 ### Acceptance runs
 
@@ -722,8 +731,9 @@ around the times you used it.
 | 2026-07-29 | test server, `mailboxd` stopped | All three M1 screens | Summary and membership answered in full over LDAP with the degraded-mode banner; the quota screen showed the limit and marked usage unreadable. |
 | 2026-07-29 | production | Summary against an account with a recorded logon | Last logon rendered as `2026-07-28 06:40:34` from a stored `20260728064034.819Z`. |
 | 2026-07-29 | production | Summary and quota against an address that does not exist | Reported `Hesap bulunamadi` together with Zimbra's own `NO_SUCH_ACCOUNT` text, and returned to the menu. |
-| 2026-08-02 | lab (Zimbra 9.0.0 FOSS) | All five mailbox screens against an account with a populated mailbox: folders, size, quota, one folder, one folder's grants | Answered from the real binaries. 13 folders including `/Emailed Contacts`, 700 bytes against a 5 GB limit rendered as `%1'den az`, `/Inbox` 353 bytes, no grants. A path that does not exist returned code 13 with Zimbra's own `unknown folder` text. |
-| 2026-08-02 | lab (Zimbra 9.0.0 FOSS) | The same three of those screens against an account that is provisioned and has never been used | All three refused with code 12 before opening anything, and `mailbox.log` held the same number of `Creating mailbox with id` lines before and after — **the gate held, and no mailbox was created**. An address in no directory returned code 11. |
+| 2026-08-02 | lab (Zimbra 9.0.0 FOSS) | All five mailbox screens against an account with a populated mailbox: folders, size, quota, one folder, one folder's grants | Answered from the real binaries. 15 folders including `/Emailed Contacts` and two nested ones, 700 bytes against a 5 GB limit rendered as `%1'den az`, `/Inbox` 353 bytes, no grants. A path that does not exist returned code 13 with Zimbra's own `unknown folder` text. |
+| 2026-08-02 | lab (Zimbra 9.0.0 FOSS) | The same three of those screens against an account that is provisioned and has never been used | All three refused with code 12 before opening anything, and afterwards that account **still had no mailbox**: `zmprov gis` answered `mailbox not found` and the `mailbox` table held no row for its id. **The gate held.** An address in no directory returned code 11. |
+| 2026-08-02 | lab (Zimbra 9.0.0 FOSS) | Nested folders, created on the fixture account to settle how the listing prints them | The path column starts at the same offset for a nested folder as for a top-level one — **no indentation, hierarchy only in the path** — and `zmmailbox gf` took the full path back unchanged, spaces and all. Had it been indented, every mailbox with subfolders would have answered `unknown folder`. |
 
 ## 6. Production acceptance
 

@@ -108,6 +108,16 @@ ZRO_LIB_EXEC_LOADED=1
 # written in front of the subcommand answers `700 B` — it is a different option
 # there, and the gate would be approving the wrong one.
 #
+# THE BARE `zmmailbox:gms` ENTRY IS REQUIRED BY THE MATCHER, not by a caller. A
+# data-position flag is approved UNDER the entry that approved its subcommand, so
+# the subcommand has to be on the list for the flag to be reachable at all —
+# exactly as `zmprov:ga` carries `zmprov:ga:-e`. The consequence is stated rather
+# than left: the formatted form of this read is approved too. It is not a write
+# and not a wrong number — the reader refuses any answer that is not all digits,
+# so a formatted one reaches the operator as a value this program could not read.
+# What keeps it from being asked for at all is that there is one call site and it
+# names the flag, which the static scanner holds to.
+#
 # `zmmailbox:gaf:-v` IS DELIBERATELY ABSENT, AND THAT WAS DECIDED RATHER THAN
 # LEFT. The verbose form of the folder listing emits the whole tree as nested
 # JSON, which is easier to parse and would have to be parsed by depth; the fixed
