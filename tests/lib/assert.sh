@@ -69,8 +69,17 @@ assert_not_contains() {
 # file's path is a prefix of every rotation variant of it, so asking whether
 # /var/log/zimbra.log appears in a list is not the same question as asking
 # whether it is IN the list.
+#
+# The question and the assertion are separate, because a case that has something
+# specific to say about a missing line needs to ASK rather than to assert — and a
+# second grep written out at the call site is how the two would come to disagree
+# about what a line is.
+zro_t_has_line() {
+  printf '%s\n' "${1-}" | grep -qxF -- "${2-}"
+}
+
 assert_not_line() {
-  if printf '%s\n' "$1" | grep -qxF -- "$2"; then
+  if zro_t_has_line "$1" "$2"; then
     zro_t_fail "expected no line equal to [$2], got [$1]"
   else
     zro_t_pass

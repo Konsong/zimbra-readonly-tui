@@ -181,11 +181,11 @@ report is the claim.
   attribute somewhere this tool cannot reach, and `Kota limiti` is not a name you
   can search for.
 
-  **It is the one directory screen that cannot fall back to LDAP.**
-  `zmprov -l ga -e` has never been run on the lab server, so it is not on the
-  allowlist; the retry asks the allowlist before it runs, and the screen reports
-  the outage that stopped it rather than being retried into a denial. See *Commands
-  this release can run* below.
+  **It is answerable through mailboxd only.** `zmprov -l ga -e` has never been run
+  on the lab server, so it is not on the allowlist; the degraded read path asks the
+  allowlist before it retries, and the screen reports the outage that stopped it
+  rather than being retried into a denial. See *Commands this release can run*
+  below.
 - **Dagitim listesi uyelikleri** — the distribution lists the account belongs to.
 - **Mailbox var mi** — whether the account has a mailbox at all. Three answers,
   three screens: the mailbox is there; the account has none *yet*, meaning it is
@@ -286,10 +286,11 @@ report is the claim.
   created in it get by default. The domain is derived from the address and never
   asked for.
 
-  **It is the only screen that still answers for an address the directory has never
-  heard of.** Every address carries a domain, so when the account read has nothing
-  to say this one still answers whether this server carries that domain's mail at
-  all.
+  **It is the only directory screen that still answers for an address the directory
+  has never heard of.** Every address carries a domain, so when the account read has
+  nothing to say this one still answers whether this server carries that domain's
+  mail at all. The two traces answer for such an address too, but they answer from
+  the transfer agent's log rather than from the directory.
 
   Status is where a delivery problem often turns out to end: a domain that is not
   `active` has its mail blocked by Zimbra itself, and the screen says so rather than
@@ -516,7 +517,7 @@ What still works, and what does not:
 | Screen | With mailboxd down |
 |---|---|
 | Hesap karti | works in full |
-| Deger nereden geliyor | **refused** — the entry-only read has no approved LDAP form |
+| Deger nereden geliyor (hesap mi, devralma mi) | **refused** — the entry-only read has no approved LDAP form |
 | Dagitim listesi uyelikleri | works in full |
 | Dagitim listesi karti | works in full |
 | Alan adi karti | works in full |

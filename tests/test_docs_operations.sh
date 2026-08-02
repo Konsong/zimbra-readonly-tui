@@ -35,7 +35,7 @@ DOC="$ZRO_SRC/docs/operations.md"
 # written. A heading renamed out from under this leaves the extraction empty,
 # which fails the first case below rather than passing an empty comparison —
 # the one failure mode a check like this must not have.
-ZRO_DOC_SECTIONS='### About the selected address
+DOC_SECTIONS='### About the selected address
 ### About the server'
 
 # Every operation entry in those subsections, in the order the guide writes
@@ -45,7 +45,7 @@ ZRO_DOC_SECTIONS='### About the selected address
 # menu also draws: an entry whose heading drifted from the label an operator
 # picks is an entry describing a screen nobody can find.
 doc_labels() {
-  awk -v sections="$ZRO_DOC_SECTIONS" '
+  awk -v sections="$DOC_SECTIONS" '
     BEGIN { n = split(sections, s, "\n"); for (i = 1; i <= n; i++) want[s[i]] = 1 }
     /^### / { inop = ($0 in want); next }
     /^## /  { inop = 0; next }
@@ -69,17 +69,44 @@ $(zro_menu_ids)
 EOF
 }
 
-has_line() { printf '%s\n' "$1" | grep -qxF -- "$2"; }
-
 DOCL=$(doc_labels)
 MENUL=$(menu_labels)
+
+# ------------------------------------------ that there was anything to read --
+
+# ASKED FIRST, AND OF EACH HEADING SEPARATELY. Everything below reads the guide
+# through these two headings, so one renamed — or demoted to '####' — leaves the
+# extraction matching nothing, and the set comparison then reports every
+# operation in the tool as undocumented. That is fifteen failures, not one of
+# which names the single thing that actually changed. Asked here, the heading
+# answers for itself.
+it "the guide still carries the section headings this check reads it through"
+while IFS= read -r heading; do
+  [ -n "$heading" ] || continue
+  if grep -qxF -- "$heading" "$DOC"; then
+    zro_t_pass
+  else
+    zro_t_fail "docs/operations.md no longer carries the heading [$heading]; every case below reads the guide through it"
+  fi
+done <<EOF
+$DOC_SECTIONS
+EOF
+
+# Both comparisons below iterate a list, so an EMPTY list makes no assertion at
+# all and passes by making none. Said once here rather than guarded twice there.
+it "and both lists were read"
+if [ -n "$DOCL" ] && [ -n "$MENUL" ]; then
+  zro_t_pass
+else
+  zro_t_fail "read nothing out of [${DOC_SECTIONS}] or out of ZRO_MENU_OPS"
+fi
 
 # ------------------------------------------------- the set, both ways --
 
 it "every operation the tool declares has an entry in the operator guide"
 while IFS= read -r label; do
   [ -n "$label" ] || continue
-  if has_line "$DOCL" "$label"; then
+  if zro_t_has_line "$DOCL" "$label"; then
     zro_t_pass
   else
     zro_t_fail "declared operation missing from docs/operations.md section 3: [$label]"
@@ -91,7 +118,7 @@ EOF
 it "and the guide describes no operation the tool does not declare"
 while IFS= read -r label; do
   [ -n "$label" ] || continue
-  if has_line "$MENUL" "$label"; then
+  if zro_t_has_line "$MENUL" "$label"; then
     zro_t_pass
   else
     zro_t_fail "docs/operations.md section 3 describes an undeclared operation: [$label]"
@@ -107,18 +134,5 @@ EOF
 # two set comparisons would both pass.
 it "and it lists them in the order the menu offers them"
 assert_eq "$DOCL" "$MENUL"
-
-# --------------------------------------------------- nothing was dropped --
-
-# The extraction reads a heading this file writes down and a bullet shape the
-# guide happens to use, so it is exactly the kind of check that can quietly
-# start matching nothing. Asserted against a count no plausible drift produces
-# rather than against a number that would need updating with every operation.
-it "and the extraction actually read the guide"
-if [ "$(printf '%s\n' "$DOCL" | grep -c .)" -ge 10 ]; then
-  zro_t_pass
-else
-  zro_t_fail "read too few entries out of docs/operations.md; the section headings this file names have probably changed"
-fi
 
 zro_t_report
