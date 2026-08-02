@@ -186,12 +186,17 @@ zro_dl_fetch() {
 # directory holds, the other is what this program managed to read out of it.
 zro_dl_member_count() {
   local out
-  out=$(printf '%s\n' "${1-}" | awk '
+  # On a heredoc rather than down a pipe, for the reason zro_attr_get records: an
+  # awk that exits early can leave a pipeline reporting 141 under pipefail.
+  out=$(awk '
     $1 == "#" && $2 == "distributionList" {
       for (i = 3; i <= NF; i++) {
         if ($i ~ /^memberCount=/) { sub(/^memberCount=/, "", $i); print $i; exit }
       }
-    }')
+    }' <<EOF
+${1-}
+EOF
+)
   case $out in
     ''|*[!0-9]*) return "$ZRO_E_NO_RESULT" ;;
   esac

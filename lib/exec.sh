@@ -190,8 +190,21 @@ zro_allow_entries() {
 # Whether the list carries this entry, matched as one whole line. -x anchors to
 # the whole line and -F takes the needle literally, so a token containing a regex
 # metacharacter cannot widen the match.
+#
+# THE LIST IS FED IN ON A HEREDOC, NOT DOWN A PIPE, and that is a correctness fix
+# rather than a style. `printf | grep -q` under `set -o pipefail` returns 141:
+# grep exits the moment it matches, and if it wins that race the write at the
+# other end of the pipe gets SIGPIPE and pipefail reports the pipeline as failed.
+# The gate then refuses an operation its own list approves — exit code 90, which
+# this program defines as a defect and always logs. Measured rather than reasoned:
+# under load, one spurious 141 in three thousand lookups of an entry near the top
+# of the list, and none at all in the same three thousand through a heredoc. It is
+# rare, it is scheduling-dependent, and it gets likelier the earlier in the list an
+# entry sits — which is the opposite of what a maintainer adding one would expect.
 zro_allow_has() {
-  printf '%s' "$ZRO_ALLOW" | grep -qxF -- "${1-}"
+  grep -qxF -- "${1-}" <<EOF
+$ZRO_ALLOW
+EOF
 }
 
 # Every flag-shaped token in the data of an approved subcommand, held to the

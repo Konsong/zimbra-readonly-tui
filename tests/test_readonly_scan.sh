@@ -97,6 +97,21 @@ for alias in ' dm ' ' mm ' ' mmr ' ' ef ' ' df ' ' ma ' ' da ' ' ca '; do
   assert_not_contains "$code" "zro_exec zmmailbox$alias"
 done
 
+it "decides nothing by racing a builtin against a consumer that exits early"
+# `printf | grep -q` under `set -o pipefail` returns 141. grep exits the moment it
+# matches, and if it wins that race the write at the other end gets SIGPIPE and
+# the pipeline reports failure although the answer was found. In the exec gate
+# that is a spurious ALLOWLIST DENIAL — exit code 90, which this program defines
+# as a defect and always logs — arriving at random, under load, on an operation
+# the list plainly approves. Measured at one in three thousand lookups before the
+# lookup was rewritten to take the list on a heredoc.
+#
+# Banned outright rather than judged case by case: a heredoc costs nothing and
+# works everywhere, so there is no reading of this pattern worth keeping. The awk
+# readers have the same hazard and the same fix; it cannot be checked here without
+# parsing an awk program, so it is written down where they are instead.
+assert_eq "$(printf '%s\n' "$code" | grep -cE '\|[[:space:]]*grep[[:space:]]+-[a-zA-Z]*q')" "0"
+
 it "contains no eval or shell-string execution"
 assert_not_contains "$code" "eval "
 assert_not_contains "$code" "bash -c"

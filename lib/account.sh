@@ -37,11 +37,22 @@ ZRO_ACCOUNT_ATTRS=(
 # zmprov prints "name: value" lines. Matching the key at position 1 with its
 # separator attached is what keeps zimbraMail from also matching
 # zimbraMailHost.
+#
+# THE TEXT ARRIVES ON A HEREDOC RATHER THAN DOWN A PIPE, here and in every reader
+# below that stops early. `printf | awk … exit` under `set -o pipefail` returns
+# 141: awk exits on the line it wants, and if it wins that race the write at the
+# other end gets SIGPIPE and the pipeline reports failure although the answer was
+# printed correctly. It costs nothing where only the value is read — and it is
+# wrong where the STATUS is the answer, which is what zro_attr_present below is
+# for. Written the same way in all of them, so the safe one and the unsafe one do
+# not have to be told apart by whoever edits them next.
 zro_attr_get() {
   local text=$1 name=$2
-  printf '%s\n' "$text" | awk -v key="$name" '
+  awk -v key="$name" '
     index($0, key ": ") == 1 { print substr($0, length(key) + 3); exit }
-  '
+  ' <<EOF
+$text
+EOF
 }
 
 zro_attr_all() {
@@ -69,12 +80,18 @@ zro_attr_all() {
 # The colon is still what keeps zimbraMailForwardingAddress from matching
 # zimbraMailForwardingAddressMaxLength, because a name is not a prefix of a longer
 # name once the separator is attached.
+# THE ONE READER WHOSE STATUS IS ITS ANSWER, which is why the heredoc above
+# matters most here: a pipeline losing the SIGPIPE race would report an attribute
+# the entry really carries as one the entry does not have, on the screen built to
+# tell those two apart.
 zro_attr_present() {
   local text=$1 name=$2
-  printf '%s\n' "$text" | awk -v key="$name" '
+  awk -v key="$name" '
     index($0, key ":") == 1 { found = 1; exit }
     END { exit(found ? 0 : 1) }
-  '
+  ' <<EOF
+$text
+EOF
 }
 
 # Zimbra stores timestamps as LDAP generalized time. A production server

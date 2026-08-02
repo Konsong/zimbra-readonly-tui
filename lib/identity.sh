@@ -56,7 +56,12 @@ ZRO_IDENTITY_ATTRS=(
 # degraded read does not lose the one thing this module reads.
 zro_identity_canonical() {
   local out
-  out=$(printf '%s\n' "${1-}" | awk '$1 == "#" && NF >= 3 { print $3; exit }')
+  # On a heredoc rather than down a pipe, for the reason zro_attr_get records: an
+  # awk that exits early can leave a pipeline reporting 141 under pipefail.
+  out=$(awk '$1 == "#" && NF >= 3 { print $3; exit }' <<EOF
+${1-}
+EOF
+)
   [ -n "$out" ] || return "$ZRO_E_NO_RESULT"
   printf '%s' "$out"
 }
