@@ -152,8 +152,6 @@ report is the claim.
   account, because `zmprov` expands what a class of service provides in both
   modes. `COS kaydindan` means the account read carried none and the class of
   service was asked instead.
-- **Kota kullanimi** — mailbox id, bytes used, quota limit, percentage full.
-  Accounts with no quota are shown as `sinirsiz` rather than divided by zero.
 - **Dagitim listesi uyelikleri** — the distribution lists the account belongs to.
 - **Mailbox var mi** — whether the account has a mailbox at all. Three answers,
   three screens: the mailbox is there; the account has none *yet*, meaning it is
@@ -171,6 +169,48 @@ report is the claim.
   rather than provisioning — and it **remembers a yes for the session**. Asking a
   second time about the same account costs nothing. A *no* is never remembered,
   because the next message delivered to that account makes it wrong.
+- **Kota kullanimi** — the limit the account is subject to, the bytes the mailbox
+  is actually holding, and the proportion between them. An unlimited quota is
+  said in words rather than divided into, and a limit this tool could not read is
+  `bilinmiyor` and never `sinirsiz` — Zimbra writes `0` to mean unlimited, and an
+  unknown limit is not no limit.
+
+  The limit comes from the directory and the usage from the mailbox, and the
+  screen says which is which. **The whole-server quota command is not used**: it
+  takes a server rather than an account and answers for every account on it.
+- **Mailbox boyutu** — the size of the whole mailbox, in bytes and in readable
+  form. Both, always: the readable form is what you read and the byte count is
+  what you can check against a quota or a previous reading.
+- **Klasorler** — every folder with its path, its item count and its unread
+  count, plus the totals.
+
+  **`Oge` is not `ileti`.** The column Zimbra prints under *Msg Count* is the
+  folder's **item** count: contacts in a contacts folder, appointments in a
+  calendar. Five of the folders every mailbox is created with are not message
+  folders at all.
+- **Klasor detayi** — one folder, chosen from that listing, with the one fact the
+  listing cannot show: how many **bytes** the folder is holding. It also says
+  whether the folder is shared, without naming who — the folder record carries
+  grantees as identifiers, and the sharing screen is what answers in names.
+- **Klasor paylasimlari** — who may reach one folder: the permission letters, the
+  kind of grantee, and the grantee. **Every grant is shown**, whatever kind it
+  names — a `public` grant covers anyone with the link and names nobody, which is
+  why its grantee column reads `(herkes)`.
+
+  The last two screens offer the folder listing first and then the folder, so
+  each costs **two** queries; the screen says so before it runs. Opening a second
+  folder without leaving the list does not re-read it.
+
+  **A folder the listing offers and the server then refuses** gets a screen of
+  its own naming both causes. The likeliest is not a typing mistake: a search
+  folder, a mountpoint and a feed each carry a parenthesised decoration *inside*
+  the path column — the query, the owner, the URL — and none of that is part of
+  the path. This tool cannot tell such a row from a folder whose name really ends
+  in brackets, so it offers both and refuses to guess.
+
+  **Every one of these five refuses before it opens anything** if the account has
+  no mailbox. What you get then is the existence gate's own screen — the account
+  is provisioned and has never been used — rather than a failure box.
 - **Teslim takibi: bu adrese gelenler** — asks for an arrival window, then shows
   what the mail transfer agent's log says about messages **for** that address. No
   mailbox is opened, so this is safe on an account that has never logged in.
@@ -427,6 +467,10 @@ zmprov gc        getCos                     zmprov -l gc    same, from LDAP
 zmprov gdl       getDistributionList        zmprov -l gdl   same, from LDAP
 zmprov gd        getDomain                  zmprov -l gd    same, from LDAP
 zmprov gis       getIndexStats              (no LDAP form — see below)
+zmmailbox gaf    getAllFolders              behind the existence gate
+zmmailbox gf     getFolder                  behind the existence gate
+zmmailbox gfg    getFolderGrant             behind the existence gate
+zmmailbox gms -v getMailboxSize, raw bytes  behind the existence gate
 zmcontrol -v     version
 zmmsgtrace --recipient                      delivery trace by recipient
 zmmsgtrace --sender                         delivery trace by sender
@@ -443,13 +487,36 @@ asks the allowlist *before* it retries a read against LDAP, so a question it can
 only answer through `mailboxd` reports the outage that stopped it rather than an
 allowlist denial, which would mean a defect nobody committed.
 
-**`zmmailbox` is not on this list, and the gate that guards it is already
-built.** That binary creates a mailbox for an account that has none during
-session setup, so a single function owns its whole argument prefix, the exec gate
-refuses the binary from any other caller, and a static test fails the build if
-another call site so much as names it. No subcommand behind it is approved yet:
-an operation arrives with the ticket that exposes it, never because the binary it
+**`zmmailbox` is on this list as four reads, and every one of them is refused
+until the existence gate has answered.** That binary creates a mailbox for an
+account that has none during session setup, so a single function owns its whole
+argument prefix, the exec gate refuses the binary from any other caller, and a
+static test fails the build if another call site so much as names it. The gate
+shipped with nothing behind it and these four arrived afterwards, each with the
+ticket that exposes it — an operation is never approved because the binary it
 belongs to became reachable.
+
+Each was measured rather than assumed. On the lab server the account's row in the
+`mailbox` table was byte-identical either side of all four — change checkpoint,
+size checkpoint and last SOAP access included — while a deliberate grant write in
+the same session moved two of those columns at once, which is what makes the
+measurement worth anything. See
+[`docs/research/2026-08-02-folders-size-and-quota.md`](research/2026-08-02-folders-size-and-quota.md).
+
+**`gms` is approved with `-v` and used no other way.** Without it the command
+prints a string built with the JVM's default locale — `1.44 GB` on one host,
+`1,44 GB` on the next — and a decimal comma read as a thousands separator is a
+mailbox reported a hundred times too large. `-v` prints the raw byte count, which
+is a number in every locale there is, and this tool does its own formatting. The
+flag stands **after** the subcommand, which is where it was measured to work; in
+front of it, it is a different option and the answer is still the formatted
+string.
+
+The write-named siblings that live one letter from these — `df`, `ef`, `cf`,
+`mfg`, `rf`, `sf` — are absent and therefore refused, and so is `gm`: it is not
+write-named and it **clears the unread flag** on the message it reports, which is
+the *judge by effect, not by name* rule doing its work inside a binary this tool
+now reaches.
 
 `zmcontrol -v` runs **once per session**, at startup. Its answer is shown on the
 main menu, which is returned to after every operation, so re-reading it there
@@ -510,7 +577,8 @@ involved.
 `zmprov gmi` was on this list and has been removed — it creates mailboxes. See
 section 5.
 
-`zmmailbox` is not on this list at all. That matters — see section 5.
+`zmmailbox` is on this list only as the four reads above, and reaching any of
+them means passing the existence gate first. That matters — see section 5.
 
 `-l` is never approved on its own. An allowlist entry of `zmprov:-l` would let
 every subcommand behind it through, including every write, so the flag is only
@@ -535,8 +603,10 @@ that entry approves the operation entire, and what follows is not re-read: the
 trace passes its arrival window and its year as flags of their own, and every one
 of them is built by this tool from a preset and from the log inventory.
 
-Note that `zmprov gqu` (`getQuotaUsage`) is **not** used. It takes a server, not
-an account, and returns every account on it. Per-account usage comes from `gmi`.
+Note that `zmprov gqu` (`getQuotaUsage`) is **not** used and is not on this list.
+It takes a server, not an account, and returns every account on it — a
+server-wide sweep, which this tool does not have in any form. Per-account usage
+comes from `zmmailbox gms -v`, behind the existence gate.
 
 ## 4. Exit codes
 
@@ -620,17 +690,24 @@ index directory that was absent could not be observed: every mailbox on the test
 server already owns one, created with the mailbox, and no state is known that
 produces a mailbox without it.
 
-### Why usage is no longer shown
+### How usage came back
 
-Per-account quota **usage** has been removed from the quota screen. The only
-command that reports it, `zmprov gmi`, creates a mailbox for an account that has
-none — so a read-only tool cannot run it. The quota limit, the mailbox host and
-everything on the summary screen are unaffected, and all still work.
+Per-account quota **usage** was removed from the quota screen once, and it is
+back. The command that used to report it, `zmprov gmi`, creates a mailbox for an
+account that has none, so a read-only tool cannot run it — and it is still
+nowhere in this tool.
 
-The safe replacement is `zmprov gqu <server>`, which joins LDAP accounts against
-mailbox ids already known to the server and creates nothing. Its argument is a
-server rather than an account, so it belongs with the bulk quota overview rather
-than with a single-account lookup, and it arrives with that milestone.
+What answers now is `zmmailbox gms -v`, the mailbox's own size, run **behind the
+existence gate**: a command incapable of provisioning proves the mailbox is
+already there, and only then is a session opened on it. An account with no
+mailbox is therefore answered by the gate, with the screen that says a mailbox is
+created on first login or first delivery — not with a usage figure of zero, which
+would be a different and wrong claim.
+
+`zmprov gqu <server>` was named here as the safe replacement and has **not** been
+taken. It creates nothing, but its argument is a server: on a box carrying more
+than 100,000 mailboxes it reads every account to answer about one, and this tool
+has no operation whose work grows with the number of accounts.
 
 If you ran an earlier build of this tool against an account that had never
 logged in and had no mailbox, **that account may now have an empty mailbox that
@@ -645,6 +722,8 @@ around the times you used it.
 | 2026-07-29 | test server, `mailboxd` stopped | All three M1 screens | Summary and membership answered in full over LDAP with the degraded-mode banner; the quota screen showed the limit and marked usage unreadable. |
 | 2026-07-29 | production | Summary against an account with a recorded logon | Last logon rendered as `2026-07-28 06:40:34` from a stored `20260728064034.819Z`. |
 | 2026-07-29 | production | Summary and quota against an address that does not exist | Reported `Hesap bulunamadi` together with Zimbra's own `NO_SUCH_ACCOUNT` text, and returned to the menu. |
+| 2026-08-02 | lab (Zimbra 9.0.0 FOSS) | All five mailbox screens against an account with a populated mailbox: folders, size, quota, one folder, one folder's grants | Answered from the real binaries. 13 folders including `/Emailed Contacts`, 700 bytes against a 5 GB limit rendered as `%1'den az`, `/Inbox` 353 bytes, no grants. A path that does not exist returned code 13 with Zimbra's own `unknown folder` text. |
+| 2026-08-02 | lab (Zimbra 9.0.0 FOSS) | The same three of those screens against an account that is provisioned and has never been used | All three refused with code 12 before opening anything, and `mailbox.log` held the same number of `Creating mailbox with id` lines before and after — **the gate held, and no mailbox was created**. An address in no directory returned code 11. |
 
 ## 6. Production acceptance
 

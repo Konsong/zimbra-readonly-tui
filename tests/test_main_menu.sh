@@ -356,14 +356,18 @@ result_line=$(grep -n "Ahmet Yilmaz" "$ZRO_UI_OUT" | head -n 1 | cut -d: -f1)
 assert_eq "$([ "$notice_line" -lt "$result_line" ] && printf yes || printf no)" "yes"
 
 it "the quota screen is reachable and rendered"
+# It is a MAILBOX screen now: the limit comes from the directory and the usage
+# from the mailbox itself, behind the existence gate. Reaching it must still not
+# run the read-named command that creates mailboxes.
 zro_sel_set "$ADDR"
-queue "account-quota" "__CANCEL__"
-run
+queue "mailbox-quota" "__CANCEL__"
+ZRO_MOCK_ZMPROV_GIS_OUT="$FIX/zmprov_gis_ok.txt" \
+ZRO_MOCK_ZMMAILBOX_GMS__V_OUT="$FIX/zmmailbox_gms_bytes.txt" run
 out=$(transcript)
 assert_contains "$out" "5.0 GB"
-assert_contains "$out" "gosterilmiyor"
-# Reaching this screen must not run the command that creates mailboxes.
+assert_contains "$out" "700 B"
 assert_not_contains "$(cat "$ZRO_MOCK_LOG")" "$(printf '\tgmi')"
+assert_not_contains "$(cat "$ZRO_MOCK_LOG")" "$(printf '\tgqu')"
 
 it "the membership screen is reachable and rendered"
 zro_sel_set "$ADDR"
@@ -764,17 +768,21 @@ queue "account-card" "__CANCEL__" "__CANCEL__"
 ZRO_MOCK_ZMPROV_GC_OUT="$FIX/zmprov_gc_ok.txt" run
 assert_cost account-card "$(spent)" "$entries"
 
-it "the quota screen spends the one read the limit is on"
+it "the quota screen spends one directory read beside the one mailbox read"
 # This account's record carries its own quota, so no class of service is named
-# and none is read. A screen of the same class costing less than another is
-# ordinary: the class is the unit the cost is counted in, never how much it is.
-entries=1
+# and none is read: one account entry, and the mailbox the usage comes from. The
+# mailbox side is counted against the class the entry declares — the screen is
+# about one mailbox and reads it once — and the directory read is counted here as
+# itself, because a screen that started reading a second entry would be spending
+# class 1 work nobody declared.
 names_entry "$FIX/zmprov_ga_active.txt" zimbraMailQuota || \
   zro_t_fail "fixture no longer carries the quota this case is about"
 zro_sel_set "$ADDR"
-queue "account-quota" "__CANCEL__" "__CANCEL__"
-run
-assert_cost account-quota "$(spent)" "$entries"
+queue "mailbox-quota" "__CANCEL__" "__CANCEL__"
+ZRO_MOCK_ZMPROV_GIS_OUT="$FIX/zmprov_gis_ok.txt" \
+ZRO_MOCK_ZMMAILBOX_GMS__V_OUT="$FIX/zmmailbox_gms_bytes.txt" run
+assert_cost mailbox-quota "$(grep -c '^zmmailbox' "$ZRO_MOCK_LOG")" 1
+assert_eq "$(grep -c "$(printf '^zmprov\tga')" "$ZRO_MOCK_LOG")" "1"
 
 it "the membership screen spends the one read that answers it"
 zro_sel_set "$ADDR"

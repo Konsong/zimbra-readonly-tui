@@ -585,41 +585,19 @@ zro_mode_banner() {
 
 # zro_account_mailbox_info used to live here and read `zmprov gmi`. It is gone
 # because that command creates a mailbox for an account that has none — see the
-# note above ZRO_ALLOW in lib/exec.sh. Usage will return in M6 through
-# `zmprov gqu <server>`, which joins LDAP accounts against already-known
-# mailbox ids and creates nothing, but answers for a whole server at a time.
-
-# Shows the quota an account is subject to. Usage is deliberately absent: the
-# only per-account source for it is `zmprov gmi`, which creates a mailbox for an
-# account that has none. The screen says so rather than quietly dropping the
-# figure, because an operator who came looking for usage deserves to know where
-# it went.
-zro_account_quota() {
-  local acct=$1 raw rc=0
-  zro_reset_mode
-  raw=$(zro_account_fetch "$acct") || rc=$?
-  [ "$rc" -eq 0 ] || return "$rc"
-
-  local limit="" host
-  limit=$(zro_account_quota_limit "$raw") || limit=""
-  host=$(zro_attr_get "$raw" zimbraMailHost)
-
-  zro_mode_banner
-
-  zro_card_line 'Hesap' "$acct"
-  zro_card_line 'Mailbox host' "${host:-$ZRO_TXT_UNSET}"
-  zro_card_line 'Kota limiti' "$(zro_quota_field "$limit")"
-  zro_card_line 'Kullanilan' 'gosterilmiyor'
-  printf '\n'
-  # Double-quoted on purpose: the static scanner treats a double-quoted span as
-  # data, so this text may name the commands it is warning about.
-  printf "Kullanim degeri yalnizca zmprov gmi ile okunabiliyor, ve o komut\n"
-  printf "mailboxu olmayan bir hesapta mailboxu YARATIYOR. Salt-okunur\n"
-  printf "garantisini bozdugu icin izin listesinden cikarildi.\n"
-  printf '\n'
-  printf "Guvenli alternatif zmprov gqu sunucu genelinde calisir ve hicbir sey\n"
-  printf "yaratmaz; toplu kota ekraniyla birlikte gelecek.\n"
-}
+# note above ZRO_ALLOW in lib/exec.sh.
+#
+# zro_account_quota lived here too, and showed a limit above the word
+# 'gosterilmiyor' because nothing safe could answer the usage. That screen is now
+# in lib/store.sh, where usage is read from the mailbox itself BEHIND THE
+# EXISTENCE GATE — which is what makes it answerable at all, and what makes it a
+# mailbox screen rather than a directory one. The whole-server quota command it
+# used to point at as the safe replacement is still nowhere in this tool: it takes
+# a server, not an account, and answers for every account on it.
+#
+# What stayed here is what belongs to the directory: the LIMIT, which the account
+# card reads as one of its own fields, and which the quota screen asks this module
+# for rather than reading a second way.
 
 # WHERE A VALUE CAME FROM, which is a different question from what it is.
 #

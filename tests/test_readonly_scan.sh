@@ -291,14 +291,92 @@ for verb in create modify delete remove move mark flag tag empty import post rec
   assert_not_contains "$allow" "$verb"
 done
 
-it "the allowlist exposes no mailbox binary at all"
-# STILL TRUE AFTER THE GATE ARRIVED, and deliberately so. The gate is the
-# precondition for reaching that binary, not a reason to reach it: an operation
-# arrives with the ticket that exposes it, never because the binary it belongs to
-# became reachable. So the function that owns the prefix exists and every call it
-# makes is refused one step after the oracle has already proven it would have been
-# safe — which is exactly the friction the list is for.
-assert_not_contains "$allow" "zmmailbox"
+it "the allowlist exposes the mailbox binary as four reads and nothing else"
+# AN OPERATION ARRIVES WITH THE TICKET THAT EXPOSES IT, never because the binary
+# it belongs to became reachable. The gate shipped with nothing behind it; the
+# folder, size and quota screens brought four reads, and reading this list is
+# still how a maintainer learns what may be asked of a mailbox.
+assert_eq "$(printf '%s\n' "$allow" | grep '^zmmailbox:')" \
+  "$(printf '%s\n%s\n%s\n%s\n%s' \
+     'zmmailbox:gaf' 'zmmailbox:gf' 'zmmailbox:gfg' 'zmmailbox:gms' 'zmmailbox:gms:-v')"
+
+it "and none of them is a command that writes, whatever it is named"
+# The write-named siblings live one letter away from every one of these. `gm` is
+# the one that is not write-named and is a write all the same: it clears the
+# unread flag on the message it reports. Judge by effect, not by name.
+#
+# MATCHED AS WHOLE ENTRIES, never as text inside one: `zmmailbox:gm` is a
+# substring of the approved `zmmailbox:gms`, and a rule that read it as one would
+# fail on the entry it exists to protect while saying nothing about the command it
+# is looking for.
+for sub in df ef cf csf cm rf mfg mff mfc mfch mfu mfr iuif am dm mm mmr gm gru sf \
+           deleteFolder emptyFolder createFolder renameFolder modifyFolderGrant \
+           addMessage getMessage syncFolder emptyDumpster; do
+  if printf '%s\n' "$allow" | grep -qxF -- "zmmailbox:$sub"; then
+    zro_t_fail "a command that writes a mailbox is on the allowlist: zmmailbox:$sub"
+  else
+    zro_t_pass
+  fi
+done
+
+it "every mailbox read names its subcommand literally, and the allowlist approves it"
+# The same rule the tracer's filters live by, for the same reason: this call site
+# passes a variable for the ACCOUNT, so a reader can only decide it if the
+# subcommand beside it is written out. What that buys is the thing the guarantee
+# rests on — reading lib/store.sh proves which questions this tool can ask of a
+# mailbox, without running it.
+mbox_calls=$(printf '%s\n' "$raw_code" \
+             | grep -oE 'zro_mbox_run[[:space:]]+[^[:space:]]+[[:space:]]+[A-Za-z][A-Za-z0-9]*([[:space:]]+-[^[:space:]]+)?' \
+             | sort -u)
+assert_contains "$mbox_calls" "gaf"
+uncovered=""
+while IFS= read -r call; do
+  [ -n "$call" ] || continue
+  sub=$(printf '%s' "$call" | awk '{print $3}')
+  flag=$(printf '%s' "$call" | awk '{print $4}')
+  key="zmmailbox:$sub"
+  case $flag in
+    # A FLAG IN THE DATA POSITION IS NOT DATA. The size read asks for raw bytes
+    # with one, and it is held to the list under the entry that approved the
+    # subcommand, exactly as `zmprov ga -e` is.
+    -*) key="$key:$flag" ;;
+  esac
+  printf '%s\n' "$allow" | grep -qxF -- "$key" || uncovered="$uncovered [$key]"
+done <<EOF
+$mbox_calls
+EOF
+assert_eq "$uncovered" ""
+
+it "and no mailbox read hands the gate a subcommand this reader cannot resolve"
+# The exemption above is only as good as the extraction, and a call site holding
+# its subcommand in a variable would be invisible to it: matched by nothing,
+# checked by nobody. So one fails the build HERE rather than passing quietly.
+unresolved=""
+while IFS= read -r line; do
+  [ -n "$line" ] || continue
+  printf '%s' "$line" \
+    | grep -qE 'zro_mbox_run[[:space:]]+[^[:space:]]+[[:space:]]+[A-Za-z]' \
+    || unresolved="$unresolved [$line]"
+done <<EOF
+$(printf '%s\n' "$raw_code" | grep 'zro_mbox_run[[:space:]]')
+EOF
+assert_eq "$unresolved" ""
+
+it "and every approved mailbox read has a call site, in exactly one spelling"
+# The two sets are held equal in both directions, as the tracer's filters are. An
+# approved read with no call site is an operation that reads as available and can
+# never answer; a second spelling of one that has a call site is an approval a
+# reader of the list would have to count rather than read.
+assert_eq "$(printf '%s\n' "$mbox_calls" | awk '{print $3}' | sort -u)" \
+          "$(printf '%s\n' "$allow" | sed -n 's/^zmmailbox:\([^:]*\).*$/\1/p' | sort -u)"
+
+it "and the module that makes them reaches no directory command of its own"
+# The quota screen reads the account entry too, and it does it through the account
+# module's own reader rather than by reaching for a second path to zmprov.
+store=$(zro_scan_file "$ZRO_SRC/lib/store.sh")
+assert_not_contains "$store" "zro_exec"
+assert_not_contains "$store" "zmprov"
+assert_not_contains "$store" "zmmailbox"
 
 it "the mailbox binary is named in the gate's own file and nowhere else"
 # THE STRUCTURAL HALF OF THE EXISTENCE GATE. A module that could write the binary's

@@ -1,0 +1,7 @@
+        Id  View      Unread   Msg Count  Path
+----------  ----  ----------  ----------  ----------
+         1  unkn           0           0  /
+         2  mess           1           1  /Inbox
+       258  mess           0          12  /Ortak Klasor (ahmet.yilmaz@example.com:2)
+       259  mess           0           3  /Faturalar (subject:fatura)
+       260  mess           0           7  /Rapor (2026)

@@ -35,7 +35,14 @@ assert_eq "$(cat "$ZRO_MOCK_LOG")" ""
 
 it "denies a binary that is not on the list at all"
 : >"$ZRO_MOCK_LOG"
-ZRO_MOCK_ID_USER=zimbra assert_status "$ZRO_E_DENIED" zro_exec zmmailbox search 'x'
+ZRO_MOCK_ID_USER=zimbra assert_status "$ZRO_E_DENIED" zro_exec zmsoap ga 'a@b.com'
+assert_eq "$(cat "$ZRO_MOCK_LOG")" ""
+
+it "and denies the gated binary from a caller that does not own the gate"
+# It is on the list now — four reads behind the existence gate are approved — so
+# what refuses it here is WHO IS ASKING, before the list is consulted at all.
+: >"$ZRO_MOCK_LOG"
+ZRO_MOCK_ID_USER=zimbra assert_status "$ZRO_E_DENIED" zro_exec zmmailbox gaf 'a@b.com'
 assert_eq "$(cat "$ZRO_MOCK_LOG")" ""
 
 it "denies a call with too few arguments"
@@ -168,7 +175,7 @@ assert_contains "$(cat "$ZRO_MOCK_LOG")" "$(printf 'zmcontrol\t-v')"
 
 it "zro_bin_available reflects the filesystem"
 assert_ok zro_bin_available zmprov
-assert_fail zro_bin_available zmmailbox
+assert_fail zro_bin_available zmpurge
 assert_fail zro_bin_available 'zmprov; rm -rf /'
 assert_fail zro_bin_available ''
 
@@ -282,7 +289,11 @@ ZRO_ZIMBRA_BIN=/nonexistent ZRO_ZIMBRA_LIBEXEC=/nonexistent assert_ok zro_bin_av
 ZRO_ZIMBRA_BIN=/nonexistent ZRO_ZIMBRA_LIBEXEC=/nonexistent assert_ok zro_bin_available gzip
 
 it "refuses to resolve a binary that declares no root"
-assert_fail zro_bin_path zmmailbox
+# The mailbox binary was this case's example until the folder and size screens
+# gave it a declaration. What the case is about is the absence of a default root,
+# so any undeclared name serves — and one that exists on a real Zimbra host says
+# more than an invented one: being installed is not being declared.
+assert_fail zro_bin_path zmpurge
 assert_fail zro_bin_path ''
 # The declaration is matched as literal text, so a name carrying a glob or a
 # shell metacharacter cannot borrow another binary's root.

@@ -1,0 +1,5 @@
+Permissions      Type  Display
+-----------  --------  -------
+          r   account  yeni.kullanici@example.com
+         rw     group  tum-personel@example.com
+          r    public  

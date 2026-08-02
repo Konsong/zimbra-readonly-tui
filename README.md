@@ -13,9 +13,14 @@ Bash + whiptail. No runtime dependencies beyond what a Zimbra host already has.
 > the tool changes nothing. It was also run against a server with `mailboxd`
 > stopped, where it degraded to LDAP reads rather than failing.
 >
-> One question about Zimbra's own side effects remains open and is recorded in
-> the [operator guide](docs/operations.md); it affects the quota screen only.
-> Message search arrives in M2; see the
+> **The first mailbox screens are in.** Folders, one folder, one folder's
+> sharing, the mailbox size and quota usage all read the mailbox itself — behind
+> an existence gate that proves the mailbox is there using a command incapable of
+> creating one, because `zmmailbox` provisions during session setup. Each of the
+> four reads was measured on a lab server with the account's row in the `mailbox`
+> table captured either side, against a control that moved it: see
+> [the research note](docs/research/2026-08-02-folders-size-and-quota.md).
+> Message search is next; see the
 > [design spec](docs/superpowers/specs/2026-07-29-zimbra-readonly-tui-design.md).
 
 ## Why "read-only" is a structural claim, not a promise

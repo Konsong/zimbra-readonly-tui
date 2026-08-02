@@ -293,17 +293,18 @@ assert_ok zro_allowed tail -n 500 '/var/log/zimbra.log'
 assert_ok zro_allowed gzip -dc '/var/log/zimbra.log.1.gz'
 assert_ok zro_allowed zmcontrol -v
 
-it "the allowlist names exactly one flag in a data position"
-# One entry, and it arrived with the ticket that needs it. A second one added
-# without a ticket behind it fails here — which is the same friction the list
-# itself exists to impose.
+it "the allowlist names exactly two flags in a data position"
+# Two entries, and each arrived with the ticket that needs it: the entry-only
+# account read, and the raw-byte form of the mailbox size. A third added without a
+# ticket behind it fails here — which is the same friction the list itself exists
+# to impose.
 #
 # Both shapes a data-position flag can take are read: a third token behind a
 # subcommand, and a fourth behind a mode flag and its subcommand. Reading only
 # the first would let `zmprov:-l:ga:-t` be added in silence, which is the entry a
 # maintainer would reach for first.
 data_flags=$(zro_allow_entries | grep -E '^[^:]+:[^-][^:]*:-|^[^:]+:-[^:]*:[^:]*:')
-assert_eq "$data_flags" 'zmprov:ga:-e'
+assert_eq "$data_flags" "$(printf '%s\n%s' 'zmprov:ga:-e' 'zmmailbox:gms:-v')"
 
 # zmprov gmi maps to the admin GetMailboxRequest, whose handler calls
 # MailboxManager.getMailboxByAccount(account) — the AUTOCREATE overload,
@@ -349,27 +350,83 @@ for form in -t --temp -e -fd -v -a; do
   assert_fail zro_allowed zmprov gis 'ahmet.yilmaz@example.com' "$form"
 done
 
-it "the mailbox binary is on the list in no form at all"
-# The gate arrived without an operation behind it, deliberately: it is the
-# precondition for reaching that binary, not a reason to reach it. Every call the
-# prefix owner makes is refused here, one step after the oracle has already proven
-# it would have been safe — which is exactly the friction this list is for.
-entries=$(zro_allow_entries)
-assert_not_contains "$entries" "zmmailbox"
-for sub in gaf gms search gc gmi gru sf gm; do
+# ------------------------------------------- the reads behind the gate ------
+#
+# The gate arrived with no operation behind it, deliberately, and four arrived
+# afterwards with the tickets that expose them. BEING ON THIS LIST IS NOT BEING
+# REACHABLE: the exec gate refuses this binary from every caller but the one that
+# owns the existence oracle, and that check runs before the list is consulted at
+# all. What the list decides is which questions that one caller may ask.
+
+it "approves the four reads the folder, size and quota screens are built on"
+assert_ok zro_allowed zmmailbox gaf
+assert_ok zro_allowed zmmailbox gaf 'ahmet.yilmaz@example.com'
+assert_ok zro_allowed zmmailbox gf 'ahmet.yilmaz@example.com' '/Inbox'
+assert_ok zro_allowed zmmailbox gfg 'ahmet.yilmaz@example.com' '/Inbox'
+assert_ok zro_allowed zmmailbox gms 'ahmet.yilmaz@example.com'
+
+it "and the raw-byte form of the size read, which is a flag in the data position"
+# The default form is built with the JVM's default locale: the same mailbox reads
+# `1.44 GB` on one host and `1,44 GB` on the next, and a decimal comma taken for a
+# thousands separator is a mailbox reported a hundred times too large. The flag is
+# approved where it really stands — after the subcommand, which is the position
+# measured to produce the raw count.
+assert_ok zro_allowed zmmailbox gms 'ahmet.yilmaz@example.com' -v
+assert_ok zro_allowed zmmailbox gms -v
+
+it "and each of them in exactly one spelling"
+# Read as the tracer's filters are: an operation reaches the gate in one spelling,
+# so a maintainer reading a call site knows which entry approves it.
+for sub in getAllFolders getFolder getFolderGrant getMailboxSize; do
   assert_fail zro_allowed zmmailbox "$sub"
-  assert_fail zro_allowed zmmailbox -z
-  assert_fail zro_allowed zmmailbox -m 'ahmet.yilmaz@example.com'
 done
+assert_fail zro_allowed zmmailbox gms --verbose
+assert_fail zro_allowed zmmailbox gaf -v
+assert_fail zro_allowed zmmailbox gf -v '/Inbox'
+
+it "and refuses every other subcommand of that binary"
+# `gm` is the one here that is not write-NAMED. It clears the unread flag on the
+# message it reports — doGetMessage hard-codes setMarkRead(true) and no flag
+# disables it — so it is a write in effect, which is the only test this list
+# applies. `gru` is an HTTP GET whose -o form writes a local file, and `sf`
+# fetches a remote feed INTO the folder.
+for sub in gm getMessage gru sf search gc gmi gfr emptyDumpster whoami noOp a; do
+  assert_fail zro_allowed zmmailbox "$sub"
+done
+
+it "and every command that would change a mailbox, though the binary is listed"
+# Each lives one letter away from an approved read, which is why they are written
+# down rather than left to the absence of an entry.
+for sub in df ef cf csf cm rf mfg mff mfc mfch mfu mfr iuif am dm mm mmr \
+           deleteFolder emptyFolder createFolder renameFolder modifyFolderGrant \
+           addMessage deleteMessage moveMessage markFolderRead syncFolder; do
+  assert_fail zro_allowed zmmailbox "$sub"
+done
+
+it "and the prefix the binary really takes approves nothing on its own"
+# `zmmailbox:-z:-m` would approve everything behind it, which is what `zmprov:-l`
+# is kept off this list for. The prefix belongs to the exec gate, which puts it
+# back only after the allowlist has read the subcommand in a position it can see.
+assert_fail zro_allowed zmmailbox -z
+assert_fail zro_allowed zmmailbox -z -m
+assert_fail zro_allowed zmmailbox -m 'ahmet.yilmaz@example.com'
+assert_fail zro_allowed zmmailbox -z -m 'ahmet.yilmaz@example.com'
+
+it "the allowlist names exactly the four reads that binary exposes"
+# Reading the list has to tell a maintainer what may be asked of a mailbox. A
+# fifth entry added without a ticket behind it fails here, and so does a second
+# spelling of one of these.
+assert_eq "$(zro_allow_entries | grep '^zmmailbox:')" "$(printf '%s\n%s\n%s\n%s\n%s' \
+  'zmmailbox:gaf' 'zmmailbox:gf' 'zmmailbox:gfg' 'zmmailbox:gms' 'zmmailbox:gms:-v')"
 
 it "and the binary it names is the one the gate refuses from a foreign caller"
 # Two declarations that have to agree, and nothing else holds them together: the
-# name the gate compares against and the name that is absent from this list.
+# name the gate compares against and the name these entries stand under.
 assert_eq "$ZRO_GATED_BIN" "zmmailbox"
 assert_eq "$(printf '%s\n' "${ZRO_GATED_PREFIX[@]}")" "$(printf -- '-z\n-m')"
 
 it "denies a binary that is not on the list at all"
-assert_fail zro_allowed zmmailbox search
+assert_fail zro_allowed zmsoap ga
 assert_fail zro_allowed bash -c
 assert_fail zro_allowed sh -c
 assert_fail zro_allowed rm -rf

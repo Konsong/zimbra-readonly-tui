@@ -23,18 +23,20 @@ chmod +x "$ZRO_TEST_ROOT"/mocks/bin/* 2>/dev/null || true
 ZRO_MOCK_LOG=$(mktemp); export ZRO_MOCK_LOG
 FIX="$ZRO_TEST_ROOT/fixtures"
 
-# The quota screen used to read usage with `zmprov gmi`. That command's handler,
-# GetMailbox, calls MailboxManager.getMailboxByAccount(account) — the AUTOCREATE
-# overload — so reading an account's usage created a mailbox for any account
-# that had none. It is the only read-named admin handler that does this.
+# THE QUOTA LIMIT IS A DIRECTORY FACT and it is read here; the USAGE beside it is
+# a mailbox fact and lives in lib/store.sh, behind the existence gate. This file
+# is about the half that stayed: which read answered the limit, and what happens
+# when nothing did.
 #
-# These tests exist to keep it out. Losing the usage figure is the price; a tool
-# whose promise is that a write cannot be expressed cannot ship a command that
-# creates mailboxes.
-it "the quota screen runs no mailbox command at all"
+# `zmprov gmi` is why the two are apart at all. Its handler, GetMailbox, calls
+# MailboxManager.getMailboxByAccount(account) — the AUTOCREATE overload — so
+# reading an account's usage created a mailbox for any account that had none. It
+# is the only read-named admin handler that does this, and it is nowhere in this
+# tool. Usage came back through a command that cannot provision, not through it.
+it "reading the limit runs no mailbox command at all"
 : >"$ZRO_MOCK_LOG"
 ZRO_MOCK_ZMPROV_GA_OUT="$FIX/zmprov_ga_active.txt" \
-  zro_account_quota 'ahmet.yilmaz@example.com' >/dev/null
+  zro_account_card 'ahmet.yilmaz@example.com' >/dev/null
 log=$(cat "$ZRO_MOCK_LOG")
 assert_not_contains "$log" "$(printf '\tgmi')"
 assert_not_contains "$log" "getMailboxInfo"
@@ -46,48 +48,47 @@ it "the gate refuses the mailbox command even if something calls it"
 assert_status "$ZRO_E_DENIED" zro_exec zmprov gmi 'a@b.com'
 assert_not_contains "$(cat "$ZRO_MOCK_LOG")" "zmprov"
 
-it "shows the quota limit and the mailbox host"
-out=$(ZRO_MOCK_ZMPROV_GA_OUT="$FIX/zmprov_ga_active.txt" \
-      ZRO_MOCK_ZMPROV_GC_OUT="$FIX/zmprov_gc_10gb.txt" \
-      zro_account_quota 'ahmet.yilmaz@example.com')
-assert_contains "$out" "5.0 GB"
-assert_contains "$out" "mail01.example.com"
+it "the limit is read off the account entry, and says which read answered"
+raw=$(ZRO_MOCK_ZMPROV_GA_OUT="$FIX/zmprov_ga_active.txt" \
+      zro_account_fetch 'ahmet.yilmaz@example.com')
+assert_contains "$(zro_quota_field "$(zro_account_quota_limit "$raw")")" "5.0 GB"
+assert_contains "$(zro_quota_field "$(zro_account_quota_limit "$raw")")" "hesap sorgusundan"
 
-it "says plainly why usage is not shown"
-out=$(ZRO_MOCK_ZMPROV_GA_OUT="$FIX/zmprov_ga_active.txt" \
-      zro_account_quota 'ahmet.yilmaz@example.com')
-assert_contains "$out" "gosterilmiyor"
-assert_contains "$out" "YARATIYOR"
-
-it "reports unlimited quota as such"
-out=$(ZRO_MOCK_ZMPROV_GA_OUT="$FIX/zmprov_ga_locked.txt" \
-      zro_account_quota 'kilitli@example.com')
-assert_contains "$out" "sinirsiz"
+it "reports an unlimited quota as such, and never as zero"
+# Zimbra writes zimbraMailQuota: 0 to mean unlimited.
+raw=$(ZRO_MOCK_ZMPROV_GA_OUT="$FIX/zmprov_ga_locked.txt" \
+      zro_account_fetch 'kilitli@example.com')
+assert_contains "$(zro_quota_field "$(zro_account_quota_limit "$raw")")" "sinirsiz"
 
 it "falls back to the COS limit when the account carries none"
-out=$(ZRO_MOCK_ZMPROV_GA_OUT="$FIX/zmprov_l_ga_no_quota.txt" \
-      ZRO_MOCK_ZMPROV_GC_OUT="$FIX/zmprov_gc_10gb.txt" \
-      zro_account_quota 'kotasiz@example.com')
-assert_contains "$out" "10.0 GB"
-assert_not_contains "$out" "sinirsiz"
+raw=$(ZRO_MOCK_ZMPROV_GA_OUT="$FIX/zmprov_l_ga_no_quota.txt" \
+      zro_account_fetch 'kotasiz@example.com')
+limit=$(ZRO_MOCK_ZMPROV_GC_OUT="$FIX/zmprov_gc_10gb.txt" \
+        zro_account_quota_limit "$raw")
+field=$(zro_quota_field "$limit")
+assert_contains "$field" "10.0 GB"
+assert_contains "$field" "COS kaydindan"
+assert_not_contains "$field" "sinirsiz"
 
 it "an explicit account quota still wins over the COS"
-out=$(ZRO_MOCK_ZMPROV_GA_OUT="$FIX/zmprov_ga_active.txt" \
-      ZRO_MOCK_ZMPROV_GC_OUT="$FIX/zmprov_gc_10gb.txt" \
-      zro_account_quota 'ahmet.yilmaz@example.com')
-assert_contains "$out" "5.0 GB"
-assert_not_contains "$out" "10.0 GB"
+raw=$(ZRO_MOCK_ZMPROV_GA_OUT="$FIX/zmprov_ga_active.txt" \
+      zro_account_fetch 'ahmet.yilmaz@example.com')
+limit=$(ZRO_MOCK_ZMPROV_GC_OUT="$FIX/zmprov_gc_10gb.txt" \
+        zro_account_quota_limit "$raw")
+field=$(zro_quota_field "$limit")
+assert_contains "$field" "5.0 GB"
+assert_not_contains "$field" "10.0 GB"
 
-it "a missing account still fails the quota screen"
-ZRO_MOCK_ZMPROV_GA_ERR="$FIX/zmprov_ga_no_such_account.err" \
-ZRO_MOCK_ZMPROV_GA_RC=1 \
-ZRO_MOCK_ZMPROV__L_GA_ERR="$FIX/zmprov_ga_no_such_account.err" \
-ZRO_MOCK_ZMPROV__L_GA_RC=1 \
-  assert_status "$ZRO_E_NO_ACCOUNT" zro_account_quota 'yok@example.com'
+it "a limit nobody could read is neither zero nor unlimited"
+# The single most misleading thing this field can say. An account read that
+# answered nothing has no limit in it, and the difference between that and a
+# limit of 0 is the difference between 'unknown' and 'no limit at all'.
+assert_status "$ZRO_E_NO_RESULT" zro_account_quota_limit ""
+assert_out_eq "$ZRO_TXT_UNKNOWN" zro_quota_field ""
 
 it "validates the account before running anything"
 : >"$ZRO_MOCK_LOG"
-assert_status "$ZRO_E_INPUT" zro_account_quota 'a@b.com; id'
+assert_status "$ZRO_E_INPUT" zro_account_fetch 'a@b.com; id'
 assert_status "$ZRO_E_INPUT" zro_account_membership 'a@b.com; id'
 assert_not_contains "$(cat "$ZRO_MOCK_LOG")" "zmprov"
 

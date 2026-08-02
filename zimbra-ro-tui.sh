@@ -28,6 +28,8 @@ ZRO_ROOT=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 . "$ZRO_ROOT/lib/account.sh"
 # shellcheck source=lib/mailbox.sh
 . "$ZRO_ROOT/lib/mailbox.sh"
+# shellcheck source=lib/store.sh
+. "$ZRO_ROOT/lib/store.sh"
 # shellcheck source=lib/identity.sh
 . "$ZRO_ROOT/lib/identity.sh"
 # shellcheck source=lib/directory.sh
@@ -427,7 +429,6 @@ $(zro_account_cost_note "$id")"
 
   case $id in
     account-card)       out=$(zro_account_card "$acct") || rc=$? ;;
-    account-quota)      out=$(zro_account_quota "$acct") || rc=$? ;;
     account-provenance) out=$(zro_account_provenance "$acct") || rc=$? ;;
     account-membership) out=$(zro_account_membership "$acct") || rc=$? ;;
     # Declared in the one list and not answered here: a defect in this file, and
@@ -497,51 +498,235 @@ zro_screen_mailbox() {
     return 0
   fi
 
-  # ONE READ, AND IT SAYS SO. This is the one account screen whose cost is exact
-  # before it runs — a single invocation, and none at all for an account this
-  # session has already proven — so it says that rather than the general sentence
-  # about the number of queries depending on what the account turns out to name.
   zro_ui_notice "Calisiyor" "Zimbra sorgulaniyor, lutfen bekleyin.
 
 Hesap: $acct
-$(zro_mailbox_cost_note)"
+$(zro_mailbox_cost_note "$id")"
 
   case $id in
-    mailbox-status) out=$(zro_mbox_card "$acct") || rc=$? ;;
-    # One arm today and a refusal for everything else, which is not the same as
-    # having no case at all. The dispatch above routes every id beginning
-    # `mailbox-` here, and the screens behind the gate arrive with their own
-    # tickets — so the second one to be declared and not wired up would otherwise
-    # be drawn as this one, under its own label. An answer shown under a heading
-    # the operator did not choose is the confusion the frame exists to prevent.
+    mailbox-status)  out=$(zro_mbox_card "$acct") || rc=$? ;;
+    mailbox-quota)   out=$(zro_store_quota_card "$acct") || rc=$? ;;
+    mailbox-size)    out=$(zro_store_size_card "$acct") || rc=$? ;;
+    mailbox-folders) out=$(zro_store_folders_card "$acct") || rc=$? ;;
+    # Declared in the one list and not answered here: a defect in this file, and
+    # said out loud rather than swallowed. The dispatch above routes every id
+    # beginning `mailbox-` here, so a screen declared and not wired up would
+    # otherwise be drawn as the one above it, under its own label — and $out would
+    # still hold the previous answer. An answer shown under a heading the operator
+    # did not choose is the confusion the frame exists to prevent.
     *) zro_log error "menu defect, no mailbox operation for: $id"
        zro_report_defect
        return 0 ;;
   esac
 
-  # THE SILENT GATE, TOLD APART FROM AN ORDINARY OUTAGE. The shared reporter would
-  # say the query could not be run, which is true and is not what an operator needs
-  # here: what they need is that no mailbox question can be answered at all until
-  # the service returns, and that this costs them nothing they could otherwise have
-  # had.
-  if [ "$rc" -eq "$ZRO_E_UNAVAILABLE" ]; then
-    zro_mailbox_silent_gate
-    return 0
-  fi
-  if [ "$rc" -ne 0 ]; then
-    zro_report_error "$rc"
-    return 0
-  fi
+  zro_mailbox_report "$rc" "$acct" "$title" && return 0
   zro_show_text "$title" "$(zro_screen_alias_note "$out")"
 }
 
-# What the gate will spend, said before it spends it. Its own sentence rather than
-# the account screens' general one, because this is the second screen in the tool
-# that can be exact — and the only one whose exact answer is sometimes nothing.
+# WHAT A SCREEN BEHIND THE GATE DOES WITH A REFUSAL, decided once for all of them.
+#
+#   $1  the code the operation returned      $2  the account it was about
+#   $3  the title of the screen the operator chose
+#
+# Succeeds when it has drawn something, so a caller returns on success and carries
+# on with its own report otherwise.
+#
+# TWO OF THESE ARE NOT FAILURES AT ALL. An account with no mailbox and an address
+# that is no account are ANSWERS — the gate ran, it was told something definite,
+# and the operation it stopped was never going to add to it. Reported through the
+# shared failure box they would read 'Mailbox bulunamadi', which is the sentence
+# this whole design exists to replace: a mailbox is created on first login or first
+# delivery, so an account without one is one nobody has used. The gate's own screen
+# says exactly that, and it is drawn here from the verdict already in hand rather
+# than by asking a second time.
+#
+# THE SILENT GATE IS THE THIRD, and is told apart from an ordinary outage. The
+# shared reporter would say the query could not be run, which is true and is not
+# what an operator needs: what they need is that no mailbox question can be
+# answered until the service returns, and that this costs them nothing they could
+# otherwise have had.
+zro_mailbox_report() {
+  local rc=${1-0} acct=${2-} title=${3-}
+  case $rc in
+    0) return 1 ;;
+    "$ZRO_E_NO_MAILBOX")
+      zro_show_text "$title" \
+        "$(zro_screen_alias_note "$(zro_mbox_verdict_card "$acct" nomailbox)")" ;;
+    "$ZRO_E_NO_ACCOUNT")
+      zro_show_text "$title" \
+        "$(zro_screen_alias_note "$(zro_mbox_verdict_card "$acct" noaccount)")" ;;
+    "$ZRO_E_UNAVAILABLE") zro_mailbox_silent_gate ;;
+    *) zro_report_error "$rc" ;;
+  esac
+  return 0
+}
+
+# What a mailbox screen will spend, said before it spends it.
+#
+# THE GATE'S OWN SENTENCE IS NOT THE OTHERS', and the difference is the point of
+# saying anything. The existence screen reads one index statistic and nothing else,
+# and costs NOTHING at all for an account this session has already proven — the
+# only exact zero in the tool. Every screen behind it pays that gate once and then
+# opens the mailbox, and the two folder screens pay twice on top: the listing they
+# offer a folder from, and the folder itself.
 zro_mailbox_cost_note() {
-  printf 'Bu ekran mailbox dizin istatistigini BIR KEZ okur ve mailboxun icine\n'
-  printf 'bakmaz. Bu oturumda daha once yanitlanmis bir hesap icin hic sorgu\n'
-  printf 'calismaz.'
+  case ${1-} in
+    mailbox-status)
+      printf 'Bu ekran mailbox dizin istatistigini BIR KEZ okur ve mailboxun icine\n'
+      printf 'bakmaz. Bu oturumda daha once yanitlanmis bir hesap icin hic sorgu\n'
+      printf 'calismaz.' ;;
+    mailbox-folder|mailbox-folder-grants)
+      printf 'Bu ekran once klasor listesini, sonra sectiginiz klasoru okur: iki\n'
+      printf 'sorgu. Her biri birkac saniye surebilir.' ;;
+    mailbox-quota)
+      printf 'Bu ekran mailbox boyutunu ve hesap kaydini okur: iki sorgu.\n'
+      printf 'Kullanim degeri mailboxtan, limit ise dizinden gelir.' ;;
+    *)
+      printf 'Bu ekran mailboxun icini okur; sorgu birkac saniye surebilir.' ;;
+  esac
+}
+
+ZRO_TXT_FOLDER_PICK='Klasor secin:
+
+Liste bu mailboxtan okundu. Parantez icindeki sayilar klasordeki oge sayisi ve
+okunmamis oge sayisidir.'
+
+# A FOLDER, THEN THE QUESTION ABOUT IT. Two screens are reached this way — one
+# folder's detail and one folder's grants — and both need a folder the operator
+# has not got in hand.
+#
+# THE LISTING IS READ ONCE, before the loop rather than inside it. An operator
+# opening three folders in a row pays for the listing once and for each folder
+# once, instead of re-reading the mailbox every time they come back — and the
+# folders of a mailbox do not change while somebody is reading one. Coming back to
+# the menu and choosing the entry again is what re-reads it.
+#
+# A POSITION IN THE LIST, NEVER A PATH, exactly as the log viewer does it. What
+# whiptail hands back is looked up in the array this program built out of the
+# server's own answer, so no value from the screen becomes an argument — and a
+# value that is not one of those positions names nothing and is refused.
+zro_menu_folder() {
+  local id=${1-} acct title rows rc=0 choice line i=0 path out
+  local unread count
+  local -a paths=() items=()
+
+  if ! title=$(zro_menu_label "$id"); then
+    zro_log error "menu defect, no label for folder operation: $id"
+    zro_report_defect
+    return 0
+  fi
+  acct=$(zro_identity_selected_account)
+  if [ -z "$acct" ]; then
+    zro_log error "menu defect, folder operation with no selected address: $id"
+    zro_report_defect
+    return 0
+  fi
+
+  zro_ui_notice "Calisiyor" "Zimbra sorgulaniyor, lutfen bekleyin.
+
+Hesap: $acct
+$(zro_mailbox_cost_note "$id")"
+
+  rows=$(zro_store_folders_fetch "$acct") || rc=$?
+  zro_mailbox_report "$rc" "$acct" "$title" && return 0
+
+  while IFS= read -r line; do
+    [ -n "$line" ] || continue
+    # The id and the view are read past rather than read: the row is positional,
+    # so the fields in front of the ones this menu shows still have to be stepped
+    # over. Both are on the folder listing, which is the screen for looking at
+    # them; here they would be noise on a line an operator picks a folder from.
+    line=${line#*"$ZRO_TAB"}
+    line=${line#*"$ZRO_TAB"}
+    unread=${line%%"$ZRO_TAB"*};  line=${line#*"$ZRO_TAB"}
+    count=${line%%"$ZRO_TAB"*};   path=${line#*"$ZRO_TAB"}
+    i=$((i + 1))
+    paths+=("$path")
+    items+=("$i" "$path ($count oge, $unread okunmamis)")
+  done <<EOF
+$rows
+EOF
+
+  if [ "${#paths[@]}" -eq 0 ]; then
+    # Unreachable while the reader refuses an empty listing, and here so that the
+    # two may only disagree loudly: a menu drawn with no entries is a screen an
+    # operator cannot leave except by cancelling.
+    zro_log error "folder defect, a listing that answered names no folder"
+    zro_report_defect
+    return 0
+  fi
+
+  while :; do
+    rc=0
+    choice=$(zro_ui_menu "$title" "$ZRO_TXT_FOLDER_PICK" "${items[@]}") || rc=$?
+    [ "$rc" -eq 0 ] || return 0
+
+    case $choice in
+      ''|*[!0-9]*)
+        zro_log error "denied, not a position in the folder list: $choice"
+        continue ;;
+    esac
+    if [ "$choice" -lt 1 ] || [ "$choice" -gt "${#paths[@]}" ]; then
+      zro_log error "denied, position outside the folder list: $choice"
+      continue
+    fi
+    path=${paths[choice - 1]}
+
+    zro_ui_notice "Calisiyor" "Klasor okunuyor, lutfen bekleyin.
+
+Hesap: $acct
+Klasor: $path"
+
+    rc=0
+    case $id in
+      mailbox-folder)        out=$(zro_store_folder_card "$acct" "$path") || rc=$? ;;
+      mailbox-folder-grants) out=$(zro_store_grants_card "$acct" "$path") || rc=$? ;;
+      # Routed here by the dispatch below and answered by neither arm: a defect in
+      # this file, said as one rather than drawn as whichever answer $out still
+      # held.
+      *) zro_log error "menu defect, no folder operation for: $id"
+         zro_report_defect
+         return 0 ;;
+    esac
+
+    if [ "$rc" -eq "$ZRO_E_NO_FOLDER" ]; then
+      zro_screen_folder_gone "$path"
+      continue
+    fi
+    zro_mailbox_report "$rc" "$acct" "$title" && continue
+    zro_show_text "$title" "$(zro_screen_alias_note "$out")"
+  done
+}
+
+# A PATH THE LISTING OFFERED AND THE SERVER DOES NOT KNOW. It has one likely
+# cause and it is not a mistake the operator made: the listing prints a
+# parenthesised decoration INSIDE the path column for a search folder, a
+# mountpoint and a feed — the query, the owner and the remote id, the URL — and
+# none of that is part of the path. The tool cannot tell such a row from a folder
+# whose name really ends in brackets, so it offers both and says this when the
+# server refuses one.
+#
+# The other cause is ordinary and is named too: a folder deleted or renamed
+# between the listing and the question.
+zro_screen_folder_gone() {
+  local path=${1-} detail
+  detail=$(zro_last_error)
+  [ -n "$detail" ] && detail="
+
+Zimbra ciktisi:
+$detail"
+
+  zro_ui_msgbox "Klasor bulunamadi" \
+"Bu klasor sunucuda bulunamadi:
+$path
+
+Iki sebebi olabilir:
+  - Listede bu satir bir arama klasoru, bir baglanti (mountpoint) veya bir
+    besleme olabilir. Bunlarin yolunun sonuna parantez icinde sorgu, sahip veya
+    adres bilgisi eklenir ve o kisim yolun parcasi degildir.
+  - Klasor listelendikten sonra silinmis veya adi degistirilmis olabilir.
+
+Listeye donup baska bir klasor secebilirsiniz.$detail"
 }
 
 # THE SILENT GATE. The oracle talks SOAP to the mailbox service and has no other
@@ -1190,10 +1375,14 @@ EOF
 # roots. An operation with no class fails the build; a class no operation claims
 # fails it too.
 ZRO_MENU_OPS='account-card:account:1:Hesap karti
-account-quota:account:1:Kota kullanimi
 account-provenance:account:1:Deger nereden geliyor (hesap mi, devralma mi)
 account-membership:account:1:Dagitim listesi uyelikleri
 mailbox-status:account:2:Mailbox var mi
+mailbox-quota:account:2:Kota kullanimi
+mailbox-size:account:2:Mailbox boyutu
+mailbox-folders:account:2:Klasorler
+mailbox-folder:account:2:Klasor detayi
+mailbox-folder-grants:account:2:Klasor paylasimlari
 dl-card:list:1:Dagitim listesi karti
 domain-card:address:1:Alan adi karti
 trace-recipient:address:3:Teslim takibi: bu adrese gelenler
@@ -1518,6 +1707,11 @@ EOF
 
     case $choice in
       account-*)   zro_screen_account "$choice" ;;
+      # The two screens that need a folder before they can ask anything come
+      # first: both are mailbox operations, and a case list that matched the
+      # family before the members would send them to a screen that has no folder
+      # to work with.
+      mailbox-folder|mailbox-folder-grants) zro_menu_folder "$choice" ;;
       mailbox-*)   zro_screen_mailbox "$choice" ;;
       dl-card)     zro_screen_dl "$choice" ;;
       domain-card) zro_screen_domain "$choice" ;;

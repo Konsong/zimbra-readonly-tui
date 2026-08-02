@@ -260,6 +260,46 @@ assert_status "$ZRO_E_INPUT" zro_validate_datetime '-2026-07-28 08:00'
 assert_status "$ZRO_E_INPUT" zro_validate_datetime $'2026-07-28 08:00\n2026-07-29 08:00'
 assert_status "$ZRO_E_INPUT" zro_validate_datetime $'2026-07-28\t08:00'
 
+# ------------------------------------------------------- a folder path ------
+#
+# PERMISSIVE ABOUT THE NAME, and that is the decision rather than an oversight. A
+# folder is named by the account holder, in their own language, with whatever
+# punctuation they typed — and the value never becomes a command name: it travels
+# as one element of an argument vector, alongside a subcommand the allowlist
+# approved. What is refused is what would stop it being ONE PATH.
+
+it "admits the folder paths a real mailbox carries"
+assert_ok zro_validate_folder_path '/'
+assert_ok zro_validate_folder_path '/Inbox'
+# Ships with every mailbox Zimbra creates, space and all.
+assert_ok zro_validate_folder_path '/Emailed Contacts'
+assert_ok zro_validate_folder_path '/Proje/2026/Q3'
+assert_ok zro_validate_folder_path '/Rapor (2026)'
+assert_ok zro_validate_folder_path '/Musteri & Tedarikci'
+assert_ok zro_validate_folder_path '/Fatura #17'
+assert_ok zro_validate_folder_path "/Ahmet'in klasoru"
+
+it "and refuses anything that is not one path"
+# Rooted, because every path the folder listing prints is. A value that does not
+# begin with '/' is a folder id, a decoration, or something that was never a path
+# — and requiring the '/' is also what makes the leading dash every other
+# validator has to refuse impossible here.
+assert_status "$ZRO_E_INPUT" zro_validate_folder_path ''
+assert_status "$ZRO_E_INPUT" zro_validate_folder_path 'Inbox'
+assert_status "$ZRO_E_INPUT" zro_validate_folder_path '-v'
+assert_status "$ZRO_E_INPUT" zro_validate_folder_path '--json'
+assert_status "$ZRO_E_INPUT" zro_validate_folder_path ' /Inbox'
+# A control character would be a second line in the report that says which folder
+# was read, and in every log line this program writes about it.
+assert_status "$ZRO_E_INPUT" zro_validate_folder_path $'/In\nbox'
+assert_status "$ZRO_E_INPUT" zro_validate_folder_path $'/In\tbox'
+assert_status "$ZRO_E_INPUT" zro_validate_folder_path $'/Inbox\r'
+
+it "and bounds the length of one"
+long=$(printf '/%s' "$(head -c 1023 /dev/zero | tr '\0' 'a')")
+assert_ok zro_validate_folder_path "$long"
+assert_status "$ZRO_E_INPUT" zro_validate_folder_path "$long$long"
+
 it "validates bare domains"
 assert_ok zro_validate_domain 'example.com'
 assert_ok zro_validate_domain 'mail.example.co.uk'
