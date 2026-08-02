@@ -228,6 +228,31 @@ account-scoped screen runs, because `zmprov ga` on a distribution list fails wit
 goes on to look in the wrong place.
 _Avoid_: lookup, account check
 
+**Absent from the directory**:
+The identity outcome where every read answered and none of them found anything —
+not an account, not an alias, not a resource, not a list. It is **a result, not a
+failure**: it is returned as success, and it is the one outcome a query that
+could not run may never be reported as. Distinguishing the two is the whole point
+of resolving an address at all.
+_Avoid_: not found, no such account — the second is a sentence about one read
+
+**Unidentified**:
+A selected address whose identity could not be established, because the reads
+that would have answered failed. It is a fact about this program, not about the
+address: nothing is marked from it, every screen is still offered, and each
+refuses on its own terms.
+_Avoid_: unknown address, unresolved — an unresolved address sounds like one that
+has no answer, and this is one whose answer nobody got
+
+**Operation scope**:
+What an operation needs before it can run, as one of three. `account` needs the
+selected address to *be* an account — an alias and a resource are accounts, a
+list is not. `address` needs an address of any kind: mail to a list appears in
+the transfer agent's log under the list's own address, so a delivery trace
+answers there as well. `server` needs no address at all.
+_Avoid_: category, requires-address — the second collapses the first two, which
+is exactly the distinction that keeps a trace available on a list address
+
 **Provenance**:
 Whether an attribute is set on the entry or inherited from its class of service.
 Only `zmprov ga -e` distinguishes them — `-l` expands COS values exactly as SOAP

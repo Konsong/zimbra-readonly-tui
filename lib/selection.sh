@@ -26,12 +26,35 @@ ZRO_LIB_SELECTION_LOADED=1
 # judged would be the check below with a way around it.
 ZRO_SELECTED=""
 
+# WHAT THAT ADDRESS TURNED OUT TO BE, as the record lib/identity.sh builds and
+# reads. Opaque here on purpose: this module's job is that the session remembers
+# one answer about one address, and the shape of the answer belongs to the module
+# that asks for it.
+#
+# Empty means the question has not been answered — either nothing is selected, or
+# resolution could not run. It never means the address is nothing: an identity
+# nobody could establish and an address that is nowhere are different facts, and
+# the only one of them that may mark a menu entry is the second.
+ZRO_SELECTED_IDENTITY=""
+
 zro_sel_address() {
   printf '%s' "$ZRO_SELECTED"
 }
 
 zro_sel_have() {
   [ -n "$ZRO_SELECTED" ]
+}
+
+zro_sel_identity() {
+  printf '%s' "$ZRO_SELECTED_IDENTITY"
+}
+
+zro_sel_have_identity() {
+  [ -n "$ZRO_SELECTED_IDENTITY" ]
+}
+
+zro_sel_set_identity() {
+  ZRO_SELECTED_IDENTITY=${1-}
 }
 
 # Refuses anything that is not an address, and says so out loud. The prompt has
@@ -46,8 +69,14 @@ zro_sel_set() {
     return "$ZRO_E_INPUT"
   fi
   ZRO_SELECTED=$value
+  # A new address is an unanswered question. Cleared HERE rather than by the
+  # caller, because an identity left over from the previous address is the exact
+  # failure the selected address exists to prevent, one level further in: a menu
+  # marked for one account while the session is about another.
+  ZRO_SELECTED_IDENTITY=""
 }
 
 zro_sel_clear() {
   ZRO_SELECTED=""
+  ZRO_SELECTED_IDENTITY=""
 }

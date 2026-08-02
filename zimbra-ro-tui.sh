@@ -26,6 +26,8 @@ ZRO_ROOT=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 . "$ZRO_ROOT/lib/ui.sh"
 # shellcheck source=lib/account.sh
 . "$ZRO_ROOT/lib/account.sh"
+# shellcheck source=lib/identity.sh
+. "$ZRO_ROOT/lib/identity.sh"
 # shellcheck source=lib/delivery.sh
 . "$ZRO_ROOT/lib/delivery.sh"
 # shellcheck source=lib/logview.sh
@@ -359,7 +361,10 @@ zro_screen_account() {
   # menu above. Refused here rather than passed on, because the modules judge an
   # empty address as invalid input and the operator would be shown a screen
   # about what they typed — on a screen where they typed nothing.
-  acct=$(zro_sel_address)
+  # THE ACCOUNT, WHICH IS NOT ALWAYS THE ADDRESS. An alias answers every one of
+  # these reads, but the answer is the account's — so it is the account this
+  # screen asks about, and the note below says which address the operator chose.
+  acct=$(zro_identity_selected_account)
   if [ -z "$acct" ]; then
     zro_log error "menu defect, account operation with no selected address: $id"
     zro_report_defect
@@ -392,7 +397,33 @@ Bu ekran birden fazla sorgu calistirir; her biri birkac saniye surebilir."
     zro_report_error "$rc"
     return 0
   fi
-  zro_show_text "$title" "$out"
+  zro_show_text "$title" "$(zro_screen_alias_note "$out")"
+}
+
+# An account screen's report, with the line an alias earns above it: the address
+# the operator chose, and the account the answer below is about.
+#
+# ON ITS OWN FIRST LINE, above everything the report says. A card headed 'Hesap:
+# ahmet.yilmaz@example.com' after an operator typed 'a.yilmaz@example.com' is
+# correct and still reads as an answer about the wrong address — and the frame
+# carries the alias, so without this the two would disagree with nobody saying why.
+#
+# THE REPORT IS PASSED IN rather than the note being returned to be glued on by
+# the caller. A note printed on its own would end in the blank line that separates
+# it, and command substitution eats trailing newlines — so the separation this
+# note depends on would have been silently removed at every call site that built
+# the string that way.
+#
+# Asked of how the address reached the entry rather than of what the entry is: a
+# resource carrying an alias needs the same line, and nothing else does.
+zro_screen_alias_note() {
+  local body=${1-}
+  if ! zro_identity_selected_aliased; then
+    printf '%s' "$body"
+    return 0
+  fi
+  printf '%s adresi bir alias; asagidaki bilgiler %s hesabina aittir.\n\n%s' \
+    "$(zro_sel_address)" "$(zro_identity_selected_account)" "$body"
 }
 
 # Why a delivery trace cannot answer on this host, in terms that name the repair.
@@ -828,9 +859,18 @@ yukseltip yeniden deneyin."
 # LABEL is what the operator reads, here and again as the title over the result,
 # so those two cannot drift apart. A label may contain a colon; only the first
 # two are separators.
-ZRO_MENU_OPS='account-card:address:Hesap karti
-account-quota:address:Kota kullanimi
-account-membership:address:Dagitim listesi uyelikleri
+# THREE SCOPES, not two. 'account' needs the selected address to BE an account —
+# an account read on a distribution list fails with "no such account", which is
+# true and useless. 'address' needs an address of any kind: mail to a list shows
+# up in the transfer agent's log under the list's own address, so a trace answers
+# there exactly as it does for a mailbox. 'server' needs none.
+#
+# The distinction is what makes the identity worth resolving. Without it the two
+# kinds would share one mark, and marking a trace unavailable on a list address
+# would take away the one screen that still answers.
+ZRO_MENU_OPS='account-card:account:Hesap karti
+account-quota:account:Kota kullanimi
+account-membership:account:Dagitim listesi uyelikleri
 trace-recipient:address:Teslim takibi: bu adrese gelenler
 trace-sender:address:Teslim takibi: bu adresten gidenler
 trace-msgid:server:Teslim takibi: ileti kimligine gore
@@ -878,29 +918,72 @@ zro_menu_label() {
   printf '%s' "${entry#*:}"
 }
 
-# Whether an operation can answer anything on this host, decided in ONE place so
-# that the mark on the entry and the screen behind it cannot disagree. It is
-# never a safety check — the exec gate refuses on its own terms — it is what
-# keeps an operator from spending a search to discover a packaging difference.
-zro_menu_available() {
-  case ${1-} in
-    trace-*) zro_cap_trace_available ;;
-    *) return 0 ;;
+# WHY an operation cannot answer, in one word, or nothing when it can. Decided in
+# ONE place so that the mark on the entry, the refusal before dispatch and the
+# screen that explains it cannot disagree. It is never a safety check — the exec
+# gate refuses on its own terms — it is what keeps an operator from spending a
+# search to discover something already known.
+#
+# TWO REASONS, and they are about different things. 'nocap' is a fact about this
+# host: a binary this build does not ship, a log nothing can read. 'notaccount'
+# is a fact about the selected address: it resolved to something an account read
+# cannot answer for. A host fact outranks an address fact, because it holds
+# whatever address is chosen next.
+#
+# An identity nobody could establish refuses NOTHING. A resolution that failed
+# means this program does not know what the address is, and marking an entry from
+# that would be reporting ignorance as a fact about the server.
+#
+# THE ANSWER COMES BACK IN A GLOBAL, not on stdout, and that is not a style
+# choice. This asks the capability module, whose probes fill a session cache —
+# and an assignment made inside $( ) dies with the subshell, which is the exact
+# bug lib/capability.sh records having already been fixed once. A caller that
+# read this through a command substitution would re-probe the host for every
+# entry of every redraw. Bash 4.2 has no namerefs, so a global is how a value
+# comes back from a function that must run in its caller's shell, the same way
+# ZRO_UI_ARGV does.
+ZRO_MENU_REASON=""
+
+zro_menu_refusal() {
+  local id=${1-}
+  ZRO_MENU_REASON=""
+  case $id in
+    trace-*) zro_cap_trace_available || { ZRO_MENU_REASON=nocap; return 0; } ;;
   esac
+  if [ "$(zro_menu_scope "$id" 2>/dev/null)" = account ]; then
+    case $(zro_identity_selected_kind) in
+      list|absent) ZRO_MENU_REASON=notaccount ;;
+    esac
+  fi
+  return 0
 }
 
-# Why it cannot, in terms that name the repair. Each operation's own screen,
+# What the entry says about itself before it is chosen. whiptail has no notion of
+# a disabled entry, so the label carries the reason — and a different one per
+# reason, because 'unavailable' on an operation that works perfectly for the next
+# address would read as a broken tool rather than as a wrong question.
+zro_menu_mark() {
+  case ${1-} in
+    nocap)      printf ' - KULLANILAMAZ' ;;
+    notaccount) printf ' - BU ADRES HESAP DEGIL' ;;
+  esac
+  return 0
+}
+
+# Why it cannot, in terms that name the repair. Each cause its own screen,
 # because a cause an operator would repair the same way as another does not earn
 # a message of its own — and one message naming every cause would send most of
 # its readers to the wrong place.
 #
-# The two cases are the same list read twice, so the only way to arrive here
-# without a screen is for them to disagree — which is a defect in this file, and
-# is said as one rather than papered over with a message about this server.
+# The reason comes from the one decision above rather than being worked out
+# again, so the only way to arrive here without a screen is for this case list to
+# have fallen behind it — which is a defect in this file, and is said as one
+# rather than papered over with a message about this server.
 zro_menu_unavailable() {
-  case ${1-} in
-    trace-*) zro_delivery_unavailable ;;
-    *) zro_log error "menu defect, no unavailability screen for: ${1-}"
+  case ${2-} in
+    nocap)      zro_delivery_unavailable ;;
+    notaccount) zro_screen_identity ;;
+    *) zro_log error "menu defect, no unavailability screen for: ${1-} (${2-})"
        zro_report_defect ;;
   esac
 }
@@ -923,12 +1006,70 @@ zro_menu_select_label() {
 # asks for one: everything else reads what this set. What is already selected is
 # offered typed in, so changing one address for the next is an edit rather than a
 # retyping — and comparing two accounts is a keystroke rather than a restart.
+#
+# The address is then RESOLVED, before any screen has a chance to assume it is an
+# account. That is the one moment in a session where the question "what is this
+# address" is worth up to two invocations: asked here it is asked once, and every
+# screen after it either works or says why in terms of what the address really is.
 zro_menu_select() {
   local addr rc=0
   addr=$(zro_prompt_address "Adres" "$ZRO_TXT_SELECT" \
     "Gecersiz adres. Ornek: ad.soyad@example.com" "$(zro_sel_address)") || rc=$?
   [ "$rc" -eq 0 ] || return "$rc"
-  zro_sel_set "$addr"
+  zro_sel_set "$addr" || return "$ZRO_E_INPUT"
+  zro_screen_identity_resolve
+}
+
+# Resolves the selected address and shows what it turned out to be.
+#
+# ALWAYS SHOWN, including for the ordinary account. A screen drawn only when the
+# answer is surprising is a screen nobody learns to read, and the account case is
+# not nothing either: it is where a mistyped address is caught, one keystroke
+# after it was typed, instead of two invocations into a card.
+#
+# A resolution that could not run leaves the address selected and the identity
+# unanswered. The address validated; only the question about it failed, and every
+# screen behind the menu still refuses on its own terms. What must not happen is
+# the failure being read as an answer — so the error screen is the shared one for
+# whatever actually went wrong, and nothing is marked from it.
+zro_screen_identity_resolve() {
+  local rec rc=0
+  zro_ui_notice "Calisiyor" "Adres dizinde araniyor, lutfen bekleyin.
+
+Adres: $(zro_sel_address)
+Bu adresin hesap mi, alias mi, liste mi oldugu sorgulaniyor."
+
+  rec=$(zro_identity_resolve "$(zro_sel_address)") || rc=$?
+  if [ "$rc" -ne 0 ]; then
+    zro_report_error "$rc"
+    return 0
+  fi
+  zro_sel_set_identity "$rec"
+  zro_screen_identity
+}
+
+# What the selected address is, drawn from what the session already learned.
+#
+# NOTHING IS RE-QUERIED HERE. It is reached twice — once after a resolution, and
+# again when an account operation is chosen for an address that is not an account
+# — and the second of those is a refusal, where spending two more invocations to
+# repeat an answer already in hand would be the tool charging for its own mistake.
+zro_screen_identity() {
+  local rec out
+  rec=$(zro_sel_identity)
+  if ! zro_sel_have_identity; then
+    # Only reachable if the menu offered this without an answer to show, which
+    # is a wiring defect rather than anything about the address.
+    zro_log error "menu defect, identity screen with no resolved identity"
+    zro_report_defect
+    return 0
+  fi
+  if ! out=$(zro_identity_card "$rec"); then
+    zro_log error "identity defect, no card for record: $rec"
+    zro_report_defect
+    return 0
+  fi
+  zro_show_text "Adres kimligi" "$out"
 }
 
 # An account-scoped operation chosen with nothing selected asks for the address
@@ -967,7 +1108,8 @@ zro_menu_main() {
       # probes run in this shell and the session cache they fill is the one the
       # screen behind the entry reads. Inside $( ) every redraw would ask the
       # host again.
-      zro_menu_available "$id" || label="$label - KULLANILAMAZ"
+      zro_menu_refusal "$id"
+      label="$label$(zro_menu_mark "$ZRO_MENU_REASON")"
       items+=("$id" "$label")
     done <<EOF
 $(zro_menu_ids)
@@ -992,14 +1134,29 @@ EOF
       zro_log error "not a declared operation: $choice"
       continue
     fi
-    if ! zro_menu_available "$choice"; then
-      zro_menu_unavailable "$choice"
+    # A HOST FACT FIRST, before the operator is asked for anything. Whether this
+    # build ships the tracer holds for every address, so learning it after an
+    # address has been chosen and a window answered would be the mark on the entry
+    # arriving too late to save the work it exists to save.
+    zro_menu_refusal "$choice"
+    if [ "$ZRO_MENU_REASON" = nocap ]; then
+      zro_menu_unavailable "$choice" "$ZRO_MENU_REASON"
       continue
     fi
     # Before the operation, not inside it: an operation that asked for the
     # address itself would be an operation that could forget to.
-    if [ "$scope" = address ]; then
+    if [ "$scope" != server ]; then
       zro_menu_need_address || continue
+    fi
+    # ASKED AGAIN, because the answer can only exist now. Whether this address is
+    # an account is not knowable until there is an address, and the prompt above
+    # is where a session with none acquires one — together with its identity. An
+    # account read dispatched here on a distribution list would fail with "no such
+    # account", which is the one sentence this whole path exists to stop.
+    zro_menu_refusal "$choice"
+    if [ -n "$ZRO_MENU_REASON" ]; then
+      zro_menu_unavailable "$choice" "$ZRO_MENU_REASON"
+      continue
     fi
 
     case $choice in

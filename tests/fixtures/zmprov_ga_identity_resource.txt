@@ -1,0 +1,3 @@
+# name toplanti-odasi@example.com
+displayName: Toplanti Odasi
+zimbraAccountCalendarUserType: RESOURCE

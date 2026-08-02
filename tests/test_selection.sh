@@ -40,6 +40,39 @@ zro_sel_clear
 assert_fail zro_sel_have
 assert_out_eq "" zro_sel_address
 
+# ------------------------------------------- and what that address turned out to be --
+
+it "an address starts out unidentified"
+zro_sel_clear
+zro_sel_set "ahmet.yilmaz@example.com"
+assert_fail zro_sel_have_identity
+assert_out_eq "" zro_sel_identity
+
+it "and carries what resolution learned about it"
+zro_sel_set_identity "$(printf 'kind: alias\naddress: a.yilmaz@example.com\n')"
+assert_ok zro_sel_have_identity
+assert_contains "$(zro_sel_identity)" "kind: alias"
+
+it "choosing a different address forgets the previous one's identity"
+# A session marked for one account while it is about another is the failure the
+# selected address exists to prevent, one level further in. Cleared here rather
+# than by the caller, because a caller is what can forget.
+zro_sel_set "ayse.demir@example.com"
+assert_fail zro_sel_have_identity
+
+it "and so does giving the selection up"
+zro_sel_set_identity "$(printf 'kind: account\n')"
+zro_sel_clear
+assert_fail zro_sel_have_identity
+
+it "an address that is refused changes neither the selection nor its identity"
+zro_sel_set "ahmet.yilmaz@example.com"
+zro_sel_set_identity "$(printf 'kind: account\naddress: ahmet.yilmaz@example.com\n')"
+assert_status "$ZRO_E_INPUT" zro_sel_set "yok"
+assert_out_eq "ahmet.yilmaz@example.com" zro_sel_address
+assert_contains "$(zro_sel_identity)" "kind: account"
+zro_sel_clear
+
 # ------------------------------------------------------------- the frame --
 #
 # whiptail keeps a title on the box border while the text inside scrolls, so the

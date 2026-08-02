@@ -1,0 +1,14 @@
+# distributionList tum-personel@example.com memberCount=1
+mail: tum-personel@example.com
+objectClass: zimbraDistributionList
+objectClass: zimbraMailRecipient
+uid: tum-personel
+zimbraCreateTimestamp: 20260802010122.857Z
+zimbraId: d3e4c5d5-8b1e-4f8a-aefc-be4a62672bab
+zimbraMailAlias: tum-personel@example.com
+zimbraMailForwardingAddress: ahmet.yilmaz@example.com
+zimbraMailHost: mail01.example.com
+zimbraMailStatus: enabled
+
+members
+ahmet.yilmaz@example.com
