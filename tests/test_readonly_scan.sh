@@ -211,6 +211,32 @@ assert_contains "$prov_calls" "gam"
 assert_contains "$prov_calls" "gdl"
 assert_contains "$prov_calls" "gd"
 
+it "the entry-only form is written at exactly one call site"
+# A FLAG IN THE DATA POSITION IS AN OPERATION, and this one reaches the gate
+# through zro_prov_read — which hands it a variable, so the generic extraction
+# above cannot resolve it. What can be read here is that the flag appears once in
+# the tree's executable text, behind the one subcommand approved to carry it. A
+# second one would be a second operation, and it would arrive with a ticket.
+entry_calls=$(printf '%s\n' "$raw_code" \
+              | grep -cE 'zro_prov_read[[:space:]]+[^[:space:]]+[[:space:]]+ga[[:space:]]+-e([[:space:]]|$)')
+assert_eq "$entry_calls" "1"
+
+it "and no other flag reaches that read at all"
+# The temp-file form is the one this matters for: `-t` writes binary attribute
+# values to files and deletes whatever stood at the path first. The gate refuses
+# it at run time; this refuses it at the only call site that could express it.
+other_flags=$(printf '%s\n' "$raw_code" \
+              | grep -oE 'zro_prov_read[[:space:]]+[^[:space:]]+[[:space:]]+[A-Za-z]+[[:space:]]+-[^[:space:]]*' \
+              | awk '{print $4}' | sort -u | grep -v '^-e$')
+assert_eq "$other_flags" ""
+
+it "the degraded read asks the gate before it retries, rather than after"
+# An allowlist denial means a defect in this program. A read whose LDAP form
+# nobody approved is not one — it is a question this tool answers in one mode —
+# and the difference reaches the operator during an outage, which is when it can
+# least afford to look like a broken tool.
+assert_contains "$code" "zro_ldap_form_allowed"
+
 it "the list read is a read, and the write-named siblings are nowhere"
 # `gdl` arrived so that a distribution list stops being answered with "no such
 # account". The commands that CHANGE a list live one letter away from it, and
@@ -456,9 +482,14 @@ it "no module calls a Zimbra binary outside the gate"
 # Capability probes are dropped along with the gate's own call sites, and for the
 # same reason the allowlist itself is: naming a binary is not running one. What they
 # name is held to the allowlist by the case above.
+#
+# `zro_allowed` is dropped on the same terms and is the clearest case of it: it is
+# the question "would this be approved", asked so that the degraded read path can
+# decline to make a call rather than have one refused. A line that ASKS about a
+# binary is the opposite of a line that runs one.
 for f in "${SOURCES[@]}"; do
   body=$(zro_scan_file "$f" | grep -v 'zro_exec' | grep -v 'ZRO_ALLOW' \
-         | grep -v 'zro_cap_op_available')
+         | grep -v 'zro_cap_op_available' | grep -v 'zro_allowed')
   assert_not_contains "$body" 'zmprov '
   assert_not_contains "$body" 'zmmailbox '
   assert_not_contains "$body" 'zmcontrol '

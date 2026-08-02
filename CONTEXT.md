@@ -214,9 +214,18 @@ offer one.
 
 **Cost unit**:
 What a class's cost is counted in, declared with the class: an **entry** for
-class 1, a **file** for class 3. One invocation buys one unit — a directory read
-per entry, a scan per log file — so a screen's cost can be checked against the
-units its own answer named rather than against a number written down beside it.
+class 1, a **file** for class 3. A screen's cost can then be checked against the
+units its own answer named — the entries a record points at, the files a window
+covers — rather than against a number written down beside it.
+
+One invocation usually buys one unit, and one screen shows why that is a habit
+rather than the rule. [Provenance](#asking-about-an-address) reads ONE entry
+TWICE, because the difference between the expanding read and the entry-only one
+is the question it asks. It is class 1 all the same: what its work grows with is
+entries, and one account costs a fixed two reads however large the directory
+around it gets. **A screen that pays a multiple declares the multiple**, and the
+suite asserts reads-per-unit rather than a total — so a screen that reached for a
+second entry still fails against the unit it claimed.
 _Avoid_: bound, budget — the unit is what is counted, not a ceiling on it
 _Avoid_: performance, expensive — both invite a judgement call where a class is a
 rule
@@ -229,9 +238,13 @@ the operator for the list of accounts instead.
 _Avoid_: bulk query (that is the screen, not the hazard), full scan
 
 **Declared cost**:
-What a class 3 screen says before it reads anything: how many files, how many
-bytes. An operator who is about to spend two minutes of the mail server's disk is
-entitled to know before it starts, not after.
+What a screen says before it reads anything. For class 3 that is how many files
+and how many bytes: an operator about to spend two minutes of the mail server's
+disk is entitled to know before it starts, not after. For class 1 it is normally
+that the number of queries depends on what the account turns out to name — except
+on [provenance](#asking-about-an-address), which is the one screen that can be
+exact, and says so, because paying twice for one entry is the reason it is a
+screen an operator chooses rather than a field on the card.
 _Avoid_: warning, confirmation
 
 ## Asking about an address
@@ -283,6 +296,17 @@ Whether an attribute is set on the entry or inherited from its class of service.
 Only `zmprov ga -e` distinguishes them — `-l` expands COS values exactly as SOAP
 does, so a value's presence proves nothing about where it came from. Asked as a
 separate screen rather than on the card, because it costs a second invocation.
+
+**Three answers, not two.** The entry-only read cannot answer alone: an attribute
+missing from it is either inherited or set nowhere at all, and those are different
+facts. So the entry is read in both forms and the difference is the answer — in
+both is `hesapta tanimli`, in the expanding read only is `devralinmis`, in neither
+is [unset](#asking-about-an-address) and never `devralinmis`.
+
+**Answerable through mailboxd only.** `zmprov -l ga -e` has never been measured, so
+it is not on the allowlist, and the degraded read path asks the gate before
+retrying rather than having the retry refused as a defect. During a mailbox
+service outage this is the one question the tool declines to answer.
 _Avoid_: source, origin
 
 **Account card**:

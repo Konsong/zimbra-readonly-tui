@@ -356,6 +356,28 @@ zmprov varsayilan olarak mailboxd servisine SOAP ile baglanir. En sik iki sebep:
   esac
 }
 
+# WHAT A SCREEN WILL SPEND, SAID BEFORE IT SPENDS IT.
+#
+# Most of these screens cost what their answer turns out to name — the class of
+# service an account points at, the lists it belongs to — so the honest thing to
+# tell an operator beforehand is that there is more than one query and each takes
+# seconds. The provenance screen is the one that can be exact: two reads of the
+# same entry, always, whatever the account turns out to hold.
+#
+# It is said in ITS OWN SENTENCE rather than folded into the general one because
+# it is the reason that screen exists apart from the card at all. An operator who
+# reads "this runs the account read twice" and decides the question is not worth
+# the wait has been told the thing the ticket for this screen was about.
+zro_account_cost_note() {
+  case ${1-} in
+    account-provenance)
+      printf 'Bu ekran hesap kaydini IKI KEZ okur: once yalnizca hesapta tanimli\n'
+      printf 'olanlari, sonra yururlukteki degerleri. Her sorgu birkac saniye surer.' ;;
+    *)
+      printf 'Bu ekran birden fazla sorgu calistirir; her biri birkac saniye surebilir.' ;;
+  esac
+}
+
 # One directory question about the selected address. Nothing here asks for an
 # address: the operator chose one before this screen was reached, it is on the
 # frame of every box drawn below, and it is what the query is about.
@@ -391,11 +413,12 @@ zro_screen_account() {
   zro_ui_notice "Calisiyor" "Zimbra sorgulaniyor, lutfen bekleyin.
 
 Hesap: $acct
-Bu ekran birden fazla sorgu calistirir; her biri birkac saniye surebilir."
+$(zro_account_cost_note "$id")"
 
   case $id in
     account-card)       out=$(zro_account_card "$acct") || rc=$? ;;
     account-quota)      out=$(zro_account_quota "$acct") || rc=$? ;;
+    account-provenance) out=$(zro_account_provenance "$acct") || rc=$? ;;
     account-membership) out=$(zro_account_membership "$acct") || rc=$? ;;
     # Declared in the one list and not answered here: a defect in this file, and
     # said out loud rather than swallowed. Without it $out would still hold the
@@ -964,6 +987,14 @@ yukseltip yeniden deneyin."
 # have updated. A screen that quietly started reading per account fails against the
 # unit it declared, which is the whole reason the class is written here.
 #
+# THE UNIT IS NOT ALWAYS ONE INVOCATION, and exactly one screen shows why. The
+# provenance screen reads ONE entry TWICE — once with the class of service expanded
+# into it and once without — because the difference between those two answers is
+# the question it exists to ask. It is class 1 all the same: what its work grows
+# with is entries, and one account still costs a fixed two reads however large the
+# directory around it gets. A screen that pays more than once per entry says so at
+# its own declaration, and the suite asserts the multiple rather than the total.
+#
 # CLASS 2 IS ABSENT BECAUSE NO OPERATION MAKES ONE YET. A read inside one mailbox
 # is a real class and it is in the glossary; it is not declared here because the
 # suite holds this table and the list below equal in BOTH directions, and a class
@@ -1038,6 +1069,7 @@ EOF
 # fails it too.
 ZRO_MENU_OPS='account-card:account:1:Hesap karti
 account-quota:account:1:Kota kullanimi
+account-provenance:account:1:Deger nereden geliyor (hesap mi, devralma mi)
 account-membership:account:1:Dagitim listesi uyelikleri
 dl-card:list:1:Dagitim listesi karti
 domain-card:address:1:Alan adi karti

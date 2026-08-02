@@ -23,6 +23,15 @@ zro_mock_record() {
 # Mirrors the gate's rule: a flag-shaped token is keyed together with the
 # subcommand behind it, so a test can script `zmprov ga` and `zmprov -l ga`
 # with different answers.
+#
+# AND THE MIRROR RUNS THE OTHER WAY TOO. A flag standing in the data position is
+# not data — it changes what the command does, which is why the allowlist names
+# `zmprov:ga:-e` as an operation of its own. So the reply is keyed on it as well,
+# and `zmprov ga -e <acct>` reads ZRO_MOCK_ZMPROV_GA__E_OUT rather than answering
+# out of the ordinary account read. Without that the provenance screen's two reads
+# would be scripted by one variable and would return the same text, which is the
+# one thing that screen exists to tell apart — a fixture pair proving nothing, and
+# the case passing whatever the code did.
 zro_mock_token() {
   case ${1:-} in
     -*)
@@ -32,7 +41,12 @@ zro_mock_token() {
         printf '%s' "$1"
       fi
       ;;
-    *) printf '%s' "${1:-}" ;;
+    *)
+      case ${2:-} in
+        -*) printf '%s %s' "$1" "$2" ;;
+        *)  printf '%s' "${1:-}" ;;
+      esac
+      ;;
   esac
 }
 

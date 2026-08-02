@@ -106,12 +106,21 @@ ZRO_LIB_EXEC_LOADED=1
 # flag is the only thing that answers. It is approved for `ga` in that one
 # spelling: not for `getAccount` and not as `--entry`.
 #
-# It is NOT approved behind `-l`, and that has a consequence worth stating rather
-# than discovering: zro_prov_read retries every read against LDAP when mailboxd
-# is unreachable, so a provenance screen written on top of it would be refused
-# during exactly the outage the retry exists for — and refused as a defect, which
-# is what an allowlist denial means. The screen's ticket decides that
-# deliberately, and pays for a second entry here if the answer is yes.
+# It is NOT approved behind `-l`, AND THAT WAS DECIDED RATHER THAN LEFT. The
+# provenance screen's ticket asked for a second entry here and the answer is no:
+# `zmprov -l ga -e` has never been run on the lab server, and this list is not
+# where a command is judged by its family resemblance to one that has. What the
+# three modes really do was measured for `ga`, `-l ga` and `ga -e`; the fourth
+# combination is an assumption, and an assumption is not a green light.
+#
+# The consequence is stated rather than discovered: zro_prov_read retries every
+# read against LDAP when mailboxd is unreachable, so the provenance read would be
+# refused during exactly the outage the retry exists for — and refused as a
+# DEFECT, which is what an allowlist denial means. So the retry asks this file
+# first, through zro_ldap_form_allowed below, and a read with no approved LDAP
+# form reports the outage that stopped it instead of a defect nobody committed.
+# Provenance is therefore a question this tool answers through mailboxd only, and
+# the day someone measures the fourth combination is the day that can change.
 ZRO_ALLOW='
 zmprov:ga
 zmprov:getAccount
@@ -219,6 +228,28 @@ zro_allowed() {
   esac
   zro_allow_has "$bin:$t1" || return 1
   zro_data_flags_approved "$bin:$t1" "$@"
+}
+
+# Whether this file approves a read taken from LDAP instead of through mailboxd.
+#
+#   $1  the subcommand
+#   $@  the data that would follow it
+#
+# ASKED BEFORE THE RETRY IS MADE, never discovered as a denial. The degraded read
+# path exists so that this tool keeps working when the mailbox service does not,
+# and it reaches for LDAP mode on its own — but an allowlist denial means a defect
+# in this program, and a read whose LDAP form nobody approved is not one. It is a
+# question this tool answers in one mode, which is a fact about the list above and
+# belongs to whoever is reading it.
+#
+# `zmprov` is named here rather than taken as an argument because `-l` is that
+# binary's mode flag and nothing else in the tool has one. A second binary with a
+# mode of its own would arrive with its own ticket, as every operation here does.
+zro_ldap_form_allowed() {
+  local sub=${1-}
+  [ -n "$sub" ] || return 1
+  shift
+  zro_allowed zmprov -l "$sub" "$@"
 }
 
 # Binary locations. Production defaults, overridable so the suite can point at
