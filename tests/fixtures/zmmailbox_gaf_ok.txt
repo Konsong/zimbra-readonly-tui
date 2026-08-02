@@ -1,0 +1,17 @@
+        Id  View      Unread   Msg Count  Path
+----------  ----  ----------  ----------  ----------
+         1  unkn           0           0  /
+        16  docu           0           0  /Briefcase
+        10  appo           0           0  /Calendar
+        14  mess           0           0  /Chats
+         7  cont           0           0  /Contacts
+         6  mess           0           0  /Drafts
+        13  cont           0           0  /Emailed Contacts
+         2  mess           1           1  /Inbox
+         4  mess           0           0  /Junk
+         5  mess           0           0  /Sent
+        15  task           0           0  /Tasks
+         3  unkn           0           0  /Trash
+       257  unkn           0           1  /Projeler
+       260  unkn           0           0  /Projeler/2026
+       261  unkn           0           0  /Projeler/2026/Q3 Raporlar

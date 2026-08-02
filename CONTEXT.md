@@ -106,6 +106,65 @@ is**. The next delivered message falsifies a no, and an operator who has just
 sent a test message must not be told a stale one.
 _Avoid_: verified account, known-good account
 
+## Inside a mailbox
+
+**Folder listing**:
+Every folder of one mailbox with its path, its item count and its unread count,
+read in one command behind the [existence gate](#the-existence-gate). Hierarchy
+lives in the **path** and nowhere else: the listing is flat, depth-first from the
+root, and a folder path is what every later question about a folder is asked
+with.
+_Avoid_: folder tree, mailbox contents — nothing here opens a message
+
+**Item count**:
+What a folder holds, counted in items rather than messages. A contacts folder
+counts contacts and a calendar counts appointments, so five of the folders every
+mailbox is created with are not message folders at all. Zimbra prints the column
+as `Msg Count`, which is the reason this term exists.
+_Avoid_: message count, mail count
+
+**Path decoration**:
+A parenthesised suffix Zimbra appends **inside** the path column for a search
+folder, a mountpoint or a feed — the query, the `owner:remoteId`, the URL. It is
+not part of the path, and it cannot be told from a folder whose name really ends
+in brackets. So nothing strips it: the row is offered as it came, and a path the
+server then refuses gets a screen naming both causes. Refusing to open a folder
+is visible; opening the wrong one is not.
+_Avoid_: suffix, annotation
+
+**Folder grant**:
+One access control entry on a folder: permission letters, the kind of grantee,
+and the grantee. Distinct from a [grant](#domains-and-lists) on a distribution
+list — different command, different table, different rights — and read the same
+way in the one respect that matters: **nothing is dropped for not being
+recognised**, because a card that showed only the grantee kinds this tool knows
+would report a folder shared with a whole domain as a folder shared with nobody.
+A `public` grant names nobody, and that empty grantee is the answer rather than a
+value nobody read.
+
+**Two words on screen, because they are two things.** A folder's grants reach the
+operator as `paylasim` and a distribution list's as `yetki`, each used throughout
+its own screen and never mixed inside one: an operator looking at a folder is
+asking who can see it, and an operator looking at a list is asking who may act on
+it.
+_Avoid_: share, permission — a share is what a grant produces
+
+**Quota usage**:
+What a mailbox is actually holding, read from the mailbox itself behind the gate
+and expressed against the **limit** the directory carries. The two come from
+different places and the screen says which is which. Usage has no meaning for an
+account with no mailbox: that account is answered by the gate, never with a zero.
+_Avoid_: quota (that is the limit), disk usage
+
+**Raw byte count**:
+A size as a number rather than as a formatted string. The formatted form is built
+with the JVM's default locale — `1.44 GB` on one host, `1,44 GB` on the next — so
+a reader that took the digits out of it would report a mailbox a hundred times
+too large on every Turkish, German or French server. Every size this tool shows
+is formatted here, from a count of bytes, and an answer that is not all digits is
+[unreadable](#asking-about-an-address) rather than parsed.
+_Avoid_: size string, human-readable size — the second is what this is not
+
 ## Delivery tracing
 
 **Delivery trace**:
@@ -228,9 +287,12 @@ rather than the rule. [Provenance](#asking-about-an-address) reads ONE entry
 TWICE, because the difference between the expanding read and the entry-only one
 is the question it asks. It is class 1 all the same: what its work grows with is
 entries, and one account costs a fixed two reads however large the directory
-around it gets. **A screen that pays a multiple declares the multiple**, and the
-suite asserts reads-per-unit rather than a total — so a screen that reached for a
-second entry still fails against the unit it claimed. The [existence
+around it gets. The two screens that open one [folder](#inside-a-mailbox) do the
+same thing a class down: the listing they offer a folder from and the folder
+itself are two reads of one mailbox. **A screen that pays a multiple declares the
+multiple**, and the suite asserts reads-per-unit rather than a total — so a screen
+that reached for a second entry still fails against the unit it claimed. The
+[existence
 gate](#the-existence-gate) runs the other way: one mailbox costs one read the
 first time and **none at all** afterwards, because a proof is kept for the
 session. That is the only screen whose exact cost is sometimes zero, and it says

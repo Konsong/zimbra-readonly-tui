@@ -164,6 +164,42 @@ zro_validate_msgid() {
   return 0
 }
 
+# The longest folder path this program will carry. Zimbra bounds a folder name at
+# 128 characters and a mailbox may nest folders inside folders, so a path is
+# bounded by the depth rather than by any one name. This is generous about the
+# depth and finite about the whole, which is what a value reaching a command line
+# needs.
+ZRO_FOLDER_PATH_MAX=1024
+
+# A mailbox folder path, as the folder listing prints it.
+#
+# PERMISSIVE ABOUT THE NAME, and deliberately so. A folder is named by the account
+# holder, in their own language, with whatever punctuation they typed —
+# '/Emailed Contacts' ships with every mailbox Zimbra creates, and refusing a
+# space would refuse a standard folder. The value never becomes a command name and
+# never reaches a shell: it travels as one element of an argument vector, which is
+# what makes admitting a wide character set safe here where it would not be in a
+# path this tool opens itself.
+#
+# What is refused is what would stop it being ONE PATH. It has to be rooted,
+# because every path this listing prints is — and a value that does not begin with
+# '/' is either a folder id, a decoration, or something that was never a path at
+# all. A control character would be a second line in the report that says which
+# folder was read. The leading dash a validator normally has to refuse cannot
+# arise once the leading '/' is required, which is the same guard by a different
+# route.
+zro_validate_folder_path() {
+  local p=${1-}
+  [ -n "$p" ] || return "$ZRO_E_INPUT"
+  [ "${#p}" -le "$ZRO_FOLDER_PATH_MAX" ] || return "$ZRO_E_INPUT"
+  case $p in
+    /*) ;;
+    *) return "$ZRO_E_INPUT" ;;
+  esac
+  case $p in *[[:cntrl:]]*) return "$ZRO_E_INPUT" ;; esac
+  return 0
+}
+
 zro_validate_email() {
   local e=${1-}
   [ -n "$e" ] || return "$ZRO_E_INPUT"

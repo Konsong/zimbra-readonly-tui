@@ -157,14 +157,18 @@ out=$(ZRO_MOCK_ZMPROV_GA_OUT="$FIX/zmprov_ga_active.txt" \
 assert_contains "$out" "5.0 GB"
 assert_not_contains "$out" "10.0 GB"
 
-it "the quota screen works over LDAP with mailboxd down"
+it "the limit an inherited quota resolves to survives mailboxd being down"
+# The quota LIMIT is a directory fact and the degraded path answers it. Read
+# through the card, because the screen that shows usage beside it is a mailbox
+# screen now: usage comes from the mailbox itself, behind the existence gate,
+# whose oracle speaks SOAP and nothing else.
 out=$(ZRO_MOCK_ZMPROV_GA_ERR="$FIX/zmprov_io_error_refused.err" \
       ZRO_MOCK_ZMPROV_GA_RC=1 \
       ZRO_MOCK_ZMPROV_GC_ERR="$FIX/zmprov_io_error_refused.err" \
       ZRO_MOCK_ZMPROV_GC_RC=1 \
       ZRO_MOCK_ZMPROV__L_GA_OUT="$FIX/zmprov_l_ga_no_quota.txt" \
       ZRO_MOCK_ZMPROV__L_GC_OUT="$FIX/zmprov_gc_10gb.txt" \
-      zro_account_quota 'kotasiz@example.com')
+      zro_account_card 'kotasiz@example.com')
 assert_contains "$out" "10.0 GB"
 assert_contains "$out" "LDAP"
 
@@ -178,10 +182,10 @@ out=$(ZRO_MOCK_ZMPROV_GA_ERR="$FIX/zmprov_io_error_refused.err" \
 # used to warn that inherited settings might be missing, which was untrue.
 assert_not_contains "$out" "COS uzerinden miras"
 
-it "a genuinely missing account still fails the quota screen"
+it "a genuinely missing account still fails the account card"
 ZRO_MOCK_ZMPROV_GA_ERR="$FIX/zmprov_ga_no_such_account.err" \
 ZRO_MOCK_ZMPROV_GA_RC=1 \
-  assert_status "$ZRO_E_NO_ACCOUNT" zro_account_quota 'yok@example.com'
+  assert_status "$ZRO_E_NO_ACCOUNT" zro_account_card 'yok@example.com'
 
 rm -f -- "$ZRO_MOCK_LOG"
 zro_t_report

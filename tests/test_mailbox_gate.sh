@@ -242,20 +242,40 @@ fresh
 assert_status "$ZRO_E_UNAVAILABLE" answers_outage zro_mbox_run "$POPULATED" gaf
 assert_not_contains "$(ran)" "zmmailbox"
 
-it "a proven mailbox gets past the gate and is stopped by the allowlist instead"
-# NOTHING IS APPROVED BEHIND THE GATE YET, and that is the design rather than a
-# gap: an operation arrives with the ticket that exposes it, never because the
-# binary it belongs to became reachable. So the oracle proves the call would have
-# been safe and the list refuses it one step later.
+it "a proven mailbox gets past the gate, and only the four approved reads do"
+# AN OPERATION ARRIVES WITH THE TICKET THAT EXPOSES IT, never because the binary
+# it belongs to became reachable. Four reads are approved behind this gate; the
+# oracle proves the call would be safe and the list still decides whether it is
+# one of them.
 fresh
-assert_status "$ZRO_E_DENIED" answers_exists zro_mbox_run "$POPULATED" gaf
+assert_ok answers_exists zro_mbox_run "$POPULATED" gaf
+assert_contains "$(ran)" "zmmailbox"
+
+fresh
+assert_status "$ZRO_E_DENIED" answers_exists zro_mbox_run "$POPULATED" search
 assert_not_contains "$(ran)" "zmmailbox"
 
-it "and the refusal is the list's, not the gate's"
+it "and the refusal of an unapproved one is the list's, not the gate's"
+# The two denials have to arrive as different sentences: a maintainer sent to the
+# allowlist about a call that skipped the oracle would read the wrong file and
+# find nothing wrong with it.
 fresh
-said=$(answers_exists zro_mbox_run "$POPULATED" gaf 2>&1 >/dev/null)
+said=$(answers_exists zro_mbox_run "$POPULATED" search 2>&1 >/dev/null)
 assert_contains "$said" "denied by allowlist"
 assert_not_contains "$said" "only through the existence gate"
+
+it "the commands that write a mailbox are refused although the binary is reachable"
+# Each of these lives one letter away from a read that is approved, which is
+# exactly why they are written down here rather than left to the absence of an
+# entry. `gm` is in the list too and is not a write: it CLEARS THE UNREAD FLAG on
+# the message it reports, which is a change to the mailbox made by a command
+# named getMessage.
+for sub in df ef cf mfg mff mfc rf sf iuif mfr mm ma gm gru emptyDumpster \
+           deleteFolder emptyFolder createFolder modifyFolderGrant getMessage; do
+  fresh
+  assert_status "$ZRO_E_DENIED" answers_exists zro_mbox_run "$POPULATED" "$sub"
+  assert_not_contains "$(ran)" "zmmailbox"
+done
 
 it "it refuses a subcommand shaped like a flag before the gate is even run"
 # The subcommand reaches the exec gate in the token position, where a flag is not
@@ -287,21 +307,12 @@ assert_not_contains "$(ran)" "zmmailbox"
 
 # --------------------------------------- the vector the binary really takes --
 #
-# NOTHING IS APPROVED BEHIND THE GATE YET, so this is the one place the layout can
-# be exercised at all: the allowlist and the root table are extended for the length
-# of these cases, exactly as the ticket bringing the first mailbox screen will
-# extend them for good. What is proven here is the SHAPE — a caller who wrote an
-# account and a subcommand gets `-z -m <account> <subcommand>` — because the next
-# ticket is built on that shape and would otherwise be the first thing to discover
-# it was wrong. The whole chain is real: the gate runs the oracle, and only then is
-# a vector built.
-ZRO_ALLOW_REAL=$ZRO_ALLOW
-ZRO_BIN_ROOTS_REAL=$ZRO_BIN_ROOTS
-ZRO_ALLOW="$ZRO_ALLOW
-zmmailbox:gaf"
-ZRO_BIN_ROOTS="$ZRO_BIN_ROOTS
-zmmailbox:ZRO_ZIMBRA_BIN"
-
+# What is proven here is the SHAPE — a caller who wrote an account and a
+# subcommand gets `-z -m <account> <subcommand>` — because every screen behind the
+# gate is built on it. These cases used to extend the allowlist and the root table
+# for their own length, because nothing was approved behind the gate; the folder
+# and size screens made both extensions real, and the cases run against the list
+# the program ships with.
 it "the subcommand reaches the allowlist in a position it can see"
 # The reason the two orders differ at all. `zmmailbox:-z:-m` would approve
 # everything behind it, which is what `zmprov:-l` is kept out of the list for.
@@ -360,17 +371,13 @@ assert_status "$ZRO_E_DENIED" no_account_vector
 ZRO_GATE_OWNER=$ZRO_GATE_OWNER_REAL
 assert_not_contains "$(ran)" "zmmailbox"
 
-ZRO_ALLOW=$ZRO_ALLOW_REAL
-ZRO_BIN_ROOTS=$ZRO_BIN_ROOTS_REAL
-
-it "and with the list put back, the same call is refused again"
-# The extension above was for the cases that needed it and nothing else. If it
-# leaked, every case in this file that proves the binary is unreachable would be
-# proving it about a list that no longer says so.
-fresh
-assert_status "$ZRO_E_DENIED" answers_exists zro_mbox_run "$POPULATED" gaf
-assert_fail zro_allowed zmmailbox gaf
-assert_fail zro_bin_path zmmailbox
+it "the binary resolves under the root the table declares for it, and only there"
+# The allowlist says what may be asked; the table says where the binary is. Both
+# had to change for these screens to exist, and neither answers the other's
+# question — so a maintainer reading the allowlist still learns everything this
+# tool can execute.
+assert_out_eq "$ZRO_ZIMBRA_BIN/zmmailbox" zro_bin_path zmmailbox
+assert_contains "$(zro_bin_root_entries)" "zmmailbox:ZRO_ZIMBRA_BIN"
 
 rm -f -- "$ZRO_MOCK_LOG" "$ZRO_MBOX_PROOF_FILE"
 zro_t_report

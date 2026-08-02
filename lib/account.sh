@@ -464,6 +464,24 @@ zro_account_quota_limit() {
 # in both SOAP and LDAP mode — measured on the lab server, not assumed — so
 # presence proves nothing about where a value came from. That question costs a
 # second invocation and has a screen of its own.
+# The limit out of the pair above, for a caller that needs the NUMBER rather than
+# the sentence. It exists so that the pair's shape is known in one module: the
+# quota screen computes a proportion from it, and a second hand-written split
+# there would be two places that have to agree about a TAB.
+#
+# Prints nothing and fails when the pair carries no readable limit, which is the
+# same refusal zro_account_quota_limit makes for the same reason: absence is not
+# zero, and zero means unlimited.
+zro_quota_limit_bytes() {
+  local pair=${1-} bytes
+  [ -n "$pair" ] || return "$ZRO_E_NO_RESULT"
+  bytes=${pair%%"$ZRO_TAB"*}
+  case $bytes in
+    ''|*[!0-9]*) return "$ZRO_E_NO_RESULT" ;;
+  esac
+  printf '%s' "$bytes"
+}
+
 zro_quota_field() {
   local pair=${1-} bytes source human
   [ -n "$pair" ] || { printf '%s' "$ZRO_TXT_UNKNOWN"; return 0; }
@@ -585,41 +603,19 @@ zro_mode_banner() {
 
 # zro_account_mailbox_info used to live here and read `zmprov gmi`. It is gone
 # because that command creates a mailbox for an account that has none — see the
-# note above ZRO_ALLOW in lib/exec.sh. Usage will return in M6 through
-# `zmprov gqu <server>`, which joins LDAP accounts against already-known
-# mailbox ids and creates nothing, but answers for a whole server at a time.
-
-# Shows the quota an account is subject to. Usage is deliberately absent: the
-# only per-account source for it is `zmprov gmi`, which creates a mailbox for an
-# account that has none. The screen says so rather than quietly dropping the
-# figure, because an operator who came looking for usage deserves to know where
-# it went.
-zro_account_quota() {
-  local acct=$1 raw rc=0
-  zro_reset_mode
-  raw=$(zro_account_fetch "$acct") || rc=$?
-  [ "$rc" -eq 0 ] || return "$rc"
-
-  local limit="" host
-  limit=$(zro_account_quota_limit "$raw") || limit=""
-  host=$(zro_attr_get "$raw" zimbraMailHost)
-
-  zro_mode_banner
-
-  zro_card_line 'Hesap' "$acct"
-  zro_card_line 'Mailbox host' "${host:-$ZRO_TXT_UNSET}"
-  zro_card_line 'Kota limiti' "$(zro_quota_field "$limit")"
-  zro_card_line 'Kullanilan' 'gosterilmiyor'
-  printf '\n'
-  # Double-quoted on purpose: the static scanner treats a double-quoted span as
-  # data, so this text may name the commands it is warning about.
-  printf "Kullanim degeri yalnizca zmprov gmi ile okunabiliyor, ve o komut\n"
-  printf "mailboxu olmayan bir hesapta mailboxu YARATIYOR. Salt-okunur\n"
-  printf "garantisini bozdugu icin izin listesinden cikarildi.\n"
-  printf '\n'
-  printf "Guvenli alternatif zmprov gqu sunucu genelinde calisir ve hicbir sey\n"
-  printf "yaratmaz; toplu kota ekraniyla birlikte gelecek.\n"
-}
+# note above ZRO_ALLOW in lib/exec.sh.
+#
+# zro_account_quota lived here too, and showed a limit above the word
+# 'gosterilmiyor' because nothing safe could answer the usage. That screen is now
+# in lib/store.sh, where usage is read from the mailbox itself BEHIND THE
+# EXISTENCE GATE — which is what makes it answerable at all, and what makes it a
+# mailbox screen rather than a directory one. The whole-server quota command it
+# used to point at as the safe replacement is still nowhere in this tool: it takes
+# a server, not an account, and answers for every account on it.
+#
+# What stayed here is what belongs to the directory: the LIMIT, which the account
+# card reads as one of its own fields, and which the quota screen asks this module
+# for rather than reading a second way.
 
 # WHERE A VALUE CAME FROM, which is a different question from what it is.
 #

@@ -70,6 +70,62 @@ ZRO_LIB_EXEC_LOADED=1
 # SILENT while the mailbox service is down, the screen names that as the cause, and
 # nothing behind the gate is offered meanwhile.
 #
+# THE FIRST FOUR SUBCOMMANDS OF THE GATED BINARY, and they are here because the
+# ticket that exposes them arrived — never because that binary became reachable.
+# Every one of them is refused until the existence oracle above has proven the
+# mailbox was already there: the gate below admits this binary from one function
+# only, and that function runs the oracle first.
+#
+# `gaf` (getAllFolders), `gf` (getFolder), `gfg` (getFolderGrant) and `gms`
+# (getMailboxSize) are reads in effect as well as in name, measured rather than
+# assumed. On TEST-C the account's row in the `mailbox` table — its change
+# checkpoint, its item id checkpoint, its size checkpoint and its last SOAP access
+# among them — was BYTE-IDENTICAL either side of all four, and the control is what
+# makes that worth anything: a deliberate `mfg` on the same folder in the same
+# session moved two of those columns immediately afterwards. See
+# docs/research/2026-08-02-folders-size-and-quota.md.
+#
+# ONE SPELLING EACH, as everywhere in this list: the long forms `getAllFolders`,
+# `getFolder`, `getFolderGrant` and `getMailboxSize` are absent although they name
+# the same operations, so that reading a call site tells a maintainer which entry
+# approves it.
+#
+# The write-named siblings that live one letter away — `df`, `ef`, `cf`, `mfg`,
+# `mff`, `mfc`, `rf`, `sf`, `iuif`, `mfr` — are absent and therefore refused. So
+# are `gm`, which clears the unread flag it reports on, and `gru`, which is an
+# HTTP GET whose `-o` form writes a local file.
+#
+# `zmmailbox:gms:-v` IS A FLAG IN THE DATA POSITION, and the second entry in this
+# list to be one. It is the difference between a number and a sentence: bare `gms`
+# prints `formatSize`'s output, which is built with the JVM's default locale, so
+# the same mailbox answers `1.44 GB` on one host and `1,44 GB` on the next — and a
+# decimal comma read as a thousands separator is a mailbox reported a hundred
+# times too large. `-v` prints the raw byte count, which is a number in every
+# locale there is, and this program does its own formatting from it.
+#
+# The flag has to be approved for the position it really stands in. Measured on
+# TEST-C: `zmmailbox -z -m <acct> gms -v` answers `700`, while the same flag
+# written in front of the subcommand answers `700 B` — it is a different option
+# there, and the gate would be approving the wrong one.
+#
+# THE BARE `zmmailbox:gms` ENTRY IS REQUIRED BY THE MATCHER, not by a caller. A
+# data-position flag is approved UNDER the entry that approved its subcommand, so
+# the subcommand has to be on the list for the flag to be reachable at all —
+# exactly as `zmprov:ga` carries `zmprov:ga:-e`. The consequence is stated rather
+# than left: the formatted form of this read is approved too. It is not a write
+# and not a wrong number — the reader refuses any answer that is not all digits,
+# so a formatted one reaches the operator as a value this program could not read.
+# What keeps it from being asked for at all is that there is one call site and it
+# names the flag, which the static scanner holds to.
+#
+# `zmmailbox:gaf:-v` IS DELIBERATELY ABSENT, AND THAT WAS DECIDED RATHER THAN
+# LEFT. The verbose form of the folder listing emits the whole tree as nested
+# JSON, which is easier to parse and would have to be parsed by depth; the fixed
+# table this tool reads instead is one line per folder with the path last. Both
+# were captured. Approving a second form of a read this tool does not make would
+# be an operation nobody can reach, and the list has to stay the complete account
+# of what may be run.
+#
 # `zmmsgtrace` is the delivery trace. Every filter that binary takes is a flag
 # which is the whole operation, so each is approved the same way `zmcontrol -v`
 # is: as a two-token entry, with the operator's already-validated value following
@@ -175,6 +231,11 @@ zmprov:-l:gdl
 zmprov:-l:getDistributionList
 zmprov:-l:gd
 zmprov:-l:getDomain
+zmmailbox:gaf
+zmmailbox:gf
+zmmailbox:gfg
+zmmailbox:gms
+zmmailbox:gms:-v
 zmcontrol:-v
 zmmsgtrace:--recipient
 zmmsgtrace:--sender
@@ -371,6 +432,7 @@ zro_identity_mode() {
 # function rather than an operation the operator chose.
 ZRO_BIN_ROOTS='
 zmprov:ZRO_ZIMBRA_BIN
+zmmailbox:ZRO_ZIMBRA_BIN
 zmcontrol:ZRO_ZIMBRA_BIN
 zmmsgtrace:ZRO_ZIMBRA_LIBEXEC
 tail:ZRO_SYSTEM_BIN
@@ -455,9 +517,10 @@ zro_bin_available() {
 # Literals rather than overridable variables, for the reason lib/capability.sh
 # gives about the account every command runs as: a safety check may not have an
 # off switch. Nothing here says where the binary lives — that is the root table
-# above, and this binary has no entry there until an operation behind the gate
-# needs one, which is the same ticket that will put its first subcommand on the
-# allowlist.
+# above, which now carries an entry for it because the first operations behind the
+# gate arrived. The two facts stay apart all the same: the table says where a
+# binary is, the allowlist says what may be asked of it, and the check below says
+# who may ask.
 ZRO_GATED_BIN=zmmailbox
 ZRO_GATED_PREFIX=(-z -m)
 ZRO_GATE_OWNER=zro_mbox_run

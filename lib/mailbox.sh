@@ -172,11 +172,11 @@ zro_mbox_require() {
 # function, and puts the prefix back where the binary expects it after the
 # allowlist has read the subcommand in a position it can see.
 #
-# NOTHING IS APPROVED BEHIND IT YET, and that is not an oversight. An operation
-# arrives with the ticket that exposes it, never because the binary it belongs to
-# became reachable — so until a screen behind the gate is built, every call made
-# here is refused by the allowlist, one step after the gate has already proven it
-# would have been safe.
+# WHAT IS APPROVED BEHIND IT is four reads and no more: the folder listing, one
+# folder, one folder's grants, and the mailbox size in bytes. Each arrived with
+# the ticket that exposes it, never because the binary it belongs to became
+# reachable, and anything else this function is handed is still refused by the
+# allowlist one step after the gate has already proven it would have been safe.
 #
 # A leading dash is refused rather than passed on: the subcommand reaches the gate
 # in the token position, where a flag is not data but an operation of its own, and
@@ -225,6 +225,21 @@ zro_mbox_card() {
   zro_reset_mode
   verdict=$(zro_mbox_verdict "$acct") || rc=$?
   [ "$rc" -eq 0 ] || return "$rc"
+  zro_mbox_verdict_card "$acct" "$verdict"
+}
+
+# THE SCREEN, GIVEN A VERDICT SOMEBODY ELSE OBTAINED. Pure: an account and a word
+# in, a report out, and nothing read.
+#
+# Split from the card above so that a screen BEHIND the gate can show an absence
+# as the result it is. Those screens learn of it as a status — the gate refused,
+# and the operation never ran — and reporting that through the shared failure box
+# would answer 'Mailbox bulunamadi' where this whole design says the answer is
+# 'this account has never been used'. Rendering it here costs nothing: the verdict
+# is already in hand, and asking again would spend a second invocation to be told
+# what the caller already knows.
+zro_mbox_verdict_card() {
+  local acct=${1-} verdict=${2-}
 
   case $verdict in
     exists)    printf '%s\n\n' "$ZRO_TXT_MBOX_EXISTS" ;;
