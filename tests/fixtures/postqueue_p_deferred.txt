@@ -1,0 +1,10 @@
+-Queue ID-  --Size-- ----Arrival Time---- -Sender/Recipient-------
+C800B104BA4     848 Sun Aug  2 16:49:03  ahmet.yilmaz@example.com
+(Host or domain name not found. Name service error for name=nosuchdomain.invalid type=MX: Host not found, try again)
+                                         kullanici@nosuchdomain.invalid
+
+C5233104BA7     846 Sun Aug  2 16:49:03  ahmet.yilmaz@example.com
+            (connect to dc01.example.com[192.0.2.5]:25: Connection refused)
+                                         kuyruk-test@dc01.example.com
+
+-- 1 Kbytes in 2 Requests.
