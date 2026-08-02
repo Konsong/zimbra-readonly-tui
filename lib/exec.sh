@@ -126,6 +126,58 @@ ZRO_LIB_EXEC_LOADED=1
 # be an operation nobody can reach, and the list has to stay the complete account
 # of what may be run.
 #
+# `zmcontrol status` IS THE ONE COMMAND IN THIS LIST THAT WRITES, and it is here
+# as a DECLARED ARTIFACT rather than as an exception anybody may repeat. It starts
+# and stops nothing — the guarantee is about Zimbra-managed domain state, and
+# service state is part of that — but it creates the localconfig temp directory if
+# it is missing, leaves temp files behind, and rewrites `/opt/zimbra/log/
+# .zmcontrol.cache` on every successful directory lookup. Read from source rather
+# than guessed: see docs/research/2026-07-29-zimbra-cli-read-only-reference.md
+# §B.12.
+#
+# Three conditions hold it here and they hold TOGETHER, which is what keeps this
+# from being a guarantee that widens one convenient command at a time: it changes
+# no domain state, the screen that runs it says what it writes, and
+# docs/adr/0005-zmcontrol-status-is-a-declared-artifact.md records the judgement.
+# Remove any one of the three and the entry comes out with it.
+#
+# IT CAN BLOCK BEFORE ITS OWN ALARM ARMS. The command sets an alarm around each
+# service it asks, but the directory lookup that runs first has none — so a hung
+# LDAP master leaves it waiting with nothing to interrupt it. What bounds it is
+# the wall-clock timeout every command in this file already runs under, and the
+# screen reports the expiry as itself rather than as a server that answered
+# nothing.
+#
+# `zmcontrol start`, `stop`, `restart`, `shutdown` and `maintenance` are absent and
+# therefore refused. They are the reason this binary was worth a second look: it is
+# the one command in the tool whose family changes service state, and the entry for
+# `status` may never be read as approval of the binary.
+#
+# `postqueue -p` IS THE MAIL QUEUE, IN ITS LISTING FORM AND NO OTHER. Postfix puts
+# the read and the writes in one binary and tells them apart by flag, so the flag
+# IS the operation — approved the way `zmcontrol -v` is, with nothing following it.
+#
+# `-f`, `-s` and `-i` ARE NOWHERE HERE AND MAY NOT ARRIVE. The first flushes the
+# whole deferred queue, the second flushes one site and the third requeues one
+# message: every one of them makes the transfer agent attempt delivery NOW. That
+# is not a change to a message's content and it is a change to what the server
+# does with it — mail leaves, bounces are generated, a remote host is contacted —
+# which is domain state by any reading that means anything. `-d` deletes. `-j` is
+# the structured form of this same listing and is DELIBERATELY ABSENT: it is the
+# better source, carrying the queue name as a field rather than as a marker on the
+# id, and this tool has no JSON parser and does not grow one for a screen the
+# traditional form already answers. Approving a second form of a read nobody makes
+# would be an operation nobody can reach.
+#
+# ITS ACCESS-CONTROL SETTING IS NOT THIS FILE'S BUSINESS, and that is worth saying
+# because the two look alike from a screen. `authorized_mailq_users` is read by
+# `postqueue` itself, inside the binary, after this list has already approved the
+# operation: a site that has narrowed it gets a tool that is present, executable,
+# and answers `not allowed to view the mail queue` on exit 69. That is a refusal by
+# the server and never an allowlist denial, and lib/queue.sh keeps them apart —
+# because an allowlist denial means a defect in this program, and this one is a
+# setting on the host.
+#
 # `zmmsgtrace` is the delivery trace. Every filter that binary takes is a flag
 # which is the whole operation, so each is approved the same way `zmcontrol -v`
 # is: as a two-token entry, with the operator's already-validated value following
@@ -237,9 +289,11 @@ zmmailbox:gfg
 zmmailbox:gms
 zmmailbox:gms:-v
 zmcontrol:-v
+zmcontrol:status
 zmmsgtrace:--recipient
 zmmsgtrace:--sender
 zmmsgtrace:--id
+postqueue:-p
 tail:-n
 gzip:-dc
 '
@@ -377,6 +431,17 @@ ZRO_ZIMBRA_LIBEXEC="${ZRO_ZIMBRA_LIBEXEC:-/opt/zimbra/libexec}"
 # reports the binary as unavailable on this host rather than falling back to a
 # search of $PATH, which is the same refusal every other root gets.
 ZRO_SYSTEM_BIN="${ZRO_SYSTEM_BIN:-/usr/bin}"
+# The fourth root, and the second inside the Zimbra tree: where the mail transfer
+# agent's own programs are installed. Zimbra ships its Postfix under `common`
+# rather than under `bin`, and the queue tool is set-group `postdrop` there —
+# which is why it answers for an unprivileged account at all.
+#
+# A DECLARATION RATHER THAN A SEARCH, exactly as the tracing binary's root is. A
+# host that keeps them elsewhere overrides this and fails visibly if the override
+# is wrong: the gate reports the binary as unavailable on this host rather than
+# falling back to $PATH, where a `postqueue` earlier in it would be a different
+# program answering about a different queue.
+ZRO_POSTFIX_SBIN="${ZRO_POSTFIX_SBIN:-/opt/zimbra/common/sbin}"
 ZRO_RUNUSER="${ZRO_RUNUSER:-$(zro_first_existing /sbin/runuser /usr/sbin/runuser /bin/runuser)}"
 ZRO_TIMEOUT_BIN="${ZRO_TIMEOUT_BIN:-$(zro_first_existing /usr/bin/timeout /bin/timeout)}"
 ZRO_ID_BIN="${ZRO_ID_BIN:-$(zro_first_existing /usr/bin/id /bin/id)}"
@@ -435,6 +500,7 @@ zmprov:ZRO_ZIMBRA_BIN
 zmmailbox:ZRO_ZIMBRA_BIN
 zmcontrol:ZRO_ZIMBRA_BIN
 zmmsgtrace:ZRO_ZIMBRA_LIBEXEC
+postqueue:ZRO_POSTFIX_SBIN
 tail:ZRO_SYSTEM_BIN
 gzip:ZRO_SYSTEM_BIN
 '

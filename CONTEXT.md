@@ -29,7 +29,10 @@ to a log — `zmcontrol status` rewrites `.zmcontrol.cache` and leaves temp file
 Admitted only when three things hold together: it changes no domain state, the
 screen that runs the command says what it writes, and an ADR records the
 judgement. Three conditions, because the alternative is a guarantee that widens
-one convenient command at a time.
+one convenient command at a time. There is exactly one, and
+[ADR-0005](docs/adr/0005-zmcontrol-status-is-a-declared-artifact.md) is its
+record; the tests hold the screen to the second condition, so an operation cannot
+keep the admission after losing the disclosure.
 _Avoid_: harmless write, cache write
 
 **Autocreating read**:
@@ -208,6 +211,37 @@ The time range a trace is restricted to, compared against when a message
 falls outside the window.
 _Avoid_: time range, delivery window
 
+## The server itself
+
+**Mail queue**:
+What the transfer agent is still holding: messages that are neither delivered nor
+lost. It is read with the **listing form** of the queue tool and no other — the
+forms that flush, requeue, hold or delete live in the same program, and every one
+of them makes the server act. Read once per screen, answered as counts first.
+_Avoid_: outbox, spool (that is the directory, not the answer)
+
+**Queue status marker**:
+The character the queue tool appends to a queue id: `*` being delivered now, `!`
+held, and **nothing at all** for everything else. The unmarked case is named
+*deferred or newly arrived*, because this output cannot tell those two apart and
+naming the likelier one would be inventing a fact.
+_Avoid_: queue state, flag — a flag is a message attribute, and this is not one
+
+**Refused by the host**:
+An operation the tool ran, was permitted to run, and the server declined —
+`authorized_mailq_users` not naming the account every command runs as. It is a
+setting on the host with a repair of its own, and it is never reported as an
+allowlist denial, which in this program means a defect in the tool.
+_Avoid_: denied, permission error — *denied* is the allowlist's word and may not
+be borrowed
+
+**Service status**:
+Which of this server's services are running, asked of `zmcontrol status` — the
+one operation in the tool whose command writes, admitted as a
+[declared artifact](#the-guarantee). It reports service state and **changes
+none**: the rest of that binary's family is refused.
+_Avoid_: health check, uptime
+
 ## Host capabilities
 
 **Capability**:
@@ -260,10 +294,14 @@ event. These words exist so that cost is decided when an operation is designed
 rather than discovered when it runs.
 
 **Cost class**:
-What an operation costs at production scale, declared as one of four. Class 1 is
+What an operation costs at production scale, declared as one of five. Class 1 is
 a directory read about one account, domain or list. Class 2 is a read inside one
 mailbox. Class 3 is a log scan, whose size is the window's, not the server's.
-Class 4 is a server-wide sweep — and class 4 **does not exist in this tool**.
+Class 5 is a question this server is asked about **itself** — the mail queue, the
+service status — one invocation, and one server to ask however large the
+directory on it grows. Class 4 is a server-wide sweep — and class 4 **does not
+exist in this tool**. Its number is skipped rather than reused, because the digit
+is refused everywhere the declaration is read.
 A class names what the work grows with, never how long it takes. It is declared
 beside the operation, in the one list the menu is built from, so that an
 operation cannot arrive without one; the classes an operation may claim are their
@@ -275,7 +313,10 @@ offer one.
 
 **Cost unit**:
 What a class's cost is counted in, declared with the class: an **entry** for
-class 1, a **mailbox** for class 2, a **file** for class 3. A screen's cost can
+class 1, a **mailbox** for class 2, a **file** for class 3, a **host** for
+class 5 — where the work grows with what the server itself is doing, the services
+installed or the messages queued, and never with the number of accounts. A
+screen's cost can
 then be checked against the units its own answer named — the entries a record
 points at, the files a window covers — rather than against a number written down
 beside it. The mailbox and the entry are deliberately different units: a

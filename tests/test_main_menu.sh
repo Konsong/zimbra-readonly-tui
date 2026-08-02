@@ -8,6 +8,7 @@ set -uo pipefail
 export ZRO_MOCK_LIB="$ZRO_TEST_ROOT/mocks"
 export ZRO_ZIMBRA_BIN="$ZRO_TEST_ROOT/mocks/bin"
 export ZRO_ZIMBRA_LIBEXEC="$ZRO_TEST_ROOT/mocks/libexec"
+export ZRO_POSTFIX_SBIN="$ZRO_TEST_ROOT/mocks/sbin"
 export ZRO_SYSTEM_BIN="$ZRO_TEST_ROOT/mocks/system"
 export ZRO_ID_BIN="$ZRO_TEST_ROOT/mocks/bin/id"
 export ZRO_RUNUSER="$ZRO_TEST_ROOT/mocks/bin/runuser"
@@ -16,13 +17,16 @@ export ZRO_UI_BACKEND=stub
 export ZRO_SOURCED_ONLY=1
 export ZRO_MOCK_ID_USER=zimbra
 chmod +x "$ZRO_TEST_ROOT"/mocks/bin/* "$ZRO_TEST_ROOT"/mocks/libexec/* \
-         "$ZRO_TEST_ROOT"/mocks/system/* 2>/dev/null || true
+         "$ZRO_TEST_ROOT"/mocks/system/* "$ZRO_TEST_ROOT"/mocks/sbin/* 2>/dev/null || true
 
 # This file is about the menu, not about what this host happens to ship. Both
 # trace probes are pinned so that an entry's mark is something a case asks for
 # rather than something the machine running the suite decides.
 export ZRO_CAP_FORCE_TRACE_BIN=yes
 export ZRO_CAP_FORCE_TRACE_LOG=ok
+# And the queue's, for the same reason: whether the machine running the suite
+# ships a mail transfer agent has nothing to say about the cases below.
+export ZRO_CAP_FORCE_QUEUE_BIN=yes
 
 # shellcheck source=../zimbra-ro-tui.sh
 . "$ZRO_SRC/zimbra-ro-tui.sh"
@@ -163,6 +167,13 @@ it "and the unit its cost is counted in is declared with it"
 assert_out_eq "entry"   zro_cost_unit 1
 assert_out_eq "mailbox" zro_cost_unit 2
 assert_out_eq "file"    zro_cost_unit 3
+# The class that arrived with the two operations that ask this server about
+# ITSELF. Its unit is the host: one invocation, and one server to ask however
+# large the directory on it grows. Numbered 5 because the digit 4 is refused
+# rather than free — see the case below.
+assert_out_eq "host"    zro_cost_unit 5
+assert_out_eq "5" zro_menu_cost mail-queue
+assert_out_eq "5" zro_menu_cost service-status
 
 it "class 4 is not a class this tool can name"
 # A server-wide sweep is what this tool refuses to be, and the refusal is worth

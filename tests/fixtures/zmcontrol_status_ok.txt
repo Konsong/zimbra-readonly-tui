@@ -1,0 +1,11 @@
+Host mail01.example.com
+	amavis                  Running
+	ldap                    Running
+	mailbox                 Running
+	mta                     Running
+	service webapp          Running
+	stats                   Running
+	zimbra webapp           Running
+	zimbraAdmin webapp      Running
+	zimlet webapp           Running
+	zmconfigd               Running

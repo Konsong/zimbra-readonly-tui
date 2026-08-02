@@ -76,6 +76,8 @@ accommodated. They are not needed on a standard host.
 | `ZRO_ZIMBRA_LIBEXEC` | `/opt/zimbra/libexec` | where `zmmsgtrace` lives |
 | `ZRO_SYSTEM_BIN` | `/usr/bin` | where `tail` and `gzip` live. A host that keeps one of them elsewhere — Ubuntu before the merged `/usr` ships `gzip` in `/bin` — sets this; the log viewer then reports the binary as unavailable rather than searching `$PATH` for it |
 | `ZRO_LOGVIEW_LINES` | `500` | how many lines the log viewer's bounded read is |
+| `ZRO_POSTFIX_SBIN` | `/opt/zimbra/common/sbin` | where the mail queue tool lives. Zimbra ships its Postfix under `common`, not under `bin`; a host that keeps it elsewhere sets this, and the queue screen then reports the tool as absent rather than searching `$PATH` for it |
+| `ZRO_QUEUE_DETAIL_MAX` | `50` | how many queue entries the detail behind the counts may show |
 | `ZRO_SYSLOG_FILE` | `/var/log/zimbra.log` | the primary mail log — Postfix, amavis and auth |
 | `ZRO_LOG_DIR` | `/opt/zimbra/log` | where Zimbra's own logs live |
 | `ZRO_TIMEOUT` | `60` | seconds before a command is killed |
@@ -325,6 +327,8 @@ report is the claim.
   an address is too broad a question. It is the one trace that asks you to type
   something, because an identifier is not an address.
 - **Log dosyalari (son satirlar)** — described below.
+- **Mail kuyrugu (bekleyen iletiler)** — described below.
+- **Servis durumu** — described below.
 
 All three traces ask for an arrival window and answer in the same report. The
 only differences are the filter, the label on the report's first line, and the
@@ -378,6 +382,60 @@ The viewer is offered whether or not delivery tracing is available here. The two
 read the same files, but tracing needs `zmmsgtrace` and the primary mail log,
 while this screen can still show `mailbox.log` on a host that has neither.
 
+*Mail kuyrugu (bekleyen iletiler)*:
+
+- What is waiting to be delivered on this server, answered **counts first**: how
+  many entries the queue holds, and how many of them are waiting, held, or being
+  delivered right now. The detail behind those numbers is one keystroke away and
+  is **bounded** — fifty entries by default.
+
+**The queue is read and nothing else.** `postqueue -p` lists; the forms of the
+same program that flush the queue, flush one site, requeue one message or delete
+one are **not on the allowlist and never will be**. Every one of them makes the
+transfer agent act — mail leaves, a remote host is contacted, bounces are
+generated — which is a change to what the server does with your mail even though
+no message is edited. If you need to flush a queue, do it from a shell,
+deliberately, as yourself.
+
+**The status comes from the marker Postfix puts on the queue id**: `*` is being
+delivered now, `!` is held, and an id with no marker is waiting — deferred, or
+just arrived and not yet picked up. The screen says so, because those last two
+cannot be told apart in this output and guessing between them would be this tool
+inventing a fact.
+
+**Reading the queue costs one invocation whatever it holds.** A queue of ten
+thousand entries and an empty one cost the same; what a large queue would cost is
+the *screen*, which is why the counts come first and the list is bounded. The
+detail is rendered from the listing already in hand, so opening it does not query
+the server again — and the two screens cannot disagree about a queue that moved
+between them.
+
+An empty queue is an **answer**, not a failure, and says so — with the reminder
+that an empty queue does not mean nothing was lost: a message that has already
+left the queue is a question for the delivery trace and the logs.
+
+*Servis durumu*:
+
+- Which of this server's services are running and which are not, one line per
+  service, with the counts above them. A stopped service is the only thing on the
+  screen in upper case, because it is what you came to find.
+
+**This is the one screen in the tool whose command writes something**, and it
+says so in the same box as its answer. `zmcontrol status` starts and stops
+nothing, and changes no account, mailbox, folder, flag or setting — but it
+rewrites `.zmcontrol.cache` inside Zimbra's own tree and leaves temporary files
+behind. That makes it a **declared artifact**, admitted under three conditions
+that hold together: no domain state changes, the screen says what it writes, and
+[ADR-0005](adr/0005-zmcontrol-status-is-a-declared-artifact.md) records the
+judgement. Remove any one of the three and the operation comes out with it.
+
+**It can block, and what ends it is this tool's timeout.** The command asks the
+directory server before it asks anything else and has no alarm of its own around
+that step, so an unresponsive LDAP leaves it waiting indefinitely. The wall-clock
+bound every command here runs under is what cuts it, and the screen reports the
+expiry as itself — naming the directory as the place to look — rather than as a
+server that answered nothing.
+
 Cancel and ESC return to the previous screen from every prompt and from every
 screen. The main menu is the one place where there is no previous screen: leaving
 it there leaves the tool, as the explicit *Cikis* entry does.
@@ -401,6 +459,22 @@ and names the repair — a missing
 binary and an unreadable log get different messages, because a version difference
 is not a permission and `zmfixperms` would be the wrong advice for it. You learn
 this before spending a search on it rather than after.
+
+**The mail queue entry carries the same mark for two causes of its own**, and
+they have nothing in common:
+
+- **The queue tool is not on this build.** No mail transfer agent, so no queue and
+  no setting that would produce one. The repair is a package, and the screen says
+  where the tool was looked for.
+- **This host refuses the read.** The tool is there and Postfix's own
+  `authorized_mailq_users` does not list the `zimbra` account. The repair is that
+  setting — the screen names it and its permissive default — and the tool does not
+  escalate around it, exactly as it does not read an unreadable log as `root`.
+
+The second can only be learned by being refused: that setting is read *inside*
+`postqueue`, so there is nothing this tool could stat beforehand. It asks once,
+remembers the refusal for the session, and marks the entry from then on rather
+than charging you for the same refusal twice.
 
 **Read access is judged for the `zimbra` account, never for you.** Every command
 runs as `zimbra` — see section 2 — so a log that `root` can read and `zimbra`
@@ -581,9 +655,11 @@ zmmailbox gf     getFolder                  behind the existence gate
 zmmailbox gfg    getFolderGrant             behind the existence gate
 zmmailbox gms -v getMailboxSize, raw bytes  behind the existence gate
 zmcontrol -v     version
+zmcontrol status service status — THE ONE ENTRY HERE THAT WRITES; see below
 zmmsgtrace --recipient                      delivery trace by recipient
 zmmsgtrace --sender                         delivery trace by sender
 zmmsgtrace --id                             delivery trace by message-id
+postqueue -p                                the mail queue, listing form ONLY
 tail -n                                     the log viewer's bounded read
 gzip -dc                                    decompress a rotated log TO STDOUT
 ```
@@ -630,6 +706,46 @@ now reaches.
 `zmcontrol -v` runs **once per session**, at startup. Its answer is shown on the
 main menu, which is returned to after every operation, so re-reading it there
 would cost a JVM start per screen.
+
+**`zmcontrol status` is the one command on this list that writes**, and it is
+admitted as a **declared artifact** rather than as an exception anybody may
+repeat. It starts and stops nothing and changes no account, mailbox, folder, flag
+or setting — but it creates the localconfig temp directory when it is missing,
+leaves temp files there, and rewrites `/opt/zimbra/log/.zmcontrol.cache` on every
+successful directory lookup. Three conditions admit it and they hold together: no
+domain state changes, the screen that runs it says what it writes, and
+[ADR-0005](adr/0005-zmcontrol-status-is-a-declared-artifact.md) records the
+judgement. `start`, `stop`, `restart`, `shutdown` and `maintenance` are absent and
+therefore refused — this is the one binary here whose family changes service
+state, and the entry for `status` is not approval of the binary.
+
+It is also the one command with **no timeout of its own where it needs one**: the
+directory lookup it makes first has no alarm around it, so a hung LDAP master
+would leave it waiting indefinitely. `ZRO_TIMEOUT` is what ends it, and the screen
+says so instead of reporting a server that answered nothing.
+
+**`postqueue` is approved in its listing form and no other.** Postfix puts the
+read and the writes in one binary and tells them apart by flag, so the flag *is*
+the operation: `-f` flushes the deferred queue, `-s` flushes one site, `-i`
+requeues one message and `-d` deletes — each of them makes the transfer agent act,
+which is a change to what the server does with your mail. None is on the list, and
+neither is `postsuper`, which holds, releases and deletes, nor `mailq`, which is a
+link to the mail submission program. `-j`, the structured form of the same
+listing, is deliberately absent too: it is the better source, and this tool has no
+JSON parser and does not grow one for a question the traditional form answers.
+
+It resolves under **`ZRO_POSTFIX_SBIN`**, its own declared root, because Zimbra
+ships its Postfix under `common` rather than under `bin`. A tool searched for on
+`$PATH` would be a different program answering about a different queue.
+
+**Postfix's own access-control setting can refuse the read, and that is not an
+allowlist denial.** `authorized_mailq_users` is consulted inside `postqueue`,
+after this list has approved the operation; a site that has narrowed it gets a
+tool that is present, executable, and exits 69 saying the `zimbra` account may not
+view the queue. The tool reports that as the host refusing — naming the setting
+and its permissive default, `static:anyone` — and never as code 90, which in this
+program means a defect. The two send you to different files, so they are kept
+apart.
 
 `tail` and `gzip` are the only entries here that are not Zimbra's. They are on
 this list rather than treated as plumbing beside `timeout` and `id`, because
