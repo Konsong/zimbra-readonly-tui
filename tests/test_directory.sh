@@ -274,16 +274,32 @@ assert_out_eq "$(printf 'usr\t60b41207-8f1d-470f-8128-d5717e8f29a0\ngrp\teee2778
 assert_eq "$(zro_dl_grantees "$raw" sendToDistList | wc -l)" "3"
 
 it "a right this program does not recognise is kept, never silently dropped"
-# Zimbra can write a grant this card has no group for — a denial is spelled as
-# the same right with a leading '-'. Reading one as permission would answer the
-# question backwards, so anything that is not exactly one of the two rights is
-# shown as it stands instead.
-raw=$(printf 'zimbraACE: 60b41207-8f1d-470f-8128-d5717e8f29a0 usr -sendToDistList\n')
-assert_out_eq "" zro_dl_grantees "$raw" sendToDistList
-assert_contains "$(zro_dl_other_aces "$raw")" "-sendToDistList"
+# CAPTURED, not supposed: `zmprov grr dl <list> usr <account> -sendToDistList`
+# writes the right's own name with a leading minus, which is neither of the two
+# rights this card groups. Reading it as permission would answer the question
+# backwards, so it is shown as it stands instead.
+deny=$(cat "$FIX/zmprov_gdl_deny.txt")
+assert_out_eq "" zro_dl_grantees "$deny" sendToDistList
+assert_contains "$(zro_dl_other_grants "$deny")" "-sendToDistList"
 
 it "and a list whose grants are all recognised has nothing left over"
-assert_out_eq "" zro_dl_other_aces "$(cat "$FIX/zmprov_gdl_grants.txt")"
+assert_out_eq "" zro_dl_other_grants "$(cat "$FIX/zmprov_gdl_grants.txt")"
+
+it "a denied grant is never rendered as a list nobody restricted"
+# THE FAILURE THIS WHOLE RULE EXISTS TO PREVENT, on the one screen where it
+# would be read as the answer. The list's only send grant is a denial: with no
+# recognised grant in the group, saying 'kisitlama yok' would describe a
+# restricted list as one that accepts mail from the entire internet.
+out=$(: >"$ZRO_MOCK_LOG"; ZRO_MOCK_ZMPROV_GDL_OUT="$FIX/zmprov_gdl_deny.txt" \
+        zro_dl_card "$EMPTY_LIST")
+# Asserted as the whole field, because the warning underneath it names the
+# conclusion it is warning against — and that sentence is the point of it.
+assert_not_contains "$out" "$(zro_card_line 'Gonderim izni' "$ZRO_TXT_DL_OPEN")"
+assert_contains "$out" "$(zro_card_line 'Gonderim izni' "$ZRO_TXT_DL_UNCLEAR")"
+assert_not_contains "$out" "listeye herkes gonderebilir."
+assert_contains "$out" "-sendToDistList"
+assert_contains "$out" "Diger yetkiler"
+assert_contains "$out" "OKUMAYIN"
 
 it "a grantee identifier that is not one reaches no command line"
 # The value comes from directory output rather than from an operator, and it is
@@ -320,8 +336,21 @@ assert_eq "$(invocations)" "$ZRO_DL_GRANTEE_MAX"
 # Every grantee is still in the answer; only the naming is bounded.
 assert_eq "$(printf '%s\n' "$table" | grep -c .)" "$((ZRO_DL_GRANTEE_MAX + 5))"
 assert_eq "$(printf '%s\n' "$table" | grep -c "$ACCT")" "$ZRO_DL_GRANTEE_MAX"
-assert_ok zro_dl_grantee_capped "$many"
-assert_fail zro_dl_grantee_capped "$(cat "$FIX/zmprov_gdl_grants.txt")"
+
+it "and the screen learns it was bounded from the table, not by counting again"
+# One implementation of the folding. Asked of the table the card already built,
+# so the sentence under the rows and the rows themselves cannot disagree.
+assert_ok zro_dl_grantee_capped "$table"
+assert_fail zro_dl_grantee_capped \
+  "$(ZRO_MOCK_ZMPROV_GA_OUT="$FIX/zmprov_ga_identity_account.txt" \
+       zro_dl_grantee_table "$(cat "$FIX/zmprov_gdl_grants.txt")")"
+
+it "and a grantee that simply could not be named is not reported as the bound"
+# Two different facts. A lookup that failed leaves a grantee unnamed too, and
+# explaining that with 'this list has more than twenty' would answer with a
+# number that is not the reason.
+assert_fail zro_dl_grantee_capped \
+  "$(printf 'usr\t60b41207-8f1d-470f-8128-d5717e8f29a0\tusr (60b41207-8f1d-470f-8128-d5717e8f29a0)\n')"
 
 rm -f -- "$ZRO_MOCK_LOG"
 zro_t_report

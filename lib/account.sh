@@ -446,14 +446,9 @@ zro_account_card() {
   cosid=$(zro_attr_get "$raw" zimbraCOSId)
 
   # One COS lookup serves both the name and the quota fallback below.
-  local cos_raw="" cos_name=$ZRO_TXT_UNSET
-  if [ -n "$cosid" ]; then
-    cos_raw=$(zro_account_cos_fetch "$cosid" 2>/dev/null) || cos_raw=""
-    cos_name=$(zro_attr_get "$cos_raw" cn)
-    # The id was set, so a name that did not come back is a lookup this program
-    # could not complete — not a class of service the account does not have.
-    [ -n "$cos_name" ] || cos_name=$ZRO_TXT_UNKNOWN
-  fi
+  local cos_raw cos_name
+  cos_raw=$(zro_cos_record "$cosid")
+  cos_name=$(zro_cos_name_field "$cosid" "$cos_raw")
 
   local quota=""
   quota=$(zro_account_quota_limit "$raw" "$cos_raw") || quota=""
@@ -624,4 +619,36 @@ zro_account_cos_name() {
   local name
   name=$(zro_attr_get "$out" cn)
   printf '%s' "${name:--}"
+}
+
+# The class of service record an entry points at, or nothing at all.
+#
+# AN ENTRY THAT NAMES NO CLASS OF SERVICE COSTS NO INVOCATION, which is the whole
+# reason this is a function rather than a call: both cards ask, and a guard
+# written twice is a guard one of them will one day be missing.
+zro_cos_record() {
+  local cosid=${1-} raw
+  [ -n "$cosid" ] || return 0
+  raw=$(zro_account_cos_fetch "$cosid" 2>/dev/null) || return 0
+  printf '%s' "$raw"
+}
+
+# THE NAME OF A CLASS OF SERVICE, AS A CARD FIELD. Two screens ask — an account's
+# and a domain's — and the three-way answer is the same on both, which is why it
+# is decided once rather than beside each of them.
+#
+# Absence and failure are different words here, as they are everywhere else on a
+# card. No id at all is 'tanimsiz': the entry names no class of service, and on a
+# domain that is an ordinary state with a consequence worth reading. An id that
+# WAS set and did not resolve is 'bilinmiyor': a lookup this program could not
+# complete, never a class of service the entry does not have.
+#
+# It takes the record rather than fetching one, so the caller that needs the rest
+# of it — the account card reads the quota out of the same lookup — pays for one
+# invocation instead of two.
+zro_cos_name_field() {
+  local cosid=${1-} raw=${2-} name
+  [ -n "$cosid" ] || { printf '%s' "$ZRO_TXT_UNSET"; return 0; }
+  name=$(zro_attr_get "$raw" cn)
+  printf '%s' "${name:-$ZRO_TXT_UNKNOWN}"
 }

@@ -18,7 +18,7 @@ zimbraAuthLdapSearchBindDn: CN=svc_zimbra_ldap svc_zimbra_ldap,CN=Users,DC=sirke
 zimbraAuthLdapSearchBindPassword: <redacted; the real password was printed in the clear>
 ```
 
-A screen is a thing an operator takes a screenshot of. **The domain card requests its six attributes
+A screen is a thing an operator takes a screenshot of. **The domain card requests its five attributes
 explicitly**, which the account card already did for cost reasons and which this makes a second, harder
 reason for.
 
@@ -137,11 +137,28 @@ The header names the entry in both, so the name comes from the parser the identi
 The public grantee is the fixed sentinel `99999999-9999-9999-9999-999999999999` and names no entry: the card
 says what it means instead of looking it up.
 
+### A denial is the right's own name with a leading minus
+
+Settled by experiment rather than left as a hazard. `zmprov grr dl <list> usr <account> -sendToDistList`
+succeeds, and the entry it writes is:
+
+```
+zimbraACE: 344c2c64-458c-4447-ae21-4a18b4284e28 usr -sendToDistList
+```
+
+So a denial is **neither** of the two rights the card groups, and it lands in the "grants this program does
+not recognise" heading — which is what that heading was written for. It also settles the sentence underneath:
+a list whose only send grant is a denial has an empty *recognised* send group, and a card that read that as
+"no restriction, anyone may send" would describe a restricted list as an open one. The card says it cannot
+answer instead, and names the row to read.
+
+The grant was revoked again with `zmprov rvr dl <list> usr <account> -sendToDistList`, and the list read
+afterwards was byte-identical to the one before it — so the fixtures above remain re-capturable.
+
 ## 3. What was not settled here
 
 | Question | Why it is open |
 |---|---|
-| How a **denied** grant renders (`-sendToDistList`) | Not produced on TEST-C. The card keeps any access control entry it does not recognise, verbatim, under its own heading, rather than reading one as permission. |
 | The `all`, `dom`, `gst` and `key` grantee types | No instance on the lab server. They render as the type plus the identifier — honest and unresolved — rather than as a translation nobody measured. |
 | Whether an empty send permission really means "anyone may send" | Zimbra's documented rule, and not testable on TEST-C: the box has no `zimbra-mta`, so no message can be sent to a list at all. The card states the rule; the fields above it state only what the directory holds. |
 
@@ -154,3 +171,5 @@ On `sirket.lcl`, all of it deliberate and none of it reverted, so the fixtures c
   group, and for `pub`; and `ownDistList` for the account and the group.
 - The domain carries `zimbraMailCatchAllAddress: @sirket.lcl` and
   `zimbraDomainDefaultCOSId` pointing at the `default` class of service.
+
+The denial used to settle §2 was **revoked**, on both lists it was tried on. Nothing else was undone.

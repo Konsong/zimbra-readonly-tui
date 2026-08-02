@@ -97,15 +97,11 @@ zro_domain_card() {
   cosid=$(zro_attr_get "$raw" zimbraDomainDefaultCOSId)
 
   # Read before anything is printed, so that a lookup which had to fall back to
-  # LDAP is disclosed by the banner at the top rather than after it.
-  local cos_name=$ZRO_TXT_UNSET cos_raw
-  if [ -n "$cosid" ]; then
-    cos_raw=$(zro_account_cos_fetch "$cosid" 2>/dev/null) || cos_raw=""
-    cos_name=$(zro_attr_get "$cos_raw" cn)
-    # The id was set, so a name that did not come back is a lookup this program
-    # could not complete — not a domain without a default class of service.
-    [ -n "$cos_name" ] || cos_name=$ZRO_TXT_UNKNOWN
-  fi
+  # LDAP is disclosed by the banner at the top rather than after it. The three
+  # answers — no class of service named, one named and read, one named and
+  # unreadable — are the account card's, decided in the one place both share.
+  local cos_name
+  cos_name=$(zro_cos_name_field "$cosid" "$(zro_cos_record "$cosid")")
 
   zro_mode_banner
 
@@ -211,34 +207,46 @@ zro_dl_members() {
   zro_attr_all "${1-}" zimbraMailForwardingAddress
 }
 
+# The grants on a list, one per line, exactly as the directory wrote them.
+#
+# ONE PLACE THAT KNOWS WHERE A GRANT LIVES. The three readers below differ only
+# in which grants they keep, and each naming the attribute itself is how one of
+# them ends up reading a field the others do not.
+zro_dl_grants() {
+  zro_attr_all "${1-}" zimbraACE
+}
+
 # The grantees holding exactly one right, as "<type><TAB><id>" lines.
 #
-# `NF == 3` is the shape every captured ACE had. Anything else is not read as a
-# grant of this right — it goes to zro_dl_other_aces below, where an operator can
-# see it rather than where this program can quietly misread it.
+# `NF == 3` is the shape every captured grant had. Anything else is not read as a
+# grant of this right — it goes to zro_dl_other_grants below, where an operator
+# can see it rather than where this program can quietly misread it.
 zro_dl_grantees() {
   local raw=${1-} right=${2-}
   [ -n "$right" ] || return 0
-  zro_attr_all "$raw" zimbraACE \
+  zro_dl_grants "$raw" \
     | awk -v right="$right" 'NF == 3 && $3 == right { printf "%s\t%s\n", $2, $1 }'
 }
 
-# Every grantee of a right this card DOES group, once per grant. The table
-# below folds the repeats; this is what it folds.
-zro_dl_grantees_all() {
-  zro_attr_all "${1-}" zimbraACE \
+# Every grantee of a right this card DOES group, once per grant. The table below
+# folds the repeats; this is what it folds.
+zro_dl_grantees_grouped() {
+  zro_dl_grants "${1-}" \
     | awk -v o="$ZRO_DL_RIGHT_OWNER" -v s="$ZRO_DL_RIGHT_SEND" \
         'NF == 3 && ($3 == o || $3 == s) { printf "%s\t%s\n", $2, $1 }'
 }
 
-# Every access control entry this card has no group for, as it stands.
+# Every grant this card has no group for, as it stands.
 #
-# IT EXISTS SO THAT NOTHING IS SILENTLY DROPPED. A denial, a right a later Zimbra
-# release adds, an entry in a shape nothing here recognises: each is a fact about
-# who may use this list, and a card that showed only what it understood would
-# report a restricted list as an open one.
-zro_dl_other_aces() {
-  zro_attr_all "${1-}" zimbraACE \
+# IT EXISTS SO THAT NOTHING IS SILENTLY DROPPED. Measured on TEST-C: a DENIAL is
+# written as the right's own name with a leading minus — `usr -sendToDistList` —
+# so it is neither of the two rights above and would otherwise vanish from a
+# screen whose whole job is to say who may send. A right a later Zimbra release
+# adds lands here too. Each is a fact about who may use this list, and a card
+# that showed only what it understood would report a restricted list as an open
+# one.
+zro_dl_other_grants() {
+  zro_dl_grants "${1-}" \
     | awk -v o="$ZRO_DL_RIGHT_OWNER" -v s="$ZRO_DL_RIGHT_SEND" \
         'NF != 3 || ($3 != o && $3 != s)'
 }
@@ -257,6 +265,13 @@ ZRO_TXT_DL_PUBLIC='herkes (kimlik dogrulamasi olmadan)'
 # everyone. Rendering that as 'yok' would tell an operator that nobody may send
 # to a list which in fact accepts mail from the entire internet.
 ZRO_TXT_DL_OPEN='kisitlama yok (herkes gonderebilir)'
+# And what an empty send permission means when the list carries a grant this
+# program did not group — which, measured on TEST-C on 2026-08-02, is exactly
+# what a DENIAL is: `zmprov grr dl <list> usr <account> -sendToDistList` writes
+# `zimbraACE: <id> usr -sendToDistList`, the right's own name with a leading
+# minus. Saying 'anyone may send' there would be the one thing the whole
+# unrecognised-entry rule exists to prevent, said in the sentence underneath it.
+ZRO_TXT_DL_UNCLEAR='belirsiz (asagidaki diger yetkilere bakin)'
 
 # The address behind a grantee identifier, or a refusal.
 #
@@ -300,10 +315,21 @@ zro_dl_grantee_label() {
   printf '%s' "$addr"
 }
 
-# Whether this list has more grantees than the bound will name.
+# Whether the bound above left a grantee unnamed, COUNTED FROM THE TABLE rather
+# than from the grants a second time.
+#
+# The table already holds one row per distinct grantee, so this asks the same
+# question the table answered instead of repeating the folding. Two
+# implementations of one rule is how a screen ends up claiming it named everybody
+# while the rows above it say otherwise.
+#
+# It counts rather than looking for unnamed rows, because those are two different
+# facts: a lookup that FAILED also leaves a grantee unnamed, and reporting that
+# as "this list has more than twenty" would explain it with a number that is not
+# the reason.
 zro_dl_grantee_capped() {
   local n
-  n=$(zro_dl_grantees_all "${1-}" | awk '$1 == "usr" || $1 == "grp"' | sort -u | grep -c .)
+  n=$(printf '%s\n' "${1-}" | awk -F"$ZRO_TAB" '$1 == "usr" || $1 == "grp"' | grep -c .)
   [ "$n" -gt "$ZRO_DL_GRANTEE_MAX" ]
 }
 
@@ -339,7 +365,7 @@ zro_dl_grantee_table() {
     esac
     printf '%s\t%s\t%s\n' "$type" "$id" "$label"
   done <<EOF
-$(zro_dl_grantees_all "$raw")
+$(zro_dl_grantees_grouped "$raw")
 EOF
   return 0
 }
@@ -396,7 +422,7 @@ zro_dl_card() {
   table=$(zro_dl_grantee_table "$raw")
   owners=$(zro_dl_grantee_render "$table" "$raw" "$ZRO_DL_RIGHT_OWNER")
   senders=$(zro_dl_grantee_render "$table" "$raw" "$ZRO_DL_RIGHT_SEND")
-  others=$(zro_dl_other_aces "$raw")
+  others=$(zro_dl_other_grants "$raw")
 
   zro_mode_banner
 
@@ -409,21 +435,35 @@ zro_dl_card() {
 
   zro_card_head 'Yetkiler'
   zro_card_list 'Sahipler' "$owners" "$ZRO_TXT_NONE"
-  zro_card_list 'Gonderim izni' "$senders" "$ZRO_TXT_DL_OPEN"
+  # WHICH EMPTY THIS IS depends on what else the entry carries. With nothing
+  # else on it, no send grant means no restriction. With an entry this program
+  # did not group — a denial above all — it means this program cannot say, and
+  # the two must not share a sentence.
   if [ -n "$others" ]; then
-    # Shown only when there is something to show, and never folded into the two
-    # groups above: an entry this program does not recognise may be a denial.
+    zro_card_list 'Gonderim izni' "$senders" "$ZRO_TXT_DL_UNCLEAR"
+    # Never folded into the groups above, and never dropped: an entry this
+    # program does not recognise may be the one that decides the answer.
     zro_card_list 'Diger yetkiler' "$others" "$ZRO_TXT_NONE"
+  else
+    zro_card_list 'Gonderim izni' "$senders" "$ZRO_TXT_DL_OPEN"
   fi
 
   printf '\n'
-  if zro_dl_grantee_capped "$raw"; then
+  if zro_dl_grantee_capped "$table"; then
     printf 'Bu listede %s taneden fazla yetkili var: ilk %s tanesi adresiyle,\n' \
       "$ZRO_DL_GRANTEE_MAX" "$ZRO_DL_GRANTEE_MAX"
     printf 'digerleri dizindeki kimligiyle gosterildi. Hicbiri atlanmadi.\n'
     printf '\n'
   fi
-  if [ -z "$senders" ]; then
+  if [ -n "$others" ]; then
+    # The one case where this program says it does not know. A denial is the
+    # measured example: the directory carries a send grant, this card did not
+    # group it, and reading its absence from the group as "no restriction" would
+    # describe a restricted list as an open one.
+    printf 'Bu listede bu programin taniyamadigi en az bir yetki var (yukarida\n'
+    printf '"Diger yetkiler"). Gonderim izni bu yuzden buradan okunamaz: o\n'
+    printf 'satiri oldugu gibi degerlendirin, kisitlama yok diye OKUMAYIN.\n'
+  elif [ -z "$senders" ]; then
     printf 'Gonderim izni tanimli degil: listeye herkes gonderebilir.\n'
   else
     printf 'Gonderim izni tanimli: listeye yalnizca yukaridakiler gonderebilir.\n'

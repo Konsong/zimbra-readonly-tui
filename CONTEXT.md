@@ -318,10 +318,12 @@ _Avoid_: group, mailing list, alias
 One access control entry on a list: a grantee, the kind of thing the grantee is,
 and the right it holds. Two rights are grouped by name — `ownDistList` is an
 owner, `sendToDistList` is send permission — and **everything else is kept
-verbatim rather than dropped**, because a right this tool does not recognise may
-be a denial, and a card that showed only what it understood would report a
-restricted list as an open one. An **empty** send permission means anyone may
-send, which is the opposite of what an empty list of anything else means.
+verbatim rather than dropped**. A **denial** is why: it is written as the right's
+own name with a leading minus, so it is not either grouped right, and a card that
+showed only what it understood would report a restricted list as an open one. An
+**empty** send permission means anyone may send — the opposite of what an empty
+list of anything else means — and only where the entry carries no ungrouped grant
+to contradict it.
 _Avoid_: permission, ACL — and never `right` for the whole entry: the right is
 one field of it
 
