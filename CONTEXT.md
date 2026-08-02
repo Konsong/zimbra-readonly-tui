@@ -38,6 +38,16 @@ domain state that was absent. `zmprov gmi` and any `zmmailbox` session on an
 account with no mailbox are the known cases.
 _Avoid_: unsafe read, lazy creation
 
+**Data position**:
+Where a command line carries the caller's already-validated values — the account
+name, the attribute list, the log file the inventory admitted — everything after
+the **subcommand** the allowlist approved. A flag standing there is **not** data:
+it changes what the command does, so it is looked up by name like any other
+operation and refused when the list does not carry it. An entry that approves a
+flag as the whole operation — the tracer's filters, the bounded read — approves
+that operation entire, and the data behind it is read by nobody.
+_Avoid_: arguments, options, the rest of the command
+
 ## Accounts and mailboxes
 
 **Account**:

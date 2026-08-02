@@ -131,6 +131,16 @@ while IFS= read -r call; do
         *) ;;                       # a redirection or operator: two-token key
       esac
       ;;
+    *)
+      # A FLAG IN THE DATA POSITION IS NOT DATA — it changes what the command
+      # does, so it is looked up by name exactly as the subcommand was. The gate
+      # applies this rule to the whole vector at run time; this reader sees only
+      # the token the extraction above captured, and a call site that hides a
+      # flag inside quotes reaches the gate and is refused there.
+      case $t2 in
+        -*) key="$bin:$t1:$t2" ;;
+      esac
+      ;;
   esac
   printf '%s\n' "$allow" | grep -qxF -- "$key" || uncovered="$uncovered $key"
 done <<EOF

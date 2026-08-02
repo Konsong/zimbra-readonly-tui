@@ -127,6 +127,40 @@ assert_not_contains "$(cat "$ZRO_MOCK_LOG")" "zmprov"
 it "denies an unapproved read behind the mode flag"
 ZRO_MOCK_ID_USER=zimbra assert_status "$ZRO_E_DENIED" zro_exec zmprov -l gmi 'a@b.com'
 
+# ------------------------------------------- a flag in the data position ------
+#
+# Everything after an approved subcommand used to reach the binary unread, on the
+# grounds that a caller validated it. A flag written there is not data: it changes
+# what the command does, and one form of this very read writes files and deletes
+# them. So the gate reads the data, and the argument vector below is the proof of
+# what it let through.
+
+it "runs the entry-only account read with the flag in the vector"
+: >"$ZRO_MOCK_LOG"
+ZRO_MOCK_ID_USER=zimbra zro_exec zmprov ga -e 'a@b.com' >/dev/null 2>&1
+assert_contains "$(cat "$ZRO_MOCK_LOG")" "$(printf 'zmprov\tga\t-e\ta@b.com')"
+
+it "refuses the file-writing form of the same read, and runs nothing"
+# -t writes binary attribute values to files and deletes what was there first.
+# The status is not the guarantee; the empty log below is.
+: >"$ZRO_MOCK_LOG"
+ZRO_MOCK_ID_USER=zimbra assert_status "$ZRO_E_DENIED" zro_exec zmprov ga -t 'a@b.com'
+ZRO_MOCK_ID_USER=zimbra assert_status "$ZRO_E_DENIED" zro_exec zmprov ga --temp 'a@b.com'
+ZRO_MOCK_ID_USER=zimbra assert_status "$ZRO_E_DENIED" zro_exec zmprov ga -fd 'a@b.com'
+ZRO_MOCK_ID_USER=zimbra assert_status "$ZRO_E_DENIED" zro_exec zmprov ga 'a@b.com' -t
+ZRO_MOCK_ID_USER=zimbra assert_status "$ZRO_E_DENIED" \
+  zro_exec zmprov -l ga -t 'a@b.com'
+assert_eq "$(cat "$ZRO_MOCK_LOG")" ""
+
+it "logs the refusal as a defect, naming the flag it refused"
+# Code 90 is a defect in this program, not something an operator did — so it is
+# logged like every other allowlist denial, and the line has to carry the token
+# that caused it or the next reader is left guessing which one it was.
+captured=$(ZRO_MOCK_ID_USER=zimbra zro_exec zmprov ga 'a@b.com' -t 2>&1 >/dev/null)
+assert_contains "$captured" "[error]"
+assert_contains "$captured" "denied by allowlist"
+assert_contains "$captured" "zmprov ga a@b.com -t"
+
 it "still runs the plain two-token form"
 : >"$ZRO_MOCK_LOG"
 ZRO_MOCK_ID_USER=zimbra zro_exec zmcontrol -v >/dev/null 2>&1
