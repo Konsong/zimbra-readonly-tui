@@ -3,17 +3,35 @@
 [ -n "${ZRO_LIB_ACCOUNT_LOADED:-}" ] && return 0
 ZRO_LIB_ACCOUNT_LOADED=1
 
-# Only what the M1 screens display. Asking for everything costs the same JVM
-# start but returns several hundred lines per account.
+# EVERY DIRECTORY FACT THE CARD SHOWS, REQUESTED AT ONCE. A JVM start costs the
+# same whether five attributes are asked for or twenty-five, so the card pays for
+# one invocation and displays all of it, rather than growing a second query every
+# time a field is added.
+#
+# Filtered rather than unfiltered for the opposite reason. `zmprov ga` with no
+# attribute list returned several hundred lines per account on the lab server —
+# every class-of-service preference, mobile policy and zimlet setting the account
+# inherits — and the dozen facts an operator came for are somewhere inside it.
+#
+# Order is alphabetical because that is the order zmprov answers in; keeping the
+# two the same makes a captured fixture readable beside this list.
 ZRO_ACCOUNT_ATTRS=(
   displayName
-  mail
   zimbraAccountStatus
   zimbraCOSId
+  zimbraFeatureTwoFactorAuthAvailable
+  zimbraIsAdminAccount
+  zimbraIsDelegatedAdminAccount
   zimbraLastLogonTimestamp
   zimbraMailAlias
+  zimbraMailDeliveryAddress
+  zimbraMailForwardingAddress
   zimbraMailHost
   zimbraMailQuota
+  zimbraPasswordLockoutLockedTime
+  zimbraPasswordModifiedTime
+  zimbraPrefMailForwardingAddress
+  zimbraTwoFactorAuthEnabled
 )
 
 # zmprov prints "name: value" lines. Matching the key at position 1 with its
@@ -172,16 +190,185 @@ zro_account_fetch() {
   zro_prov_read "$ZRO_E_NO_ACCOUNT" ga "$acct" "${ZRO_ACCOUNT_ATTRS[@]}"
 }
 
-# The quota limit an account is subject to. An account can inherit it from its
-# COS, and LDAP mode does not expand that — without the fallback an inheriting
-# account would read as unlimited, which is worse than reading as unknown.
-# $2 is an already-fetched COS record, so a caller that needed one anyway does
-# not pay for a second lookup.
+# WHAT ABSENCE IS ALLOWED TO LOOK LIKE ON THIS CARD.
+#
+# zmprov simply omits an attribute nobody set — an account whose card asks for
+# sixteen attributes and receives nine is the ordinary case, measured on the lab
+# server rather than assumed. So every field below can arrive as nothing at all,
+# and the one thing nothing may ever become is a value.
+#
+# Two words, because absence has two causes and they call for different actions.
+# 'tanimsiz' says the directory carries no such value. 'bilinmiyor' says this
+# program could not read one — a malformed timestamp, a quota nothing answered
+# for. Neither is a default and neither is zero.
+ZRO_TXT_UNSET='tanimsiz'
+ZRO_TXT_UNKNOWN='bilinmiyor'
+
+# A third word, for the fields that are LISTS. An account carries its own
+# aliases and its own forwarding — neither is inherited from anywhere — so an
+# attribute that is absent there means the list is empty, which is a fact and
+# reads as one. 'Yonetici tanimli: tanimsiz' says "administrator-defined:
+# undefined" and makes an operator read the label twice; 'yok' answers the
+# question they asked. It is still absence and still never a default.
+ZRO_TXT_NONE='yok'
+
+# Where a card value starts, as the width of the label column. One number, used
+# by both writers below, because the labels are Turkish and nobody adding the
+# next field counts spaces the same way twice — least of all twice in a row.
+ZRO_CARD_LABEL_W=21
+
+# One card line: the label padded to that column, then its value.
+zro_card_line() {
+  printf '%-*s: %s\n' "$ZRO_CARD_LABEL_W" "${1-}" "${2-}"
+}
+
+# A line that continues the value above it, indented to the value column so that
+# a list of aliases reads as belonging to the label it hangs under. The indent is
+# derived rather than typed: the label column plus the ': ' that follows it.
+zro_card_more() {
+  printf '%*s%s\n' "$((ZRO_CARD_LABEL_W + 2))" '' "${1-}"
+}
+
+zro_card_head() {
+  printf '\n%s\n' "${1-}"
+}
+
+# A field whose value may have several lines, or none. The first value goes on
+# the labelled line and the rest hang under it, so a list never loses its label.
+zro_card_list() {
+  local label=$1 values=$2 empty=$3 first=1 v
+  if [ -z "$values" ]; then
+    zro_card_line "$label" "$empty"
+    return 0
+  fi
+  while IFS= read -r v; do
+    [ -n "$v" ] || continue
+    if [ "$first" -eq 1 ]; then
+      zro_card_line "$label" "$v"
+      first=0
+    else
+      zro_card_more "$v"
+    fi
+  done <<EOF
+$values
+EOF
+}
+
+# A generalized timestamp as the operator reads it.
+#
+# An attribute that is absent and one that is malformed are told apart, because
+# they call for different actions: the first is a fact about the account, the
+# second is a fact about this program. That distinction is not theoretical —
+# every account on a production server once showed a last logon of '-' because a
+# real value carrying fractional seconds failed a validator written from memory.
+zro_time_field() {
+  local raw=${1-} out
+  [ -n "$raw" ] || { printf '%s' "$ZRO_TXT_UNSET"; return 0; }
+  out=$(zro_zimbra_time "$raw") || { printf '%s' "$ZRO_TXT_UNKNOWN"; return 0; }
+  printf '%s' "$out"
+}
+
+# A Zimbra boolean as the operator reads it. ABSENCE IS NOT FALSE: an attribute
+# nobody set is missing from the output entirely, and rendering that as 'hayir'
+# would answer a question — is this account an administrator — that nothing
+# actually answered.
+#
+# TRUE and FALSE are matched in the spelling the directory really writes: RFC
+# 4517 boolean syntax is upper case, and that is what the lab server returned.
+# Anything else is a value this program does not understand, which is not the
+# same as a value that is not there.
+zro_flag_field() {
+  case ${1-} in
+    TRUE)  printf 'evet' ;;
+    FALSE) printf 'hayir' ;;
+    '')    printf '%s' "$ZRO_TXT_UNSET" ;;
+    *)     printf '%s' "$ZRO_TXT_UNKNOWN" ;;
+  esac
+}
+
+# Whether the account holds administrative rights, from the two attributes that
+# grant them.
+#
+# A compromised account's blast radius is why this is on the card at all, so
+# 'hayir' is only said when something said it: both attributes absent reads as
+# unset, never as an account without rights.
+zro_admin_field() {
+  local full=${1-} delegated=${2-} kinds=""
+  [ "$full" = TRUE ] && kinds="tam yonetici"
+  if [ "$delegated" = TRUE ]; then
+    [ -n "$kinds" ] && kinds="$kinds, "
+    kinds="${kinds}delege yonetici"
+  fi
+  if [ -n "$kinds" ]; then
+    printf 'evet (%s)' "$kinds"
+    return 0
+  fi
+  if [ -z "$full" ] && [ -z "$delegated" ]; then
+    printf '%s' "$ZRO_TXT_UNSET"
+    return 0
+  fi
+  printf 'hayir'
+}
+
+# Whether two-factor authentication is on.
+#
+# TWO ATTRIBUTES, because a server can put the feature out of reach entirely, and
+# on such a server an absent enablement attribute means something different from
+# what it means where the feature works. An operator diagnosing a login failure
+# needs to be able to tell "this user has not set it up" from "nobody here can".
+#
+# The enabled rendering has no captured sample: TEST-C answers `ma
+# zimbraTwoFactorAuthEnabled TRUE` with "cannot enable two-factor auth because it
+# is not available on this account", and making it available fails in turn with
+# "the extension is not deployed on this server" — the twofactorauth extension is
+# present under lib/ext but not loaded. So the fixture carries the state that was
+# really observed, and this function is exercised directly for the rest.
+zro_twofactor_field() {
+  local enabled=${1-} available=${2-}
+  case $enabled in
+    TRUE)  printf 'acik';   return 0 ;;
+    FALSE) printf 'kapali'; return 0 ;;
+  esac
+  if [ "$available" = FALSE ]; then
+    printf '%s (bu hesapta kullanilamiyor)' "$ZRO_TXT_UNSET"
+    return 0
+  fi
+  printf '%s' "$ZRO_TXT_UNSET"
+}
+
+# Whether the account is locked out, and since when.
+#
+# Two signals answering different halves of one question: the status says whether
+# it is locked out NOW, the timestamp says when a lockout last began. A stamp left
+# behind by a lockout that has since expired is not a locked account, and
+# reporting it as one sends an operator to unlock something already open.
+zro_lockout_field() {
+  local status=${1-} locked_at=${2-} when=""
+  [ -n "$locked_at" ] && when=$(zro_time_field "$locked_at")
+  case $status in
+    lockout) printf 'evet%s' "${locked_at:+ ($when tarihinden beri)}"; return 0 ;;
+    '')      printf '%s' "$ZRO_TXT_UNKNOWN"; return 0 ;;
+  esac
+  printf 'hayir%s' "${locked_at:+ (son kilitlenme: $when)}"
+}
+
+# The quota limit an account is subject to, together with WHICH READ ANSWERED IT,
+# as "<bytes><TAB><source>". An account can inherit its limit from a class of
+# service, and a directory read that did not carry one is retried against the COS
+# record rather than reported as no limit at all.
+#
+# ABSENCE IS NOT ZERO. Zimbra writes zimbraMailQuota: 0 for unlimited, so a value
+# nobody could read, rendered as 0, would report an account whose limit is unknown
+# as an account with no limit — the single most misleading thing this field can
+# say. Nothing is printed and a status is returned instead.
+#
+# $2 is an already-fetched COS record, so a caller that needed one anyway does not
+# pay for a second lookup.
 zro_account_quota_limit() {
   local raw=$1 cos_raw=${2-} limit cosid
   limit=$(zro_attr_get "$raw" zimbraMailQuota)
   if [ -n "$limit" ]; then
-    printf '%s' "$limit"
+    printf '%s%saccount' "$limit" "$ZRO_TAB"
     return 0
   fi
 
@@ -192,61 +379,124 @@ zro_account_quota_limit() {
     fi
   fi
   limit=$(zro_attr_get "$cos_raw" zimbraMailQuota)
-  printf '%s' "${limit:-0}"
+  [ -n "$limit" ] || return "$ZRO_E_NO_RESULT"
+  printf '%s%scos' "$limit" "$ZRO_TAB"
 }
 
-zro_account_summary() {
+# What the operator reads for a quota limit, and which read answered it.
+#
+# 'hesap sorgusundan' means the account read carried the value. IT DOES NOT MEAN
+# THE VALUE IS SET ON THE ACCOUNT: zmprov expands what a class of service provides
+# in both SOAP and LDAP mode — measured on the lab server, not assumed — so
+# presence proves nothing about where a value came from. That question costs a
+# second invocation and has a screen of its own.
+zro_quota_field() {
+  local pair=${1-} bytes source human
+  [ -n "$pair" ] || { printf '%s' "$ZRO_TXT_UNKNOWN"; return 0; }
+  bytes=${pair%%"$ZRO_TAB"*}
+  source=${pair#*"$ZRO_TAB"}
+  case $source in
+    cos) source='COS kaydindan' ;;
+    *)   source='hesap sorgusundan' ;;
+  esac
+  if [ "$bytes" = "0" ]; then
+    printf 'sinirsiz (%s)' "$source"
+    return 0
+  fi
+  human=$(zro_human_bytes "$bytes") || { printf '%s' "$ZRO_TXT_UNKNOWN"; return 0; }
+  printf '%s (%s)' "$human" "$source"
+}
+
+# THE ACCOUNT CARD: every directory fact about the selected address, on one
+# screen, from one account read.
+#
+# Two further invocations sit behind it and neither is a field this list could
+# have carried: the class of service is named by an opaque id that has to be
+# resolved, and membership does not live on the account entry at all. Both are
+# allowed to fail without taking the card with them — an operator who came for
+# the status of a locked account should not be handed a failure screen because a
+# list lookup timed out.
+zro_account_card() {
   local acct=$1 raw rc=0
   zro_reset_mode
   raw=$(zro_account_fetch "$acct") || rc=$?
   [ "$rc" -eq 0 ] || return "$rc"
 
-  local status name host quota cosid logon logon_h quota_h
+  local status name delivery host cosid
   status=$(zro_attr_get "$raw" zimbraAccountStatus)
   name=$(zro_attr_get "$raw" displayName)
+  delivery=$(zro_attr_get "$raw" zimbraMailDeliveryAddress)
   host=$(zro_attr_get "$raw" zimbraMailHost)
-  quota=$(zro_attr_get "$raw" zimbraMailQuota)
   cosid=$(zro_attr_get "$raw" zimbraCOSId)
-  logon=$(zro_attr_get "$raw" zimbraLastLogonTimestamp)
 
   # One COS lookup serves both the name and the quota fallback below.
-  local cos_raw="" cos_name="-"
+  local cos_raw="" cos_name=$ZRO_TXT_UNSET
   if [ -n "$cosid" ]; then
     cos_raw=$(zro_account_cos_fetch "$cosid" 2>/dev/null) || cos_raw=""
     cos_name=$(zro_attr_get "$cos_raw" cn)
-    [ -n "$cos_name" ] || cos_name="-"
+    # The id was set, so a name that did not come back is a lookup this program
+    # could not complete — not a class of service the account does not have.
+    [ -n "$cos_name" ] || cos_name=$ZRO_TXT_UNKNOWN
   fi
 
-  quota=$(zro_account_quota_limit "$raw" "$cos_raw")
+  local quota=""
+  quota=$(zro_account_quota_limit "$raw" "$cos_raw") || quota=""
 
-  logon_h=$(zro_zimbra_time "$logon" 2>/dev/null) || logon_h="-"
-  if [ "$quota" = "0" ]; then
-    quota_h="sinirsiz"
-  else
-    quota_h=$(zro_human_bytes "$quota" 2>/dev/null) || quota_h="-"
-  fi
-  [ -n "$name" ]   || name="-"
-  [ -n "$host" ]   || host="-"
-  [ -n "$status" ] || status="-"
+  # Read before anything is printed, so that a membership lookup which had to
+  # fall back to LDAP is disclosed by the banner at the top rather than after it.
+  local dls="" dl_rc=0
+  dls=$(zro_account_dl_list "$acct") || dl_rc=$?
 
   zro_mode_banner
 
-  printf 'Hesap        : %s\n' "$acct"
-  printf 'Ad           : %s\n' "$name"
-  printf 'Durum        : %s\n' "$status"
-  printf 'Mailbox host : %s\n' "$host"
-  printf 'Kota limiti  : %s\n' "$quota_h"
-  printf 'COS          : %s\n' "$cos_name"
+  zro_card_line 'Hesap' "$acct"
+  zro_card_line 'Teslim adresi' "${delivery:-$ZRO_TXT_UNSET}"
+  zro_card_line 'Ad' "${name:-$ZRO_TXT_UNSET}"
+  zro_card_line 'Durum' "${status:-$ZRO_TXT_UNSET}"
+  zro_card_line 'Mailbox host' "${host:-$ZRO_TXT_UNSET}"
+  zro_card_line 'COS' "$cos_name"
+  zro_card_line 'Kota limiti' "$(zro_quota_field "$quota")"
+  zro_card_line 'Son giris' "$(zro_time_field "$(zro_attr_get "$raw" zimbraLastLogonTimestamp)")"
   # The caveat goes on its own line: joined to the value it runs past the box
   # edge, and whiptail wraps mid-sentence.
-  printf 'Son giris    : %s\n' "$logon_h"
-  printf '               (yaklasik: Zimbra bu alani gunde bir kez yeniler)\n'
+  zro_card_more '(yaklasik: Zimbra bu alani gunde bir kez yeniler)'
 
-  local aliases
-  aliases=$(zro_attr_all "$raw" zimbraMailAlias)
-  if [ -n "$aliases" ]; then
-    printf 'Aliaslar     :\n'
-    printf '%s\n' "$aliases" | sed 's/^/               /'
+  zro_card_head 'Guvenlik'
+  zro_card_line 'Parola degisimi' \
+    "$(zro_time_field "$(zro_attr_get "$raw" zimbraPasswordModifiedTime)")"
+  zro_card_line 'Kilitlenme' \
+    "$(zro_lockout_field "$status" "$(zro_attr_get "$raw" zimbraPasswordLockoutLockedTime)")"
+  zro_card_line 'Iki adimli dogrulama' \
+    "$(zro_twofactor_field "$(zro_attr_get "$raw" zimbraTwoFactorAuthEnabled)" \
+                           "$(zro_attr_get "$raw" zimbraFeatureTwoFactorAuthAvailable)")"
+  zro_card_line 'Yonetici yetkisi' \
+    "$(zro_admin_field "$(zro_attr_get "$raw" zimbraIsAdminAccount)" \
+                       "$(zro_attr_get "$raw" zimbraIsDelegatedAdminAccount)")"
+
+  # TWO ATTRIBUTES, TWO LABELLED LINES, NEVER MERGED. The administrator-set
+  # forwarding is invisible to the account holder in their own client, which is
+  # exactly why an operator needs to see it — and why a card that folded the two
+  # into one 'forwarding' line would hide the only one of them that is a
+  # compromise indicator.
+  local admin_fwd
+  admin_fwd=$(zro_attr_all "$raw" zimbraMailForwardingAddress)
+  zro_card_head 'Yonlendirme'
+  zro_card_list 'Kullanici tanimli' \
+    "$(zro_attr_all "$raw" zimbraPrefMailForwardingAddress)" "$ZRO_TXT_NONE"
+  zro_card_list 'Yonetici tanimli' "$admin_fwd" "$ZRO_TXT_NONE"
+  if [ -n "$admin_fwd" ]; then
+    zro_card_more '(kullanicinin kendi arayuzunde gorunmez)'
+  fi
+
+  zro_card_head 'Adresler'
+  zro_card_list 'Aliaslar' "$(zro_attr_all "$raw" zimbraMailAlias)" "$ZRO_TXT_NONE"
+  if [ "$dl_rc" -eq 0 ]; then
+    zro_card_list 'Dagitim listeleri' "$dls" "$ZRO_TXT_NONE"
+  else
+    # Said rather than left blank: an empty membership list and a membership
+    # lookup that failed are different answers, and only one of them means the
+    # account belongs to nothing.
+    zro_card_line 'Dagitim listeleri' "$ZRO_TXT_UNKNOWN (uyelik sorgusu basarisiz)"
   fi
 }
 
@@ -281,22 +531,16 @@ zro_account_quota() {
   raw=$(zro_account_fetch "$acct") || rc=$?
   [ "$rc" -eq 0 ] || return "$rc"
 
-  local limit limit_h host
-  limit=$(zro_account_quota_limit "$raw")
+  local limit="" host
+  limit=$(zro_account_quota_limit "$raw") || limit=""
   host=$(zro_attr_get "$raw" zimbraMailHost)
-  [ -n "$host" ] || host="-"
 
   zro_mode_banner
 
-  printf 'Hesap        : %s\n' "$acct"
-  printf 'Mailbox host : %s\n' "$host"
-  if [ "$limit" = "0" ]; then
-    printf 'Kota limiti  : sinirsiz\n'
-  else
-    limit_h=$(zro_human_bytes "$limit" 2>/dev/null) || limit_h="-"
-    printf 'Kota limiti  : %s\n' "$limit_h"
-  fi
-  printf 'Kullanilan   : gosterilmiyor\n'
+  zro_card_line 'Hesap' "$acct"
+  zro_card_line 'Mailbox host' "${host:-$ZRO_TXT_UNSET}"
+  zro_card_line 'Kota limiti' "$(zro_quota_field "$limit")"
+  zro_card_line 'Kullanilan' 'gosterilmiyor'
   printf '\n'
   # Double-quoted on purpose: the static scanner treats a double-quoted span as
   # data, so this text may name the commands it is warning about.
@@ -308,15 +552,36 @@ zro_account_quota() {
   printf "yaratmaz; toplu kota ekraniyla birlikte gelecek.\n"
 }
 
+# The distribution lists an account belongs to, one per line, or nothing at all.
+#
+# A SECOND INVOCATION, and one no attribute list could have saved: membership is
+# recorded on the list rather than on the account, so `zmprov ga` has nothing to
+# say about it however many attributes it is asked for. The card pays for it
+# because "what else delivers to this address" is part of the same question as
+# "what is this address", and an operator sent to another screen for it would pay
+# a menu round trip and this same JVM start anyway.
+#
+# An account that belongs to nothing answers with no lines and status 0. That is
+# a result, not a failure — telling the two apart is the caller's business, and
+# they mean different things on the card.
+zro_account_dl_list() {
+  local acct=${1-} out rc=0
+  zro_validate_email "$acct" || return "$ZRO_E_INPUT"
+
+  out=$(zro_prov_read "$ZRO_E_NO_ACCOUNT" gam "$acct") || rc=$?
+  [ "$rc" -eq 0 ] || return "$rc"
+
+  printf '%s' "$out" | grep -v '^[[:space:]]*$'
+  return 0
+}
+
 zro_account_membership() {
   local acct=${1-} out rc=0
   zro_validate_email "$acct" || return "$ZRO_E_INPUT"
   zro_reset_mode
 
-  out=$(zro_prov_read "$ZRO_E_NO_ACCOUNT" gam "$acct") || rc=$?
+  out=$(zro_account_dl_list "$acct") || rc=$?
   [ "$rc" -eq 0 ] || return "$rc"
-
-  out=$(printf '%s' "$out" | grep -v '^[[:space:]]*$')
   [ -n "$out" ] || return "$ZRO_E_NO_RESULT"
 
   zro_mode_banner

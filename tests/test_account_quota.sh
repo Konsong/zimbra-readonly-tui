@@ -116,16 +116,16 @@ it "never executes anything for a malformed COS id"
 zro_account_cos_name 'x; touch /tmp/zro_cos_pwned' >/dev/null
 assert_not_contains "$(cat "$ZRO_MOCK_LOG")" "zmprov"
 
-it "the summary shows the COS name, not the raw id"
+it "the card shows the COS name, not the raw id"
 out=$(ZRO_MOCK_ZMPROV_GA_OUT="$FIX/zmprov_ga_active.txt" \
       ZRO_MOCK_ZMPROV_GC_OUT="$FIX/zmprov_gc_ok.txt" \
-      zro_account_summary 'ahmet.yilmaz@example.com')
+      zro_account_card 'ahmet.yilmaz@example.com')
 assert_contains "$out" "default"
 assert_not_contains "$out" "e00428a1-0c00-11d9"
 
-it "the summary survives an account with no COS set"
+it "the card survives an account with no COS set"
 out=$(ZRO_MOCK_ZMPROV_GA_OUT="$FIX/zmprov_ga_locked.txt" \
-      zro_account_summary 'kilitli@example.com')
+      zro_account_card 'kilitli@example.com')
 assert_contains "$out" "locked"
 
 rm -f -- "$ZRO_MOCK_LOG"
