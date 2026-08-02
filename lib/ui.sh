@@ -8,6 +8,33 @@ ZRO_UI_BACKEND="${ZRO_UI_BACKEND:-whiptail}"
 ZRO_UI_QUEUE="${ZRO_UI_QUEUE:-}"
 ZRO_UI_OUT="${ZRO_UI_OUT:-}"
 
+# How much of the top border a decorated title may occupy.
+ZRO_UI_TITLE_MAX="${ZRO_UI_TITLE_MAX:-56}"
+
+# The selected address on the frame of every screen. whiptail keeps a title on
+# the box border while the text inside scrolls, so it is the one part of a screen
+# a long report cannot push out of view — which makes it the right place for the
+# fact that would otherwise let an operator read one account's answer believing
+# it is another's.
+#
+# Applied HERE, in the one path from this program to the screen, rather than by
+# each screen: "every screen carries it" is a claim that has to be structurally
+# true, and a screen written next month cannot forget to do something it never
+# does. ZRO_SELECTED belongs to lib/selection.sh and is the one thing this module
+# reads from outside itself; the default keeps ui.sh loadable on its own.
+zro_ui_title() {
+  local base=${1-} addr=${ZRO_SELECTED:-} room
+  [ -n "$addr" ] || { printf '%s' "$base"; return 0; }
+  # whiptail clips a title that does not fit, and what it clips is the end —
+  # which on this title is the address. So a very long address is shortened
+  # here instead, and marked as shortened. Nothing decides anything from this
+  # string: every screen that acts on the address reads the variable.
+  room=$((ZRO_UI_TITLE_MAX - ${#base} - 3))
+  [ "$room" -ge 12 ] || room=12
+  [ "${#addr}" -le "$room" ] || addr="${addr:0:room-2}.."
+  printf '%s - %s' "$base" "$addr"
+}
+
 zro_ui_reset() {
   [ -n "$ZRO_UI_QUEUE" ] || return 0
   printf '0' >"$ZRO_UI_QUEUE.pos"
@@ -43,7 +70,8 @@ zro_ui_stub_show() {
 }
 
 zro_ui_menu() {
-  local title=$1 text=$2
+  local title text=$2
+  title=$(zro_ui_title "$1")
   shift 2
   if [ "$ZRO_UI_BACKEND" = stub ]; then
     # The ENTRIES are recorded as well as the prompt, because on two screens the
@@ -60,9 +88,14 @@ zro_ui_menu() {
 }
 
 zro_ui_input() {
-  local title=$1 text=$2 default=${3-}
+  local title text=$2 default=${3-}
+  title=$(zro_ui_title "$1")
   if [ "$ZRO_UI_BACKEND" = stub ]; then
-    zro_ui_stub_show "INPUT $title: $text"
+    # The DEFAULT is recorded as well as the prompt. On the address screen it is
+    # what the operator is being offered — the address already selected, there to
+    # be edited rather than retyped — so a transcript without it could not be
+    # asserted on at all.
+    zro_ui_stub_show "INPUT $title: $text${default:+ | $default}"
     zro_ui_stub_next
     return $?
   fi
@@ -70,7 +103,8 @@ zro_ui_input() {
 }
 
 zro_ui_msgbox() {
-  local title=$1 text=$2
+  local title text=$2
+  title=$(zro_ui_title "$1")
   if [ "$ZRO_UI_BACKEND" = stub ]; then
     zro_ui_stub_show "MSG $title: $text"
     return 0
@@ -81,7 +115,8 @@ zro_ui_msgbox() {
 # Draws and returns immediately, asking the operator for nothing. Used before a
 # command that takes seconds, so the screen is never blank while the tool works.
 zro_ui_notice() {
-  local title=$1 text=$2
+  local title text=$2
+  title=$(zro_ui_title "$1")
   if [ "$ZRO_UI_BACKEND" = stub ]; then
     zro_ui_stub_show "NOTICE $title: $text"
     return 0
@@ -90,7 +125,8 @@ zro_ui_notice() {
 }
 
 zro_ui_textbox() {
-  local title=$1 file=$2
+  local title file=$2
+  title=$(zro_ui_title "$1")
   if [ "$ZRO_UI_BACKEND" = stub ]; then
     zro_ui_stub_show "TEXT $title:"
     if [ -n "$ZRO_UI_OUT" ] && [ -f "$file" ]; then
@@ -102,7 +138,8 @@ zro_ui_textbox() {
 }
 
 zro_ui_yesno() {
-  local title=$1 text=$2
+  local title text=$2
+  title=$(zro_ui_title "$1")
   if [ "$ZRO_UI_BACKEND" = stub ]; then
     zro_ui_stub_show "YESNO $title: $text"
     local answer

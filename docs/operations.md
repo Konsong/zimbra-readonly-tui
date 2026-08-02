@@ -97,29 +97,49 @@ level and message — never message bodies, attachment contents or passwords.
 
 ## 3. What this release shows
 
-Menu 1, *Hesap ve kota kontrolleri*:
+### The selected address
+
+There is **one menu**, and its first entry is the address. Choose it once and
+every screen after it is about that address: it is carried in the title of every
+box the tool draws, and no other screen asks for it again. Entries that need an
+address come first in the list, the ones that are about the server come after.
+
+Choosing an account operation with nothing selected asks for the address and then
+**continues to the operation you chose** — you do not pick the entry twice. The
+entry itself reads *Adres sec* until there is one and *Adresi degistir*
+afterwards, and changing it offers the current address ready to edit, so
+comparing two users is a keystroke rather than a restart.
+
+The address is on the frame because whiptail keeps a title on the border while
+the text inside scrolls: it is the one part of a long answer that cannot be
+pushed out of view. Reading one account's answer believing it is another's is
+what that prevents. An address too long for the border is shortened with a
+trailing `..`; what the tool searches for is always the whole address.
+
+### About the selected address
 
 - **Hesap ozeti** — display name, status, mailbox host, quota limit, COS name,
   last logon, mail aliases.
 - **Kota kullanimi** — mailbox id, bytes used, quota limit, percentage full.
   Accounts with no quota are shown as `sinirsiz` rather than divided by zero.
 - **Dagitim listesi uyelikleri** — the distribution lists the account belongs to.
+- **Teslim takibi: bu adrese gelenler** — asks for an arrival window, then shows
+  what the mail transfer agent's log says about messages **for** that address. No
+  mailbox is opened, so this is safe on an account that has never logged in.
+- **Teslim takibi: bu adresten gidenler** — the same trace, filtered by sender:
+  whether a user's outbound message actually left.
 
-Menu 2, *Teslim takibi (mail loglari)*:
+### About the server
 
-- **Alici adresine gore izle** — asks for a recipient address and an arrival
-  window, then shows what the mail transfer agent's log says about messages for
-  that address. No mailbox is opened, so this is safe on an account that has
-  never logged in.
-- **Gonderen adresine gore izle** — the same trace, filtered by sender: whether a
-  user's outbound message actually left.
-- **Ileti kimligine gore izle** — the same trace, filtered by message-id, for when
-  you are holding a bounce report or a forwarded header and an address is too
-  broad a question.
+- **Teslim takibi: ileti kimligine gore** — the same trace, filtered by
+  message-id, for when you are holding a bounce report or a forwarded header and
+  an address is too broad a question. It is the one trace that asks you to type
+  something, because an identifier is not an address.
+- **Log dosyalari (son satirlar)** — described below.
 
-All three ask for an arrival window next and answer in the same report. The only
-differences are the filter, the label on the report's first line, and the two
-notes below.
+All three traces ask for an arrival window and answer in the same report. The
+only differences are the filter, the label on the report's first line, and the
+two notes below.
 
 **The message-id match is case-sensitive; the other two are not.** That is
 `zmmsgtrace`'s own rule, and it is stated on the prompt and repeated on the
@@ -132,7 +152,7 @@ identifier without its delimiters, so a filter carrying them would match nothing
 Paste either form of the identifier — but only the identifier: the whole header
 line is refused as invalid input rather than searched for and never found.
 
-Menu 3, *Log dosyalari (son satirlar)*:
+*Log dosyalari (son satirlar)*:
 
 - Pick a log — the mail log, `mailbox.log`, or `audit.log` — then pick one of its
   files from a list, and read the last lines of it. This is where the lines the
@@ -169,8 +189,9 @@ The viewer is offered whether or not delivery tracing is available here. The two
 read the same files, but tracing needs `zmmsgtrace` and the primary mail log,
 while this screen can still show `mailbox.log` on a host that has neither.
 
-Cancel and ESC return to the previous screen from every prompt. Nothing exits
-the tool except the explicit *Cikis* entry.
+Cancel and ESC return to the previous screen from every prompt and from every
+screen. The main menu is the one place where there is no previous screen: leaving
+it there leaves the tool, as the explicit *Cikis* entry does.
 
 ### When the entry reads `KULLANILAMAZ`
 
@@ -185,9 +206,9 @@ are checked once per session, before the menu is drawn:
   in the inventory whose readability depends on the distribution and on whether
   `zmfixperms` has been run since the last upgrade.
 
-When either is false the main menu entry reads
-`Teslim takibi (mail loglari) - KULLANILAMAZ`, and selecting it says which of the
-two it is, names the file it is talking about, and names the repair — a missing
+When either is false all three trace entries read `... - KULLANILAMAZ`, and
+selecting one says which of the two it is, names the file it is talking about,
+and names the repair — a missing
 binary and an unreadable log get different messages, because a version difference
 is not a permission and `zmfixperms` would be the wrong advice for it. You learn
 this before spending a search on it rather than after.
@@ -339,6 +360,10 @@ zmmsgtrace --id                             delivery trace by message-id
 tail -n                                     the log viewer's bounded read
 gzip -dc                                    decompress a rotated log TO STDOUT
 ```
+
+`zmcontrol -v` runs **once per session**, at startup. Its answer is shown on the
+main menu, which is returned to after every operation, so re-reading it there
+would cost a JVM start per screen.
 
 `tail` and `gzip` are the only entries here that are not Zimbra's. They are on
 this list rather than treated as plumbing beside `timeout` and `id`, because

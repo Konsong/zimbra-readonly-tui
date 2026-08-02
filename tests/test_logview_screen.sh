@@ -51,11 +51,12 @@ queue() { printf '%s\n' "$@" >"$ZRO_UI_QUEUE"; zro_ui_reset; }
 transcript() { cat "$ZRO_UI_OUT"; }
 ran() { grep -E '^(tail|gzip)' "$ZRO_MOCK_LOG"; }
 
-# The common path: the mail log, its newest file.
-NEWEST=("3" "syslog" "1" "__CANCEL__" "__CANCEL__" "__CANCEL__")
+# The common path, entered at the viewer rather than at the main menu: the mail
+# log, its newest file.
+NEWEST=("syslog" "1" "__CANCEL__" "__CANCEL__" "__CANCEL__")
 
 it "the log viewer is reachable from the main menu"
-queue "3" "__CANCEL__" "__CANCEL__"
+queue "logview" "__CANCEL__" "__CANCEL__"
 : >"$ZRO_UI_OUT"
 zro_menu_main
 assert_contains "$(transcript)" "Log dosyalari"
@@ -111,7 +112,7 @@ assert_contains "$out" "NOTICE"
 assert_contains "$out" "bekleyin"
 
 it "a compressed rotated file is read through the approved decompression"
-queue "3" "syslog" "2" "__CANCEL__" "__CANCEL__" "__CANCEL__"
+queue "logview" "syslog" "2" "__CANCEL__" "__CANCEL__" "__CANCEL__"
 : >"$ZRO_UI_OUT"; : >"$ZRO_MOCK_LOG"
 ZRO_LOGVIEW_LINES=5 zro_menu_main
 out=$(transcript)

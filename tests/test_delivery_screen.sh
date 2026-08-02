@@ -79,19 +79,25 @@ export ZRO_MOCK_ID_USER=zimbra
 
 queue() { printf '%s\n' "$@" >"$ZRO_UI_QUEUE"; zro_ui_reset; }
 
+# The address every trace below is about, chosen once, exactly as an operator
+# chooses it once. Two of the three questions on this screen are about it and
+# neither asks for it: what an operator still types here is a window, and on one
+# question an identifier — which is not an address.
+zro_sel_set "ahmet.yilmaz@example.com"
+
 # The common path: trace by recipient, over the last hour.
-HOUR=("1" "ahmet.yilmaz@example.com" "hour" "__CANCEL__" "__CANCEL__")
+HOUR=("hour" "__CANCEL__" "__CANCEL__")
 
 it "the delivery trace is reachable from the main menu"
-queue "2" "__CANCEL__" "__CANCEL__"
+queue "trace-recipient" "__CANCEL__" "__CANCEL__"
 : >"$ZRO_UI_OUT"
 zro_menu_main
 assert_contains "$(cat "$ZRO_UI_OUT")" "Teslim takibi"
 
-it "a valid recipient and a preset window reach the report"
+it "the selected address and a preset window reach the report"
 queue "${HOUR[@]}"
 : >"$ZRO_UI_OUT"
-ZRO_MOCK_ZMMSGTRACE___RECIPIENT_OUT="$ONE" zro_menu_delivery
+ZRO_MOCK_ZMMSGTRACE___RECIPIENT_OUT="$ONE" zro_screen_trace trace-recipient
 transcript=$(cat "$ZRO_UI_OUT")
 assert_contains "$transcript" "ahmet.yilmaz@example.com"
 assert_contains "$transcript" "$(cat "$ONE")"
@@ -102,7 +108,7 @@ it "the window screen names arrival, not delivery"
 # which arrived at 23:59 and was delivered at 00:02 never arrived.
 queue "${HOUR[@]}"
 : >"$ZRO_UI_OUT"
-ZRO_MOCK_ZMMSGTRACE___RECIPIENT_OUT="$ONE" zro_menu_delivery
+ZRO_MOCK_ZMMSGTRACE___RECIPIENT_OUT="$ONE" zro_screen_trace trace-recipient
 transcript=$(cat "$ZRO_UI_OUT")
 assert_contains "$transcript" "MENU Varis araligi"
 assert_contains "$transcript" "varis zamanina gore"
@@ -122,9 +128,9 @@ searched() {
   printf '%s %s' "$(bounds "${field%,*}")" "$(bounds "${field#*,}")"
 }
 run_preset() {
-  queue "1" "ahmet.yilmaz@example.com" "$1" "__CANCEL__" "__CANCEL__"
+  queue "$1" "__CANCEL__" "__CANCEL__"
   : >"$ZRO_MOCK_LOG"
-  ZRO_MOCK_ZMMSGTRACE___RECIPIENT_OUT="$ONE" zro_menu_delivery
+  ZRO_MOCK_ZMMSGTRACE___RECIPIENT_OUT="$ONE" zro_screen_trace trace-recipient
 }
 
 it "each rolling preset searches the span its label names"
@@ -147,7 +153,7 @@ assert_eq "${w##* }" "$((today - 1))"
 it "the report says which window and which files the answer came from"
 queue "${HOUR[@]}"
 : >"$ZRO_UI_OUT"
-ZRO_MOCK_ZMMSGTRACE___RECIPIENT_OUT="$ONE" zro_menu_delivery
+ZRO_MOCK_ZMMSGTRACE___RECIPIENT_OUT="$ONE" zro_screen_trace trace-recipient
 transcript=$(cat "$ZRO_UI_OUT")
 assert_contains "$transcript" "Varis araligi"
 assert_contains "$transcript" "Taranan log"
@@ -156,7 +162,7 @@ assert_contains "$transcript" "$SYS"
 it "the last hour reads the file still being written and no rotated one"
 queue "${HOUR[@]}"
 : >"$ZRO_MOCK_LOG"
-ZRO_MOCK_ZMMSGTRACE___RECIPIENT_OUT="$ONE" zro_menu_delivery
+ZRO_MOCK_ZMMSGTRACE___RECIPIENT_OUT="$ONE" zro_screen_trace trace-recipient
 traced=$(grep '^zmmsgtrace' "$ZRO_MOCK_LOG")
 assert_eq "$(printf '%s\n' "$traced" | wc -l | tr -d ' ')" "1"
 assert_contains "$traced" "$(printf '\t%s' "$SYS")"
@@ -167,9 +173,9 @@ it "yesterday reaches a rotated file, whatever hour it is asked at"
 # file rotated yesterday morning and the one rotated this morning. The window has
 # to reach the rotated file at every hour of the day, or an operator asking about
 # yesterday is answered from today's log alone.
-queue "1" "ahmet.yilmaz@example.com" "yesterday" "__CANCEL__" "__CANCEL__"
+queue "yesterday" "__CANCEL__" "__CANCEL__"
 : >"$ZRO_MOCK_LOG"
-ZRO_MOCK_ZMMSGTRACE___RECIPIENT_OUT="$ONE" zro_menu_delivery
+ZRO_MOCK_ZMMSGTRACE___RECIPIENT_OUT="$ONE" zro_screen_trace trace-recipient
 assert_contains "$(grep '^zmmsgtrace' "$ZRO_MOCK_LOG")" "$SYS.1.gz"
 
 it "a wide window is one invocation per file, each with a year and a file of its own"
@@ -178,9 +184,9 @@ it "a wide window is one invocation per file, each with a year and a file of its
 # shown here — every file in this tree falls in the same year, because no preset
 # reaches back further than seven days. tests/test_delivery.sh proves it against a
 # tree that straddles a new year, which is the only place it can be proved.
-queue "1" "ahmet.yilmaz@example.com" "week" "__CANCEL__" "__CANCEL__"
+queue "week" "__CANCEL__" "__CANCEL__"
 : >"$ZRO_MOCK_LOG"
-ZRO_MOCK_ZMMSGTRACE___RECIPIENT_OUT="$ONE" zro_menu_delivery
+ZRO_MOCK_ZMMSGTRACE___RECIPIENT_OUT="$ONE" zro_screen_trace trace-recipient
 traced=$(grep '^zmmsgtrace' "$ZRO_MOCK_LOG")
 assert_eq "$(printf '%s\n' "$traced" | wc -l | tr -d ' ')" "3"
 assert_eq "$(printf '%s\n' "$traced" | cut -f8 | sort -u | wc -l | tr -d ' ')" "3"
@@ -201,9 +207,9 @@ it "the total is shown as the sum over the files it came from"
 # is introduced once in each file and counted twice. Telling those apart would mean
 # parsing the report further, against output nobody has captured — so the count is
 # presented as what it is: per file, and summed.
-queue "1" "ahmet.yilmaz@example.com" "week" "__CANCEL__" "__CANCEL__"
+queue "week" "__CANCEL__" "__CANCEL__"
 : >"$ZRO_UI_OUT"
-ZRO_MOCK_ZMMSGTRACE___RECIPIENT_OUT="$ONE" zro_menu_delivery
+ZRO_MOCK_ZMMSGTRACE___RECIPIENT_OUT="$ONE" zro_screen_trace trace-recipient
 transcript=$(cat "$ZRO_UI_OUT")
 assert_contains "$transcript" "Bulunan ileti  : 3"
 assert_contains "$transcript" "3 dosya"
@@ -212,36 +218,36 @@ assert_contains "$transcript" "toplam, dosya basina bulunanlarin toplamidir"
 it "and carries no such caveat when one file answered the question"
 queue "${HOUR[@]}"
 : >"$ZRO_UI_OUT"
-ZRO_MOCK_ZMMSGTRACE___RECIPIENT_OUT="$ONE" zro_menu_delivery
+ZRO_MOCK_ZMMSGTRACE___RECIPIENT_OUT="$ONE" zro_screen_trace trace-recipient
 assert_not_contains "$(cat "$ZRO_UI_OUT")" "toplam, dosya basina"
 
 it "an explicit range is accepted and reaches the tracer as the window it names"
-queue "1" "ahmet.yilmaz@example.com" "explicit" "2026-07-28 08:00" "2026-07-28 09:30" \
+queue "explicit" "2026-07-28 08:00" "2026-07-28 09:30" \
       "__CANCEL__" "__CANCEL__"
 : >"$ZRO_MOCK_LOG"; : >"$ZRO_UI_OUT"
-ZRO_MOCK_ZMMSGTRACE___RECIPIENT_OUT="$ONE" zro_menu_delivery
+ZRO_MOCK_ZMMSGTRACE___RECIPIENT_OUT="$ONE" zro_screen_trace trace-recipient
 assert_contains "$(cat "$ZRO_MOCK_LOG")" \
   "$(printf '\t--time\t20260728080000,20260728093000\t')"
 
 it "a malformed explicit range is refused and nothing is run"
-queue "1" "ahmet.yilmaz@example.com" "explicit" "dun" "bugun" "__CANCEL__" "__CANCEL__"
+queue "explicit" "dun" "bugun" "__CANCEL__" "__CANCEL__"
 : >"$ZRO_MOCK_LOG"; : >"$ZRO_UI_OUT"
-zro_menu_delivery
+zro_screen_trace trace-recipient
 assert_contains "$(cat "$ZRO_UI_OUT")" "Gecersiz"
 assert_eq "$(cat "$ZRO_MOCK_LOG")" ""
 
 it "an explicit range that ends before it starts is refused, not swapped"
-queue "1" "ahmet.yilmaz@example.com" "explicit" "2026-07-28 09:00" "2026-07-28 08:00" \
+queue "explicit" "2026-07-28 09:00" "2026-07-28 08:00" \
       "__CANCEL__" "__CANCEL__"
 : >"$ZRO_MOCK_LOG"; : >"$ZRO_UI_OUT"
-zro_menu_delivery
+zro_screen_trace trace-recipient
 assert_contains "$(cat "$ZRO_UI_OUT")" "Gecersiz"
 assert_eq "$(cat "$ZRO_MOCK_LOG")" ""
 
 it "tells the operator the search is running before the wait begins"
 queue "${HOUR[@]}"
 : >"$ZRO_UI_OUT"
-ZRO_MOCK_ZMMSGTRACE___RECIPIENT_OUT="$ONE" zro_menu_delivery
+ZRO_MOCK_ZMMSGTRACE___RECIPIENT_OUT="$ONE" zro_screen_trace trace-recipient
 assert_contains "$(cat "$ZRO_UI_OUT")" "bekleyin"
 notice_line=$(grep -n "bekleyin" "$ZRO_UI_OUT" | head -n 1 | cut -d: -f1)
 result_line=$(grep -n "Bulunan ileti" "$ZRO_UI_OUT" | head -n 1 | cut -d: -f1)
@@ -250,14 +256,14 @@ assert_eq "$([ "$notice_line" -lt "$result_line" ] && printf yes || printf no)" 
 it "the wait screen names the window being searched"
 queue "${HOUR[@]}"
 : >"$ZRO_UI_OUT"
-ZRO_MOCK_ZMMSGTRACE___RECIPIENT_OUT="$ONE" zro_menu_delivery
+ZRO_MOCK_ZMMSGTRACE___RECIPIENT_OUT="$ONE" zro_screen_trace trace-recipient
 notice=$(grep -A 4 "NOTICE Calisiyor" "$ZRO_UI_OUT")
 assert_contains "$notice" "Varis araligi"
 
 it "nothing found says so, and says it is not proof nothing arrived"
 queue "${HOUR[@]}"
 : >"$ZRO_UI_OUT"
-ZRO_MOCK_ZMMSGTRACE___RECIPIENT_OUT="$NONE" zro_menu_delivery
+ZRO_MOCK_ZMMSGTRACE___RECIPIENT_OUT="$NONE" zro_screen_trace trace-recipient
 transcript=$(cat "$ZRO_UI_OUT")
 assert_contains "$transcript" "bulunamadi"
 # The operator has to learn what the empty answer is an answer about, or it reads
@@ -265,12 +271,16 @@ assert_contains "$transcript" "bulunamadi"
 assert_contains "$transcript" "varis zamanina gore"
 assert_contains "$transcript" "kanitlamaz"
 
-it "an invalid address is reported and nothing is run"
-queue "1" 'ahmet@example.com; id' "__CANCEL__" "__CANCEL__"
+it "a trace with no address selected searches nothing"
+# Unreachable from the menu, which asks for an address before it dispatches an
+# address-scoped operation. Asserted all the same: the one thing this screen may
+# not do is search a whole log for an empty string.
+zro_sel_clear
+queue "${HOUR[@]}"
 : >"$ZRO_UI_OUT"; : >"$ZRO_MOCK_LOG"
-zro_menu_delivery
-assert_contains "$(cat "$ZRO_UI_OUT")" "Gecersiz"
+ZRO_MOCK_ZMMSGTRACE___RECIPIENT_OUT="$ONE" zro_screen_trace trace-recipient
 assert_eq "$(cat "$ZRO_MOCK_LOG")" ""
+zro_sel_set "ahmet.yilmaz@example.com"
 
 # ------------------------------------------------- the other two filters --
 #
@@ -278,34 +288,38 @@ assert_eq "$(cat "$ZRO_MOCK_LOG")" ""
 # message actually left; message-id answers the precise question an operator has
 # while holding a bounce report, where an address alone is too broad.
 
-it "the trace menu offers three ways in, each reaching a filter of its own"
-# The stub backend records a menu's title and text, not its entries, so what an
-# entry SAYS cannot be asserted here — what it DOES can, and an entry wired to
-# the wrong filter is the failure a label could not have revealed anyway.
+it "the list offers three ways in, each reaching a filter of its own"
+# An entry wired to the wrong filter would show the right label and answer
+# another question, which is the one failure a label cannot reveal.
 #
-# One value serves all three: it is a valid address and a valid identifier.
+# The identifier is the only thing still typed here, and only on the third: the
+# other two are about the selected address and ask for nothing.
 seen=""
-for entry in 1 2 3; do
-  queue "$entry" "CAabc123@example.com" "hour" "__CANCEL__" "__CANCEL__"
+for id in trace-recipient trace-sender trace-msgid; do
+  case $id in
+    trace-msgid) queue "CAabc123@example.com" "hour" "__CANCEL__" ;;
+    *)           queue "hour" "__CANCEL__" ;;
+  esac
   : >"$ZRO_MOCK_LOG"
   ZRO_MOCK_ZMMSGTRACE___RECIPIENT_OUT="$ONE" \
   ZRO_MOCK_ZMMSGTRACE___SENDER_OUT="$ONE" \
   ZRO_MOCK_ZMMSGTRACE___ID_OUT="$ONE" \
-    zro_menu_delivery
+    zro_screen_trace "$id"
   seen="$seen $(grep '^zmmsgtrace' "$ZRO_MOCK_LOG" | head -n 1 | cut -f2)"
 done
 assert_eq "$seen" " --recipient --sender --id"
 
-it "a menu entry this screen does not have runs nothing"
-queue "9" "__CANCEL__"
+it "an operation this screen does not have runs nothing, and says so"
+queue "hour" "__CANCEL__"
 : >"$ZRO_MOCK_LOG"
-assert_ok zro_menu_delivery
+said=$(zro_screen_trace trace-nonesuch 2>&1 >/dev/null)
+assert_contains "$said" "menu defect"
 assert_eq "$(cat "$ZRO_MOCK_LOG")" ""
 
 it "a sender search reaches the tracer as the sender filter"
-queue "2" "ahmet.yilmaz@example.com" "hour" "__CANCEL__" "__CANCEL__"
+queue "hour" "__CANCEL__" "__CANCEL__"
 : >"$ZRO_MOCK_LOG"; : >"$ZRO_UI_OUT"
-ZRO_MOCK_ZMMSGTRACE___SENDER_OUT="$ONE" zro_menu_delivery
+ZRO_MOCK_ZMMSGTRACE___SENDER_OUT="$ONE" zro_screen_trace trace-sender
 traced=$(grep '^zmmsgtrace' "$ZRO_MOCK_LOG")
 assert_contains "$traced" "$(printf 'zmmsgtrace\t--sender\tahmet\\.yilmaz@example\\.com\t')"
 assert_not_contains "$traced" "--recipient"
@@ -318,9 +332,9 @@ notice=$(grep -A 4 "NOTICE Calisiyor" "$ZRO_UI_OUT")
 assert_contains "$notice" "Gonderen: ahmet.yilmaz@example.com"
 
 it "a message-id search reaches the tracer as the id filter"
-queue "3" "CAabc123@example.com" "hour" "__CANCEL__" "__CANCEL__"
+queue "CAabc123@example.com" "hour" "__CANCEL__" "__CANCEL__"
 : >"$ZRO_MOCK_LOG"; : >"$ZRO_UI_OUT"
-ZRO_MOCK_ZMMSGTRACE___ID_OUT="$ONE" zro_menu_delivery
+ZRO_MOCK_ZMMSGTRACE___ID_OUT="$ONE" zro_screen_trace trace-msgid
 traced=$(grep '^zmmsgtrace' "$ZRO_MOCK_LOG")
 assert_contains "$traced" "$(printf 'zmmsgtrace\t--id\tCAabc123@example\\.com\t')"
 transcript=$(cat "$ZRO_UI_OUT")
@@ -336,9 +350,9 @@ assert_contains "$transcript" "INPUT Ileti kimligi"
 assert_contains "$transcript" "BUYUK/kucuk harf"
 
 it "an empty message-id answer repeats what an empty answer here can hide"
-queue "3" "CAabc123@example.com" "hour" "__CANCEL__" "__CANCEL__"
+queue "CAabc123@example.com" "hour" "__CANCEL__" "__CANCEL__"
 : >"$ZRO_UI_OUT"
-ZRO_MOCK_ZMMSGTRACE___ID_OUT="$NONE" zro_menu_delivery
+ZRO_MOCK_ZMMSGTRACE___ID_OUT="$NONE" zro_screen_trace trace-msgid
 transcript=$(cat "$ZRO_UI_OUT")
 assert_contains "$transcript" "bulunamadi"
 assert_contains "$transcript" "kanitlamaz"
@@ -349,7 +363,7 @@ assert_contains "$transcript" "BUYUK/kucuk harf"
 it "and the recipient screen carries no such note, having nothing to warn about"
 queue "${HOUR[@]}"
 : >"$ZRO_UI_OUT"
-ZRO_MOCK_ZMMSGTRACE___RECIPIENT_OUT="$NONE" zro_menu_delivery
+ZRO_MOCK_ZMMSGTRACE___RECIPIENT_OUT="$NONE" zro_screen_trace trace-recipient
 assert_not_contains "$(cat "$ZRO_UI_OUT")" "BUYUK/kucuk harf"
 
 it "the identifier is searched for as a header carries it, brackets and all"
@@ -357,83 +371,65 @@ it "the identifier is searched for as a header carries it, brackets and all"
 # operator pastes. The tracer stores the identifier without its delimiters, so
 # they come off before the search rather than turning it into one that matches
 # nothing.
-queue "3" "<CAabc123@example.com>" "hour" "__CANCEL__" "__CANCEL__"
+queue "<CAabc123@example.com>" "hour" "__CANCEL__" "__CANCEL__"
 : >"$ZRO_MOCK_LOG"; : >"$ZRO_UI_OUT"
-ZRO_MOCK_ZMMSGTRACE___ID_OUT="$ONE" zro_menu_delivery
+ZRO_MOCK_ZMMSGTRACE___ID_OUT="$ONE" zro_screen_trace trace-msgid
 assert_contains "$(grep '^zmmsgtrace' "$ZRO_MOCK_LOG")" \
   "$(printf '\t--id\tCAabc123@example\\.com\t')"
 assert_contains "$(cat "$ZRO_UI_OUT")" "Ileti kimligi  : CAabc123@example.com"
 
-it "an invalid sender is reported and nothing is run"
-queue "2" 'ahmet@example.com; id' "__CANCEL__" "__CANCEL__"
-: >"$ZRO_UI_OUT"; : >"$ZRO_MOCK_LOG"
-zro_menu_delivery
-assert_contains "$(cat "$ZRO_UI_OUT")" "Gecersiz"
-assert_eq "$(cat "$ZRO_MOCK_LOG")" ""
-
 it "an invalid message-id is reported and nothing is run"
 # The whole header line, which is the paste that would otherwise match nothing.
-queue "3" 'Message-ID: <CAabc123@example.com>' "__CANCEL__" "__CANCEL__"
+queue 'Message-ID: <CAabc123@example.com>' "__CANCEL__" "__CANCEL__"
 : >"$ZRO_UI_OUT"; : >"$ZRO_MOCK_LOG"
-zro_menu_delivery
+zro_screen_trace trace-msgid
 assert_contains "$(cat "$ZRO_UI_OUT")" "Gecersiz"
 assert_eq "$(cat "$ZRO_MOCK_LOG")" ""
 
-it "cancelling either new prompt returns to the trace menu, not out of it"
-for entry in 2 3; do
-  queue "$entry" "__CANCEL__" "__CANCEL__"
-  : >"$ZRO_UI_OUT"; : >"$ZRO_MOCK_LOG"
-  assert_ok zro_menu_delivery
-  assert_eq "$(grep -c 'MENU Teslim takibi' "$ZRO_UI_OUT")" "2"
-  assert_eq "$(cat "$ZRO_MOCK_LOG")" ""
-done
+it "cancelling the identifier prompt returns to the menu, not out of the tool"
+queue "trace-msgid" "__CANCEL__" "__CANCEL__"
+: >"$ZRO_UI_OUT"; : >"$ZRO_MOCK_LOG"
+assert_ok zro_menu_main
+# Drawn once before the prompt and once after it: the operator is back where
+# they were, not one screen further out.
+assert_eq "$(grep -c 'MENU Ana menu' "$ZRO_UI_OUT")" "2"
+assert_not_contains "$(cat "$ZRO_MOCK_LOG")" "zmmsgtrace"
 
 it "a partial scan is disclosed on every filter, not only the first one written"
-queue "2" "ahmet.yilmaz@example.com" "week" "__CANCEL__" "__CANCEL__"
+queue "week" "__CANCEL__" "__CANCEL__"
 : >"$ZRO_UI_OUT"
 ZRO_MOCK_ZMMSGTRACE___SENDER_OUT="$ONE" \
 ZRO_MOCK_ZMMSGTRACE_UNREADABLE="$SYS.1.gz" \
-  zro_menu_delivery
+  zro_screen_trace trace-sender
 transcript=$(cat "$ZRO_UI_OUT")
 assert_contains "$transcript" "TEXT Teslim izi - EKSIK TARAMA"
 assert_contains "$transcript" "KANITLAMAZ"
 
-it "cancelling the trace menu returns to the caller"
-queue "__CANCEL__"
-assert_ok zro_menu_delivery
-
-it "cancelling the address prompt returns to the trace menu, not out of it"
-queue "1" "__CANCEL__" "__CANCEL__"
-: >"$ZRO_UI_OUT"
-assert_ok zro_menu_delivery
-# Drawn once before the prompt and once after it: the operator is back where
-# they were, not one screen further out.
-assert_eq "$(grep -c 'MENU Teslim takibi' "$ZRO_UI_OUT")" "2"
-
-it "cancelling the window menu returns to the trace menu, not out of it"
-queue "1" "ahmet.yilmaz@example.com" "__CANCEL__" "__CANCEL__"
+it "cancelling the window menu returns to the menu, not out of the tool"
+queue "trace-recipient" "__CANCEL__" "__CANCEL__"
 : >"$ZRO_UI_OUT"; : >"$ZRO_MOCK_LOG"
-assert_ok zro_menu_delivery
-assert_eq "$(grep -c 'MENU Teslim takibi' "$ZRO_UI_OUT")" "2"
-assert_eq "$(cat "$ZRO_MOCK_LOG")" ""
+assert_ok zro_menu_main
+assert_eq "$(grep -c 'MENU Ana menu' "$ZRO_UI_OUT")" "2"
+# The menu reads the version; what matters is that no log was searched.
+assert_not_contains "$(cat "$ZRO_MOCK_LOG")" "zmmsgtrace"
 
-it "cancelling either end of an explicit range returns to the trace menu"
-queue "1" "ahmet.yilmaz@example.com" "explicit" "__CANCEL__" "__CANCEL__"
+it "cancelling either end of an explicit range returns to the menu"
+queue "trace-recipient" "explicit" "__CANCEL__" "__CANCEL__"
 : >"$ZRO_UI_OUT"
-assert_ok zro_menu_delivery
-assert_eq "$(grep -c 'MENU Teslim takibi' "$ZRO_UI_OUT")" "2"
-queue "1" "ahmet.yilmaz@example.com" "explicit" "2026-07-28 08:00" "__CANCEL__" "__CANCEL__"
+assert_ok zro_menu_main
+assert_eq "$(grep -c 'MENU Ana menu' "$ZRO_UI_OUT")" "2"
+queue "trace-recipient" "explicit" "2026-07-28 08:00" "__CANCEL__" "__CANCEL__"
 : >"$ZRO_UI_OUT"; : >"$ZRO_MOCK_LOG"
-assert_ok zro_menu_delivery
-assert_eq "$(grep -c 'MENU Teslim takibi' "$ZRO_UI_OUT")" "2"
-assert_eq "$(cat "$ZRO_MOCK_LOG")" ""
+assert_ok zro_menu_main
+assert_eq "$(grep -c 'MENU Ana menu' "$ZRO_UI_OUT")" "2"
+assert_not_contains "$(cat "$ZRO_MOCK_LOG")" "zmmsgtrace"
 
 it "a log that cannot be read names the cause and the repair, not a bare code"
 queue "${HOUR[@]}"
 : >"$ZRO_UI_OUT"
 ZRO_MOCK_ZMMSGTRACE___RECIPIENT_RC=13 \
 ZRO_MOCK_ZMMSGTRACE___RECIPIENT_ERR="$FIX/zmmsgtrace_synthetic_unreadable.err" \
-  zro_menu_delivery
+  zro_screen_trace trace-recipient
 transcript=$(cat "$ZRO_UI_OUT")
 assert_contains "$transcript" "okunamadi"
 # The usual cause is ownership on the syslog file, and it breaks Zimbra's own
@@ -446,11 +442,11 @@ it "one unreadable file among several is answered, with the gap disclosed"
 # Three files, one of them unreadable: the operator gets what could be found AND an
 # account of what was missed. Refusing outright would throw away a usable answer;
 # showing it silently would let an empty one read as proof the message never came.
-queue "1" "ahmet.yilmaz@example.com" "week" "__CANCEL__" "__CANCEL__"
+queue "week" "__CANCEL__" "__CANCEL__"
 : >"$ZRO_UI_OUT"
 ZRO_MOCK_ZMMSGTRACE___RECIPIENT_OUT="$ONE" \
 ZRO_MOCK_ZMMSGTRACE_UNREADABLE="$SYS.1.gz" \
-  zro_menu_delivery
+  zro_screen_trace trace-recipient
 transcript=$(cat "$ZRO_UI_OUT")
 assert_contains "$transcript" "EKSIK TARAMA"
 assert_contains "$transcript" "$SYS.1.gz"
@@ -467,21 +463,21 @@ it "and the disclosure is on the frame as well as in the text"
 assert_contains "$transcript" "TEXT Teslim izi - EKSIK TARAMA"
 
 it "a complete scan is titled and worded as the whole answer it is"
-queue "1" "ahmet.yilmaz@example.com" "week" "__CANCEL__" "__CANCEL__"
+queue "week" "__CANCEL__" "__CANCEL__"
 : >"$ZRO_UI_OUT"
-ZRO_MOCK_ZMMSGTRACE___RECIPIENT_OUT="$ONE" zro_menu_delivery
+ZRO_MOCK_ZMMSGTRACE___RECIPIENT_OUT="$ONE" zro_screen_trace trace-recipient
 transcript=$(cat "$ZRO_UI_OUT")
-assert_contains "$transcript" "TEXT Teslim izi:"
+assert_contains "$transcript" "TEXT Teslim izi - ahmet.yilmaz@example.com"
 assert_not_contains "$transcript" "EKSIK"
 
 it "no file readable at all draws the log screen, not a report"
 # Nothing was scanned, so there is no partial answer to show — and the screen has
 # to say that this is not the same thing as finding no record.
-queue "1" "ahmet.yilmaz@example.com" "week" "__CANCEL__" "__CANCEL__"
+queue "week" "__CANCEL__" "__CANCEL__"
 : >"$ZRO_UI_OUT"
 ZRO_MOCK_ZMMSGTRACE___RECIPIENT_OUT="$ONE" \
 ZRO_MOCK_ZMMSGTRACE_UNREADABLE="$(printf '%s\n%s\n%s' "$SYS" "$SYS.1.gz" "$SYS.2.gz")" \
-  zro_menu_delivery
+  zro_screen_trace trace-recipient
 transcript=$(cat "$ZRO_UI_OUT")
 assert_contains "$transcript" "Log okunamiyor"
 assert_contains "$transcript" "DEGILDIR"
@@ -491,11 +487,11 @@ it "nothing found in a partial scan is never shown as a plain empty result"
 # The dangerous case: an operator shown "kayit bulunamadi" from a scan missing a
 # file concludes the message never arrived. The report is shown instead, banner and
 # all, with the count it really found.
-queue "1" "ahmet.yilmaz@example.com" "week" "__CANCEL__" "__CANCEL__"
+queue "week" "__CANCEL__" "__CANCEL__"
 : >"$ZRO_UI_OUT"
 ZRO_MOCK_ZMMSGTRACE___RECIPIENT_OUT="$NONE" \
 ZRO_MOCK_ZMMSGTRACE_UNREADABLE="$SYS.1.gz" \
-  zro_menu_delivery
+  zro_screen_trace trace-recipient
 transcript=$(cat "$ZRO_UI_OUT")
 assert_contains "$transcript" "EKSIK TARAMA"
 assert_contains "$transcript" "Bulunan ileti  : 0"
@@ -504,12 +500,12 @@ it "a refused search still names a file it had already skipped"
 # The oldest file is skipped, the next fails with a status nobody recognises. The
 # search is refused — and the screen still names the log that was never read, so no
 # path through this screen leaves a skipped file unmentioned.
-queue "1" "ahmet.yilmaz@example.com" "week" "__CANCEL__" "__CANCEL__"
+queue "week" "__CANCEL__" "__CANCEL__"
 : >"$ZRO_UI_OUT"
 ZRO_MOCK_ZMMSGTRACE___RECIPIENT_OUT="$ONE" \
 ZRO_MOCK_ZMMSGTRACE___RECIPIENT_RC=2 \
 ZRO_MOCK_ZMMSGTRACE_UNREADABLE="$SYS.2.gz" \
-  zro_menu_delivery
+  zro_screen_trace trace-recipient
 transcript=$(cat "$ZRO_UI_OUT")
 assert_contains "$transcript" "$SYS.2.gz"
 assert_not_contains "$transcript" "Bulunan ileti"
@@ -553,7 +549,7 @@ it "a clock this host cannot run is reported, not answered with a shrug"
 queue "${HOUR[@]}"
 : >"$ZRO_UI_OUT"; : >"$ZRO_MOCK_LOG"
 ( ZRO_DATE_BIN=/nonexistent/date
-  ZRO_MOCK_ZMMSGTRACE___RECIPIENT_OUT="$ONE" zro_menu_delivery )
+  ZRO_MOCK_ZMMSGTRACE___RECIPIENT_OUT="$ONE" zro_screen_trace trace-recipient )
 transcript=$(cat "$ZRO_UI_OUT")
 assert_contains "$transcript" "Saat okunamadi"
 # And the cause is named, not dressed up as the mailbox service being down.
@@ -563,7 +559,7 @@ assert_eq "$(cat "$ZRO_MOCK_LOG")" ""
 it "a tracing binary this host does not have marks the entry, not the search"
 # Learned BEFORE a search is invested in it: the main menu entry says so, and
 # selecting it explains why rather than failing from inside a screen.
-queue "2" "__CANCEL__" "__CANCEL__"
+queue "trace-recipient" "__CANCEL__" "__CANCEL__"
 : >"$ZRO_UI_OUT"; : >"$ZRO_MOCK_LOG"
 ZRO_CAP_FORCE_TRACE_BIN=no zro_menu_main
 transcript=$(cat "$ZRO_UI_OUT")
@@ -573,13 +569,13 @@ assert_contains "$transcript" "Kullanilamaz"
 # operator to the permission repair tool.
 assert_not_contains "$transcript" "zmfixperms"
 # The screen was never drawn and nothing was asked for or run.
-assert_not_contains "$transcript" "MENU Teslim takibi"
+assert_not_contains "$transcript" "MENU Varis araligi"
 # The main menu reads the version on every redraw, so the log is not empty here;
 # what matters is that no trace was run.
 assert_not_contains "$(cat "$ZRO_MOCK_LOG")" "zmmsgtrace"
 
 it "an unreadable primary log marks the entry and names the cause and the repair"
-queue "2" "__CANCEL__" "__CANCEL__"
+queue "trace-recipient" "__CANCEL__" "__CANCEL__"
 : >"$ZRO_UI_OUT"; : >"$ZRO_MOCK_LOG"
 ZRO_CAP_FORCE_TRACE_LOG=unreadable zro_menu_main
 transcript=$(cat "$ZRO_UI_OUT")
@@ -597,13 +593,13 @@ assert_contains "$transcript" "zmfixperms"
 assert_contains "$transcript" "$SYS"
 # The limit of what the probe read, said where the operator can act on it.
 assert_contains "$transcript" "ACL"
-assert_not_contains "$transcript" "MENU Teslim takibi"
+assert_not_contains "$transcript" "MENU Varis araligi"
 assert_not_contains "$(cat "$ZRO_MOCK_LOG")" "zmmsgtrace"
 
 it "a log that is not there is not reported as a permission to repair"
 # Different cause, different repair: naming the permission tool for a file that was
 # not found sends the operator looking for a mode that is not the problem.
-queue "2" "__CANCEL__" "__CANCEL__"
+queue "trace-recipient" "__CANCEL__" "__CANCEL__"
 : >"$ZRO_UI_OUT"
 ZRO_CAP_FORCE_TRACE_LOG=missing zro_menu_main
 transcript=$(cat "$ZRO_UI_OUT")
@@ -618,7 +614,7 @@ assert_contains "$transcript" "dizin"
 it "a log path this tool refuses to read names the setting, not the server"
 # The probe applies the inventory's own admission, so this arrives as the
 # configuration error it is rather than as an allowlist refusal about a path.
-queue "2" "__CANCEL__" "__CANCEL__"
+queue "trace-recipient" "__CANCEL__" "__CANCEL__"
 : >"$ZRO_UI_OUT"
 ZRO_CAP_FORCE_TRACE_LOG=denied zro_menu_main
 transcript=$(cat "$ZRO_UI_OUT")
@@ -639,7 +635,7 @@ it "and the screen refuses on its own, not only through the entry that marks it"
 # Both read the same probe, asked once.
 queue "${HOUR[@]}"
 : >"$ZRO_UI_OUT"; : >"$ZRO_MOCK_LOG"
-ZRO_CAP_FORCE_TRACE_LOG=unreadable assert_ok zro_menu_delivery
+ZRO_CAP_FORCE_TRACE_LOG=unreadable assert_ok zro_screen_trace trace-recipient
 assert_contains "$(cat "$ZRO_UI_OUT")" "Kullanilamaz"
 assert_eq "$(cat "$ZRO_MOCK_LOG")" ""
 
@@ -649,13 +645,13 @@ it "a tracing binary that vanishes mid-session is still refused by the gate"
 # it safe for the probe to be an answer about a moment rather than a guarantee.
 queue "${HOUR[@]}"
 : >"$ZRO_UI_OUT"
-ZRO_ZIMBRA_LIBEXEC=/nonexistent zro_menu_delivery
+ZRO_ZIMBRA_LIBEXEC=/nonexistent zro_screen_trace trace-recipient
 assert_contains "$(cat "$ZRO_UI_OUT")" "Kullanilamaz"
 
 it "no delivery screen touches a mailbox or the directory"
 queue "${HOUR[@]}"
 : >"$ZRO_MOCK_LOG"
-ZRO_MOCK_ZMMSGTRACE___RECIPIENT_OUT="$ONE" zro_menu_delivery
+ZRO_MOCK_ZMMSGTRACE___RECIPIENT_OUT="$ONE" zro_screen_trace trace-recipient
 log=$(cat "$ZRO_MOCK_LOG")
 assert_contains "$log" "zmmsgtrace"
 assert_not_contains "$log" "zmmailbox"
@@ -664,9 +660,9 @@ assert_not_contains "$log" "zmprov"
 it "no screen ever hands the tracer a path an operator typed"
 # The file list comes from the inventory. Whatever an operator types is an
 # address or a date, and every path in the vector is under the declared root.
-queue "1" "ahmet.yilmaz@example.com" "week" "__CANCEL__" "__CANCEL__"
+queue "week" "__CANCEL__" "__CANCEL__"
 : >"$ZRO_MOCK_LOG"
-ZRO_MOCK_ZMMSGTRACE___RECIPIENT_OUT="$ONE" zro_menu_delivery
+ZRO_MOCK_ZMMSGTRACE___RECIPIENT_OUT="$ONE" zro_screen_trace trace-recipient
 outside=""
 while IFS= read -r line; do
   [ -n "$line" ] || continue
