@@ -25,6 +25,14 @@ ZRO_LIB_EXEC_LOADED=1
 # account's quota usage would therefore create a mailbox for an account that
 # had none. See docs/research/2026-07-29-zimbra-cli-read-only-reference.md §A.3.
 #
+# `zmprov gdl` (getDistributionList) is here so that "no such account" can stop
+# being this tool's answer to a distribution list. Measured on TEST-C: `ga` on a
+# list fails with account.NO_SUCH_ACCOUNT, and only this read tells that apart
+# from an address the directory has never heard of. It is a read in effect as
+# well as in name — the handler returns the entry and its members, and the
+# write-named siblings that touch a list (`adlm`, `rdlm`, `cdl`, `ddl`) are
+# absent from this list and therefore refused.
+#
 # `zmmsgtrace` is the delivery trace. Every filter that binary takes is a flag
 # which is the whole operation, so each is approved the same way `zmcontrol -v`
 # is: as a two-token entry, with the operator's already-validated value following
@@ -77,12 +85,16 @@ zmprov:gam
 zmprov:getAccountMembership
 zmprov:gc
 zmprov:getCos
+zmprov:gdl
+zmprov:getDistributionList
 zmprov:-l:ga
 zmprov:-l:getAccount
 zmprov:-l:gam
 zmprov:-l:getAccountMembership
 zmprov:-l:gc
 zmprov:-l:getCos
+zmprov:-l:gdl
+zmprov:-l:getDistributionList
 zmcontrol:-v
 zmmsgtrace:--recipient
 zmmsgtrace:--sender

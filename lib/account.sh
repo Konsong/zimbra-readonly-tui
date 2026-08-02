@@ -90,9 +90,16 @@ zro_zimbra_error_code() {
 
 # Maps a failure to a documented code. $2 is the code to use when the text
 # names a missing object, which differs between an account and a mailbox.
+#
+# NO_SUCH_DISTRIBUTION_LIST is here because a list read is now one of the reads:
+# `zmprov gdl` on anything that is not a list answers
+# `ERROR: account.NO_SUCH_DISTRIBUTION_LIST (...)`, and without this line that
+# would fall through to the raw exit status — which the identity resolver would
+# have to read as a question it could not ask rather than as an answer.
 zro_prov_fail_code() {
   local errfile=$1 missing_code=$2 rc=$3
-  if grep -qE 'NO_SUCH_ACCOUNT|NO_SUCH_MAILBOX|NO_SUCH_COS' "$errfile" 2>/dev/null; then
+  if grep -qE 'NO_SUCH_ACCOUNT|NO_SUCH_MAILBOX|NO_SUCH_COS|NO_SUCH_DISTRIBUTION_LIST' \
+       "$errfile" 2>/dev/null; then
     printf '%s' "$missing_code"
     return 0
   fi
@@ -108,13 +115,15 @@ zro_prov_fail_code() {
 # Subcommands LDAP mode can answer. gmi is deliberately absent: Zimbra replies
 # to `zmprov -l gmi` with "can only be used with SOAP", because mailbox usage
 # lives in the mailbox database rather than in LDAP.
-ZRO_LDAP_READS=' ga getAccount gam getAccountMembership gc getCos '
+# gdl is here on evidence, not by analogy: `zmprov -l gdl` answered on TEST-C
+# with the same record SOAP returns, members and all.
+ZRO_LDAP_READS=' ga getAccount gam getAccountMembership gc getCos gdl getDistributionList '
 
 # The complete set of subcommands zro_prov_read may hand to the gate. It exists
 # because that one call site passes a variable, which a static reader cannot
 # resolve — so the set of values that variable may hold is written down here,
 # enforced at runtime, and checked against the allowlist by the scanner.
-ZRO_PROV_READS=' ga gam gc '
+ZRO_PROV_READS=' ga gam gc gdl '
 
 zro_prov_ldap_capable() {
   [ -n "${1-}" ] || return 1

@@ -68,20 +68,31 @@ expected="$expected quit Cikis"
 assert_eq "$(entries)" "$expected"
 
 it "the operations that need an address come before the ones that do not"
+# Three scopes, and only two positions: what needs an address of any kind comes
+# before what needs none. 'account' and 'address' are both the first group —
+# they differ in what the address has to BE, not in whether one is asked for.
 seen_server=""
 misplaced=""
 while IFS= read -r entry; do
   [ -n "$entry" ] || continue
   scope=${entry#*:}
   case ${scope%%:*} in
-    server)  seen_server=yes ;;
-    address) [ -z "$seen_server" ] || misplaced="$misplaced [${entry%%:*}]" ;;
+    server)          seen_server=yes ;;
+    account|address) [ -z "$seen_server" ] || misplaced="$misplaced [${entry%%:*}]" ;;
     *) misplaced="$misplaced [scope? ${entry%%:*}]" ;;
   esac
 done <<EOF
 $ZRO_MENU_OPS
 EOF
 assert_eq "$misplaced" ""
+
+it "and an operation that needs the address to be an account says so"
+# The scope is what routes an address to the screens that can answer for it, so
+# the two kinds are held apart in the declaration rather than inferred from an
+# id's prefix at the point of use.
+assert_out_eq "account" zro_menu_scope account-card
+assert_out_eq "address" zro_menu_scope trace-recipient
+assert_out_eq "server"  zro_menu_scope logview
 
 it "every declared operation is dispatched somewhere"
 # The other half of the same equality, and the half a label cannot show: an entry
@@ -375,6 +386,161 @@ log=$(cat "$ZRO_MOCK_LOG")
 assert_contains "$log" "zmprov"
 assert_not_contains "$log" "zmmailbox"
 assert_not_contains "$log" "$(printf '\tgmi')"
+
+# ------------------------------------------- what the address turned out to be --
+#
+# Resolution runs when an address is chosen, and everything after it is routed by
+# the answer. The cases below script the server per case rather than relying on
+# the file's default answer, so each one says which directory it is talking to.
+
+# Puts the server back the way the rest of this file expects it: an ordinary
+# account that answers `ga` and `gam`.
+restore_server() {
+  export ZRO_MOCK_ZMPROV_GA_OUT="$FIX/zmprov_ga_active.txt"
+  unset ZRO_MOCK_ZMPROV_GA_ERR ZRO_MOCK_ZMPROV_GA_RC
+  unset ZRO_MOCK_ZMPROV_GDL_OUT ZRO_MOCK_ZMPROV_GDL_ERR ZRO_MOCK_ZMPROV_GDL_RC
+}
+
+it "choosing an address resolves it and says what it is"
+zro_sel_clear
+queue "select" "$ADDR" "__CANCEL__"
+run
+assert_contains "$(transcript)" "TEXT Adres kimligi"
+assert_contains "$(transcript)" "Bu adres bir hesap"
+
+it "an alias is resolved to the account behind it, and both are named"
+# zmprov_ga_active.txt is the account ahmet.yilmaz@example.com, which is what
+# TEST-C really answers when an alias is asked for: the header names the account,
+# not the address that was typed.
+zro_sel_clear
+queue "select" "a.yilmaz@example.com" "account-card" "__CANCEL__"
+run
+said=$(transcript)
+assert_contains "$said" "a.yilmaz@example.com"
+assert_contains "$said" "$ADDR"
+assert_contains "$said" "bir alias"
+
+it "and the card it draws is queried for the account, not for the alias"
+# Both spellings answer, so this is not about the query working. It is about the
+# card saying whose account it is describing.
+assert_contains "$(cat "$ZRO_MOCK_LOG")" "$(printf 'zmprov\tga\t%s' "$ADDR")"
+
+it "and the note it opens with is separated from the report, not glued to it"
+# Command substitution eats trailing newlines, so a note built as its own string
+# and concatenated by the caller loses the blank line that separates it — and the
+# first label of the report ends up on the end of the sentence above it.
+note=$(zro_screen_alias_note "Hesap                : $ADDR")
+assert_contains "$note" "$(printf 'aittir.\n\nHesap')"
+
+it "and a report about an address that is not an alias is left exactly as it was"
+zro_sel_clear
+zro_sel_set "$ADDR"
+assert_out_eq "govde" zro_screen_alias_note "govde"
+
+it "a distribution list is not reported as a missing account"
+zro_sel_clear
+export ZRO_MOCK_ZMPROV_GA_ERR="$FIX/zmprov_ga_no_such_account.err"
+export ZRO_MOCK_ZMPROV_GA_RC=2
+export ZRO_MOCK_ZMPROV_GDL_OUT="$FIX/zmprov_gdl_ok.txt"
+queue "select" "tum-personel@example.com" "__CANCEL__"
+run
+said=$(transcript)
+assert_contains "$said" "dagitim listesi"
+assert_not_contains "$said" "Hesap bulunamadi"
+
+it "and the account operations are marked before they are chosen"
+assert_contains "$(entries)" "Hesap karti - BU ADRES HESAP DEGIL"
+
+it "but delivery tracing is not, because a list address appears in the mail log"
+# The reason the scope is finer than address-or-not: marking the trace here would
+# take away the one screen that still answers for this address.
+assert_not_contains "$(entries)" "gelenler - BU ADRES HESAP DEGIL"
+
+it "choosing an account operation anyway shows what the address is, and runs nothing"
+zro_sel_clear
+queue "select" "tum-personel@example.com" "account-card" "__CANCEL__"
+run
+assert_contains "$(transcript)" "dagitim listesi"
+# Two reads for the resolution and not one more: no card was attempted.
+assert_eq "$(grep -c '^zmprov' "$ZRO_MOCK_LOG")" "2"
+
+it "an address that is nowhere is marked as well, and said to be absent"
+zro_sel_clear
+export ZRO_MOCK_ZMPROV_GDL_ERR="$FIX/zmprov_gdl_no_such_list.err"
+export ZRO_MOCK_ZMPROV_GDL_RC=2
+unset ZRO_MOCK_ZMPROV_GDL_OUT
+queue "select" "yok@example.com" "__CANCEL__"
+run
+assert_contains "$(transcript)" "dizinde bulunamadi"
+assert_contains "$(entries)" "Hesap karti - BU ADRES HESAP DEGIL"
+
+it "a resolution that could not run marks nothing at all"
+# THE ONE THING A FAILURE MAY NOT DO. Marking an entry from a question this
+# program could not ask would report its own ignorance as a fact about the
+# server — and the address is still selected, because it is still valid.
+zro_sel_clear
+export ZRO_MOCK_ZMPROV_GA_ERR="$FIX/zmprov_io_error_refused.err"
+export ZRO_MOCK_ZMPROV_GA_RC=1
+export ZRO_MOCK_ZMPROV__L_GA_ERR="$FIX/zmprov_io_error_refused.err"
+export ZRO_MOCK_ZMPROV__L_GA_RC=1
+queue "select" "$ADDR" "__CANCEL__"
+run
+said=$(transcript)
+assert_contains "$said" "Zimbra servisine erisilemiyor"
+assert_not_contains "$said" "dizinde bulunamadi"
+assert_not_contains "$(entries)" "BU ADRES HESAP DEGIL"
+assert_eq "$(zro_sel_address)" "$ADDR"
+unset ZRO_MOCK_ZMPROV__L_GA_ERR ZRO_MOCK_ZMPROV__L_GA_RC
+restore_server
+
+it "and the account operation behind it is still offered, and still tries"
+# An operation refused from an unresolved identity would be the failure above
+# deciding something. The screen reports its own outcome instead.
+zro_sel_clear
+queue "select" "$ADDR" "account-card" "__CANCEL__"
+run
+assert_contains "$(transcript)" "Ahmet Yilmaz"
+
+it "an entry's mark is decided in the loop's own shell, so a probe caches"
+# THE REASON THE REFUSAL COMES BACK IN A GLOBAL. The capability probes fill a
+# session cache, and an assignment made inside $( ) dies with the subshell —
+# lib/capability.sh records that bug being fixed once already. A mark computed
+# through a command substitution would re-probe the host for every entry of every
+# redraw, and nothing on screen would look any different.
+zro_cap_reset
+unset ZRO_CAP_FORCE_TRACE_BIN
+zro_sel_clear
+queue "__CANCEL__"
+run
+assert_eq "$ZRO_CAP_TRACE_BIN_CACHE" "yes"
+export ZRO_CAP_FORCE_TRACE_BIN=yes
+
+it "resolving an address costs one invocation when it is an account"
+# Cost class 1, asserted as the number it is: the account read that identifies
+# the address is the only read the selection pays for.
+zro_sel_clear
+queue "select" "$ADDR" "__CANCEL__"
+run
+assert_eq "$(grep -c '^zmprov' "$ZRO_MOCK_LOG")" "1"
+
+it "changing the address forgets what the previous one was"
+# A menu marked for one account while the session is about another is the exact
+# failure the selected address exists to prevent, one level further in.
+zro_sel_clear
+export ZRO_MOCK_ZMPROV_GA_ERR="$FIX/zmprov_ga_no_such_account.err"
+export ZRO_MOCK_ZMPROV_GA_RC=2
+export ZRO_MOCK_ZMPROV_GDL_OUT="$FIX/zmprov_gdl_ok.txt"
+# Two answers for the one prompt this program has, given to it directly: the
+# menu around it is not what is being tested here.
+queue "tum-personel@example.com" "$ADDR"
+: >"$ZRO_UI_OUT"; : >"$ZRO_MOCK_LOG"
+zro_menu_select >/dev/null
+zro_menu_refusal account-card
+assert_eq "$ZRO_MENU_REASON" "notaccount"
+restore_server
+zro_menu_select >/dev/null
+zro_menu_refusal account-card
+assert_eq "$ZRO_MENU_REASON" ""
 
 rm -f -- "$ZRO_MOCK_LOG" "$ZRO_UI_QUEUE" "$ZRO_UI_QUEUE.pos" "$ZRO_UI_OUT"
 zro_t_report

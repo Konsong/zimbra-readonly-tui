@@ -150,6 +150,7 @@ declared=$(printf '%s\n' "$raw_code" | sed -n "s/^ZRO_PROV_READS='\(.*\)'/\1/p")
 assert_contains "$declared" "ga"
 assert_contains "$declared" "gam"
 assert_contains "$declared" "gc"
+assert_contains "$declared" "gdl"
 
 # gmi is the only read-named admin handler that auto-creates a mailbox, so it
 # may not be declared a read anywhere in the tree.
@@ -196,6 +197,18 @@ EOF
 assert_eq "$bad" ""
 assert_contains "$prov_calls" "ga"
 assert_contains "$prov_calls" "gam"
+assert_contains "$prov_calls" "gdl"
+
+it "the list read is a read, and the write-named siblings are nowhere"
+# `gdl` arrived so that a distribution list stops being answered with "no such
+# account". The commands that CHANGE a list live one letter away from it, and
+# none of them may be expressible: not in the allowlist, not at a call site.
+for sub in adlm rdlm cdl ddl addDistributionListMember removeDistributionListMember \
+           createDistributionList deleteDistributionList renameDistributionList; do
+  assert_not_contains "$allow" "$sub"
+  assert_not_contains "$code" "zro_exec zmprov $sub"
+  assert_not_contains "$declared" " $sub "
+done
 
 it "the allowlist itself names no write verb"
 for verb in create modify delete remove move mark flag tag empty import post recover sync; do
