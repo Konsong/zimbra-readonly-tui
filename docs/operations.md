@@ -116,6 +116,14 @@ pushed out of view. Reading one account's answer believing it is another's is
 what that prevents. An address too long for the border is shortened with a
 trailing `..`; what the tool searches for is always the whole address.
 
+**The frame says what the session is about, not what the screen filtered on.**
+The screens that are about the server carry the address too — a log listing and
+a message-id trace are titled with it although neither was restricted to it.
+That is deliberate: the address is the session's subject, and every report names
+its own subject on its own first line (`Ileti kimligi  : …`, and the log
+viewer's header naming the file and the bound). A title is orientation; the
+report is the claim.
+
 ### About the selected address
 
 - **Hesap ozeti** — display name, status, mailbox host, quota limit, COS name,

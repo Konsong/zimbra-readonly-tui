@@ -215,7 +215,9 @@ _Avoid_: warning, confirmation
 The address the session is currently about, chosen once and carried in every
 screen title until it is changed. Every account-scoped operation reads it rather
 than asking again — because at two seconds per invocation, retyping is not the
-cost that matters, re-running is.
+cost that matters, re-running is. It names **what the session is about, never
+what a screen filtered on**: a server-wide screen carries it too, and every
+report names its own subject on its own first line.
 _Avoid_: current user, context account
 
 **Address identity**:
