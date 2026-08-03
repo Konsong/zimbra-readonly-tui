@@ -1401,6 +1401,19 @@ zro_menu_logsearch() {
     done <<EOF
 $(zro_logsearch_questions)
 EOF
+    # THE QUESTIONS THAT ARE ABOUT EVERYBODY, after the ones that list what
+    # happened. Each takes a value and asks whether it is there at all — one scan
+    # of the window's files, and no query about any account.
+    while IFS= read -r id; do
+      [ -n "$id" ] || continue
+      if ! label=$(zro_logsearch_lookup_label "$id"); then
+        zro_log error "no label for declared log search lookup: $id"
+        continue
+      fi
+      items+=("$id" "$label")
+    done <<EOF
+$(zro_logsearch_lookups)
+EOF
     items+=(text "Duz metin ara (harfi harfine)")
 
     rc=0
@@ -1409,6 +1422,10 @@ EOF
 
     if [ "$choice" = text ]; then
       zro_screen_logsearch_text
+      continue
+    fi
+    if zro_logsearch_lookup_log "$choice" >/dev/null 2>&1; then
+      zro_screen_logsearch_lookup "$choice"
       continue
     fi
     # Judged against the list this program itself drew. Nothing else may name a
@@ -1452,6 +1469,73 @@ Nasil aransin?" \
   fi
 
   zro_screen_logsearch_do "$log" named "$id" "$filter" "$label"
+}
+
+ZRO_TXT_LOGSEARCH_DOMAIN='Gonderen alan adi (ornek: example.com)
+
+Bu alan adindan bu sunucuya mail GELDI mi diye bakilir: log satirlarinda
+zarf gondericisi (from=<...@alan>) aranir. Bu alan adina GIDEN mailler bu
+listede yer almaz.'
+
+# A question about everybody, asked with a value.
+#
+# BOTH OF THEM ARE ONE SCAN. Asked of the accounts they concern, each would be a
+# query per mailbox and a gate check per account; asked of the log they are the
+# same cost as any other search on this screen — the window's files, once — and
+# they open no mailbox at all. That is the whole reason they are here rather than
+# behind the existence gate.
+#
+# The value is asked for BEFORE the window and the cost, so that an operator who
+# mistypes an identifier finds out before they agree to spend a scan on it.
+zro_screen_logsearch_lookup() {
+  local id=${1-} log label value rc=0
+  if ! log=$(zro_logsearch_lookup_log "$id"); then
+    zro_log error "menu defect, no log for log search lookup: $id"
+    zro_report_defect
+    return 0
+  fi
+  label=$(zro_logsearch_lookup_label "$id")
+
+  case $id in
+    msgid)
+      # The same prompt the delivery trace asks with, including the warning that
+      # the identifier is matched case-sensitively — which is worth more here than
+      # there, because this reader has no opinion about case at all.
+      value=$(zro_prompt_msgid) || rc=$? ;;
+    sender-domain)
+      value=$(zro_prompt_domain) || rc=$? ;;
+    # Declared in the table and prompted for nowhere: a defect in this file.
+    *) zro_log error "menu defect, no prompt for log search lookup: $id"
+       zro_report_defect
+       return 0 ;;
+  esac
+  # Cancel is navigation and a rejected value has had its own screen; both return
+  # the operator to the menu they came from.
+  [ "$rc" -eq 0 ] || return 0
+  [ -n "$value" ] || return 0
+
+  zro_screen_logsearch_do "$log" "$id" "$value" '' "$label: $value"
+}
+
+# Asks for a domain and validates it. Cancel and a rejected value are told apart
+# exactly as they are for an address.
+#
+# ITS OWN PROMPT rather than the address one, because a domain is not an address:
+# the address validator would refuse `example.com` for having no local part, and an
+# operator asked for a domain would be told their domain is not an address.
+zro_prompt_domain() {
+  local value rc=0
+  value=$(zro_ui_input "Alan adi" "$ZRO_TXT_LOGSEARCH_DOMAIN") || rc=$?
+  [ "$rc" -eq 0 ] || return "$ZRO_E_CANCEL"
+  if ! zro_validate_domain "$value"; then
+    zro_ui_msgbox "Gecersiz girdi" \
+"Gecersiz alan adi.
+
+Yalnizca alan adini yazin: ornek.com gibi. Adres (ad@ornek.com), protokol
+(https://) veya yol eklemeyin."
+    return "$ZRO_E_INPUT"
+  fi
+  printf '%s' "$value"
 }
 
 # Free text, in whichever declared log the operator names.
@@ -1603,6 +1687,12 @@ $files dosya bastan sona okunacak; bu islem birkac dakika surebilir."
   case $kind in
     named) out=$(zro_logsearch_named "$subject" "$filter" "$ws" "$we") || rc=$? ;;
     text)  out=$(zro_logsearch_text "$key" "$subject" "$ws" "$we") || rc=$? ;;
+    # The two questions about everybody. Each door is named literally, for the
+    # reason the delivery trace names its three filters literally: a single call
+    # site handing a variable to the engine would be a question nobody can read out
+    # of this file.
+    msgid) out=$(zro_logsearch_msgid "$subject" "$ws" "$we") || rc=$? ;;
+    sender-domain) out=$(zro_logsearch_sender_domain "$subject" "$ws" "$we") || rc=$? ;;
     # Unreachable while the two callers above agree with this list, and here so
     # that they may only disagree loudly: without it a door added to one and
     # missed here would leave $out holding the PREVIOUS search's answer and $rc at

@@ -297,12 +297,22 @@ for bin in egrep fgrep zgrep zegrep rgrep ack ripgrep rg awk sed perl; do
   assert_fail zro_allowed "$bin" -F 'x'
 done
 
-it "the allowlist names exactly the two searches the tool exposes"
+it "and the case-folded form of the pattern search, which is one question's rule"
+# A DOMAIN IS CASE-INSENSITIVE and an identifier is not, so the fold is approved
+# for the pattern form and refused for the literal one. Approving it for both would
+# make a message-id search report a different message as this one.
+assert_ok zro_allowed grep -a -E -i 'from=<[^>]*@example\.com>' '/var/log/zimbra.log'
+assert_ok zro_allowed grep -a -E -i -m 200 'from=<[^>]*@example\.com>'
+assert_fail zro_allowed grep -a -F -i 'ali@example.com'
+assert_fail zro_allowed grep -a -F -i -m 200 'ali@example.com'
+
+it "the allowlist names exactly the searches the tool exposes"
 # The equality that keeps the list the complete account of what may be asked of
 # this binary: a third match form, or a second spelling of one of these, fails
 # here rather than passing as an ordinary new entry.
 assert_eq "$(zro_allow_entries | grep -E '^grep:')" \
-  "$(printf '%s\n%s\n%s\n%s' 'grep:-a:-F' 'grep:-a:-E' 'grep:-a:-F:-m' 'grep:-a:-E:-m')"
+  "$(printf '%s\n%s\n%s\n%s\n%s' \
+     'grep:-a:-F' 'grep:-a:-E' 'grep:-a:-F:-m' 'grep:-a:-E:-m' 'grep:-a:-E:-i')"
 
 # -------------------------------------------- the priority the gate imposes --
 
@@ -461,11 +471,12 @@ assert_ok zro_allowed tail -n 500 '/var/log/zimbra.log'
 assert_ok zro_allowed gzip -dc '/var/log/zimbra.log.1.gz'
 assert_ok zro_allowed zmcontrol -v
 
-it "the allowlist names exactly four flags in a data position"
-# Four entries, and each arrived with the ticket that needs it: the entry-only
-# account read, the raw-byte form of the mailbox size, and the match cap on each
-# of the search's two match forms. A fifth added without a ticket behind it fails
-# here — which is the same friction the list itself exists to impose.
+it "the allowlist names exactly five flags in a data position"
+# Five entries, and each arrived with the ticket that needs it: the entry-only
+# account read, the raw-byte form of the mailbox size, the match cap on each of the
+# search's two match forms, and the case fold on the one question whose value is a
+# domain. A sixth added without a ticket behind it fails here — which is the same
+# friction the list itself exists to impose.
 #
 # The two caps are one decision written twice, because `-F` and `-E` are two
 # operations: what the cap does behind a literal match and behind a pattern this
@@ -477,8 +488,8 @@ it "the allowlist names exactly four flags in a data position"
 # the first would let `zmprov:-l:ga:-t` be added in silence, which is the entry a
 # maintainer would reach for first.
 data_flags=$(zro_allow_entries | grep -E '^[^:]+:[^-][^:]*:-|^[^:]+:-[^:]*:[^:]*:')
-assert_eq "$data_flags" "$(printf '%s\n%s\n%s\n%s' \
-  'zmprov:ga:-e' 'zmmailbox:gms:-v' 'grep:-a:-F:-m' 'grep:-a:-E:-m')"
+assert_eq "$data_flags" "$(printf '%s\n%s\n%s\n%s\n%s' \
+  'zmprov:ga:-e' 'zmmailbox:gms:-v' 'grep:-a:-F:-m' 'grep:-a:-E:-m' 'grep:-a:-E:-i')"
 
 # zmprov gmi maps to the admin GetMailboxRequest, whose handler calls
 # MailboxManager.getMailboxByAccount(account) — the AUTOCREATE overload,

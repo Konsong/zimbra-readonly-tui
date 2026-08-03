@@ -296,11 +296,14 @@ for bad in "-v" " leading-space"; do
   assert_eq "$(ran)" ""
 done
 
-it "no answer an operator can give makes a question run a pattern they typed"
+it "no free text an operator types is ever run as a pattern"
 # The half of this feature that keeps a search from being a way to run a regular
-# expression on a production mail server. Whatever is typed reaches the literal
-# reader; the pattern reader only ever sees a pattern out of this program's own
-# table.
+# expression on a production mail server. Whatever is typed into THIS door reaches
+# the literal reader, whatever it looks like.
+#
+# The sending-domain question is the one place a typed value reaches a pattern, and
+# it is not this door: that value is validated as a domain and escaped first, which
+# tests/test_logsearch.sh drives over every metacharacter the tool declares.
 : >"$ZRO_MOCK_LOG"
 for typed in 'status=.*' '.*' 'a|b' '(x)+'; do
   queue "text" "syslog" "$typed" "week" "yes" "__CANCEL__" "__CANCEL__"
@@ -335,6 +338,118 @@ done <<EOF
 $(grep '^grep' "$ZRO_MOCK_LOG")
 EOF
 assert_eq "$undeclared" ""
+
+# --- the questions that are about everybody -----------------------------------
+
+it "the question menu offers both questions about the server itself"
+queue "__CANCEL__"
+: >"$ZRO_UI_OUT"
+zro_menu_logsearch
+out=$(transcript)
+missing=""
+while IFS= read -r id; do
+  [ -n "$id" ] || continue
+  case $out in
+    *"$(zro_logsearch_lookup_label "$id")"*) ;;
+    *) missing="$missing [$id]" ;;
+  esac
+done <<EOF
+$(zro_logsearch_lookups)
+EOF
+assert_eq "$missing" ""
+
+it "a message-id is asked for, then found across the window in one scan"
+queue "msgid" "delivered-1785678543@capture.example.com" "week" "yes" "__CANCEL__" "__CANCEL__"
+: >"$ZRO_UI_OUT"; : >"$ZRO_MOCK_LOG"
+zro_menu_logsearch
+out=$(transcript)
+assert_contains "$out" "ileti kimligi: delivered-1785678543@capture.example.com"
+assert_contains "$out" "message-id=<delivered-1785678543@capture.example.com>"
+assert_eq "$(ran | grep -c .)" "1"
+
+it "and the prompt warns that the identifier is matched case-sensitively"
+# It matters more here than on the delivery trace: this reader has no opinion about
+# case at all, so an identifier retyped in the wrong case is an empty answer on the
+# one screen whose empty answers are supposed to mean something.
+assert_contains "$out" "BUYUK/kucuk harf duyarlidir"
+
+it "one file, one read, held to the class the entry declares"
+assert_cost log-search "$(ran | grep -c .)" 1
+
+it "a sending domain is asked for, and answered from the envelope sender"
+queue "sender-domain" "example.com" "week" "yes" "__CANCEL__" "__CANCEL__"
+: >"$ZRO_UI_OUT"; : >"$ZRO_MOCK_LOG"
+zro_menu_logsearch
+out=$(transcript)
+assert_contains "$out" "gonderen alan adi: example.com"
+assert_contains "$out" "from=<ahmet.yilmaz@example.com>"
+assert_eq "$(ran | grep -c .)" "1"
+
+it "and the prompt says which direction the question is about"
+# Mail FROM this domain, not mail TO it. An operator who read it the other way
+# would take an empty answer as proof of the opposite thing.
+assert_contains "$out" "GELDI mi"
+assert_contains "$out" "GIDEN mailler bu"
+
+it "neither question asks the directory or a mailbox anything"
+# THE WHOLE POINT OF ANSWERING THEM FROM THE LOG. Per account, each would be a
+# query per mailbox and a gate check per account; here they are one scan, and the
+# existence gate is not involved at all.
+log=$(cat "$ZRO_MOCK_LOG")
+assert_contains "$log" "grep"
+assert_not_contains "$log" "zmprov"
+assert_not_contains "$log" "zmmailbox"
+assert_not_contains "$log" "zmmsgtrace"
+
+it "and a cap reached through one of these doors is disclosed like any other"
+# The engine's disclosures are shared, but a door that bypassed them would be
+# invisible here — and these two are the doors whose answers read most like a
+# verdict. The captured identifier appears twice in the mail log, so a cap of one
+# stops the scan inside the file it was found in.
+queue "msgid" "delivered-1785678543@capture.example.com" "week" "yes" "__CANCEL__" "__CANCEL__"
+: >"$ZRO_UI_OUT"
+ZRO_LOGSEARCH_MATCHES=1 zro_menu_logsearch
+out=$(transcript)
+assert_contains "$out" "SINIRA ULASILDI"
+assert_contains "$out" "TEXT Log arama - EKSIK TARAMA"
+
+it "an answer that found nothing still names the window and the files"
+queue "sender-domain" "yok-boyle-alan.example" "week" "yes" "__CANCEL__" "__CANCEL__"
+: >"$ZRO_UI_OUT"
+zro_menu_logsearch
+out=$(transcript)
+assert_contains "$out" "MSG Kayit yok"
+assert_contains "$out" "BASTAN SONA okundu"
+assert_contains "$out" "$SYS"
+
+it "a value that is not a domain is refused before any file is opened"
+queue "sender-domain" "ahmet@example.com" "__CANCEL__" "__CANCEL__"
+: >"$ZRO_UI_OUT"; : >"$ZRO_MOCK_LOG"
+zro_menu_logsearch
+assert_contains "$(transcript)" "MSG Gecersiz girdi"
+assert_eq "$(ran)" ""
+
+it "and cancelling the value returns to the question menu, having read nothing"
+for entry in msgid sender-domain; do
+  queue "$entry" "__CANCEL__" "__CANCEL__"
+  : >"$ZRO_UI_OUT"; : >"$ZRO_MOCK_LOG"
+  zro_menu_logsearch
+  assert_eq "$(ran)" ""
+  assert_eq "$(grep -c 'MENU Log arama' "$ZRO_UI_OUT")" "2"
+done
+
+it "and neither is narrowed by the selected address"
+# They are questions about the server. Offering the address filter would turn one
+# of them into a question about the session's subject, which is the screen next
+# door.
+zro_sel_set "ahmet.yilmaz@example.com"
+queue "msgid" "delivered-1785678543@capture.example.com" "week" "yes" "__CANCEL__" "__CANCEL__"
+: >"$ZRO_UI_OUT"
+zro_menu_logsearch
+out=$(transcript)
+assert_not_contains "$out" "MENU Adres suzgeci"
+assert_contains "$out" "message-id=<delivered-1785678543@capture.example.com>"
+zro_sel_clear
 
 # --- the address filter -------------------------------------------------------
 
