@@ -1,0 +1,18 @@
+num: 13, more: false
+
+      Id  Type   From                  Subject                                             Date
+    ----  ----   --------------------  --------------------------------------------------  --------------
+ 1.  273  mess   Ali Veli              Toplu ileti 8                                       08/03/26 17:46
+ 2.  272  mess   Ali Veli              Toplu ileti 5                                       08/03/26 17:46
+ 3.  271  mess   Ali Veli              Toplu ileti 6                                       08/03/26 17:46
+ 4.  270  mess   Ali Veli              Toplu ileti 7                                       08/03/26 17:46
+ 5.  269  mess   Ali Veli              Toplu ileti 2                                       08/03/26 17:46
+ 6.  268  mess   Ali Veli              Toplu ileti 4                                       08/03/26 17:46
+ 7.  267  mess   Ali Veli              Toplu ileti 3                                       08/03/26 17:46
+ 8.  266  mess   Ali Veli              Toplu ileti 1                                       08/03/26 17:46
+ 9.  264  mess   Ali Veli              Ynt: Temmuz faturasi                                08/03/26 17:38
+10.  263  mess   Ali Veli              Bir "tirnakli" konu                                 08/03/26 17:38
+11.  262  mess   Ali Veli              Temmuz faturasi                                     08/03/26 17:38
+12.  259  mess   ali.veli              Toplanti notlari                                    07/31/26 00:29
+13.  258  mess   ali.veli              Hosgeldiniz                                         07/31/26 00:29
+

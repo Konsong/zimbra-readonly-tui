@@ -168,6 +168,63 @@ is formatted here, from a count of bytes, and an answer that is not all digits i
 [unreadable](#asking-about-an-address) rather than parsed.
 _Avoid_: size string, human-readable size — the second is what this is not
 
+## Searching a mailbox
+
+**Search criterion**:
+One question a search may be narrowed by — a sender, a subject, a day, a folder —
+declared with the operator it becomes and the kind of value it takes. The operator
+chooses criteria and supplies values; **nothing an operator types becomes an
+operator**, so a query cannot be silently mistyped into a different one. Criteria
+combine as *and*: an answer is what satisfies all of them.
+_Avoid_: filter, search term — a filter is a tracer flag, and a term is what a
+criterion becomes
+
+**Built query**:
+The one string a set of criteria turns into, in Zimbra's own query language, sent
+as a single element of an argument vector and **shown on the screen above its own
+answer**. It is the only thing an operator can check a result against, and on the
+day a criterion means something other than its label promised, the only thing that
+would show it.
+_Avoid_: search string, filter expression
+
+**Query quoting**:
+Wrapping a value so the query language reads it as the value it is: a literal
+double quote becomes `\"` and **nothing else is escaped**, because a backslash is
+an ordinary character there. The third escaping layer, beside the shell safety the
+[exec gate](#the-guarantee) provides by passing argument arrays and the pattern
+escaping a [delivery trace](#delivery-tracing) needs. A value that would
+**terminate its own quoting** — one ending in a backslash — is refused rather than
+escaped: it either searches for something else in silence or takes the criterion
+behind it down with it, and refusing is the only one of the three that is visible.
+_Avoid_: escaping (alone — say which layer), sanitising
+
+**Bounded result**:
+An answer capped at a fixed number of hits, where the **search itself was not
+bounded**: the server examined the whole mailbox and reported through its own flag
+that it had more to give. The opposite trade from a [bounded
+read](#delivery-tracing), and a different thing again from a [match-bounded
+scan](#searching-logs) — nothing went unread, so a capped answer is not a
+[partial scan](#reduced-service) and is never disclosed as one.
+_Avoid_: truncated result, and **page** as a name for it — a page is the thing
+Zimbra prints, whose column widths it computes from the rows on that one page, and
+that meaning is the reason the word may not also mean this one
+
+**Display sender**:
+What the result table prints in its sender column: a **display name**, cut at
+twenty characters with nothing marking the cut. It is not an address and no
+address can be recovered from it — two people can appear under one string — which
+is why every screen showing one says so.
+_Avoid_: sender, from address — both are what this is not
+
+**Virtual conversation**:
+Zimbra's name for a conversation holding **one** message: the negation of that
+message's id. It is a real id the server accepts and one this tool will not send —
+a value beginning with a dash standing in the [data position](#the-guarantee) is
+looked up in the allowlist like any other flag, and no list can carry an entry per
+id. So it is answered without running anything, in the words that make it a result:
+the conversation holds one message, and the operator is already looking at it.
+_Avoid_: single-message conversation (as an id), fake conversation
+
 ## Delivery tracing
 
 **Delivery trace**:

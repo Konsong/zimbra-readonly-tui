@@ -308,4 +308,82 @@ assert_status "$ZRO_E_INPUT" zro_validate_domain 'example'
 assert_status "$ZRO_E_INPUT" zro_validate_domain 'exa mple.com'
 assert_status "$ZRO_E_INPUT" zro_validate_domain 'example.com; id'
 
+# ------------------------------------------- the query language's quoting --
+
+it "wraps a value for the query language and escapes the one character that is special"
+# Zimbra's own rule, from Query.java: inside a quoted term a literal double quote
+# is written \" and NOTHING else is escaped. Measured against the server on
+# 2026-08-03: a subject really containing quotes is found by the escaped form.
+assert_out_eq '"fatura"' zro_query_quote 'fatura'
+assert_out_eq '"iki kelime"' zro_query_quote 'iki kelime'
+assert_out_eq '"a \"b\" c"' zro_query_quote 'a "b" c'
+assert_out_eq '"ali+fatura@example.com"' zro_query_quote 'ali+fatura@example.com'
+
+it "and leaves every other character alone, the backslash included"
+# The design draft doubled backslashes. Zimbra's unescaper only ever collapses
+# the two-character sequence \" — a doubled backslash is not collapsed, so
+# 'C:\rapor' would be searched for as 'C:\\rapor'.
+assert_out_eq '"C:\rapor"' zro_query_quote 'C:\rapor'
+assert_out_eq '"a\b"' zro_query_quote 'a\b'
+assert_out_eq '"(x) OR -y*"' zro_query_quote '(x) OR -y*'
+assert_out_eq '"in:inbox"' zro_query_quote 'in:inbox'
+
+it "and refuses a value that could terminate its own quoting"
+# THE CASE THIS FUNCTION EXISTS FOR. A trailing backslash pairs with the closing
+# quote: measured on TEST-C, alone at the end of a query the lexer backtracks and
+# silently searches for a DIFFERENT value, and with another quoted criterion
+# behind it the closing quote is swallowed and the whole query fails to parse.
+# Neither may be passed on, and no amount of escaping avoids it — so it is
+# refused. See docs/research/2026-08-03-message-search-and-conversations.md §6.
+# Written as $'…' so the backslash is unambiguous to a reader and to ShellCheck:
+# in single quotes a trailing one reads like an attempt to escape the quote.
+assert_status "$ZRO_E_INPUT" zro_query_quote $'fatura\\'
+assert_status "$ZRO_E_INPUT" zro_query_quote $'fatura\\\\'
+assert_status "$ZRO_E_INPUT" zro_query_quote $'\\'
+assert_status "$ZRO_E_INPUT" zro_query_quote $'a "b" \\'
+
+it "and refuses what would stop being one value"
+# A newline cannot appear inside a quoted term at all — the grammar excludes it,
+# so the query would not lex — and a control character is a second line in every
+# report and log line this program writes about the search.
+assert_status "$ZRO_E_INPUT" zro_query_quote ''
+assert_status "$ZRO_E_INPUT" zro_query_quote
+assert_status "$ZRO_E_INPUT" zro_query_quote $'iki\nsatir'
+assert_status "$ZRO_E_INPUT" zro_query_quote $'sekme\there'
+assert_status "$ZRO_E_INPUT" zro_query_quote $'fatura\r'
+
+it "and the escaped form of a quote survives being read back"
+# The round trip Zimbra's unescaper makes: it replaces the two-character
+# sequence backslash-quote with a quote and touches nothing else. A value
+# carrying a backslash IN FRONT of a quote is the case that would break a rule
+# written the other way round, so it is checked rather than reasoned about.
+quoted=$(zro_query_quote 'a\"b')
+assert_eq "$quoted" '"a\\"b"'
+inner=${quoted#\"}
+inner=${inner%\"}
+assert_eq "${inner//\\\"/\"}" 'a\"b'
+
+# ---------------------------------------------------------- item ids --
+
+it "validates an item id as the digits it is"
+assert_ok zro_validate_item_id '1'
+assert_ok zro_validate_item_id '265'
+assert_ok zro_validate_item_id '2147483647'
+
+it "and refuses a negative one, which is a virtual conversation and not an id this tool may send"
+# Zimbra names a conversation holding ONE message with the negation of that
+# message's id. The CLI accepts it; the exec gate cannot, because a token shaped
+# like a flag in the data position is looked up in the allowlist.
+assert_status "$ZRO_E_INPUT" zro_validate_item_id '-263'
+assert_status "$ZRO_E_INPUT" zro_validate_item_id '-1'
+assert_status "$ZRO_E_INPUT" zro_validate_item_id ''
+assert_status "$ZRO_E_INPUT" zro_validate_item_id
+assert_status "$ZRO_E_INPUT" zro_validate_item_id 'abc'
+assert_status "$ZRO_E_INPUT" zro_validate_item_id '26 5'
+assert_status "$ZRO_E_INPUT" zro_validate_item_id '2.65'
+assert_status "$ZRO_E_INPUT" zro_validate_item_id '+265'
+assert_status "$ZRO_E_INPUT" zro_validate_item_id '0'
+assert_status "$ZRO_E_INPUT" zro_validate_item_id '00265'
+assert_status "$ZRO_E_INPUT" zro_validate_item_id '99999999999999999999'
+
 zro_t_report

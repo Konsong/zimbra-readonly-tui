@@ -471,12 +471,17 @@ assert_ok zro_allowed tail -n 500 '/var/log/zimbra.log'
 assert_ok zro_allowed gzip -dc '/var/log/zimbra.log.1.gz'
 assert_ok zro_allowed zmcontrol -v
 
-it "the allowlist names exactly five flags in a data position"
-# Five entries, and each arrived with the ticket that needs it: the entry-only
-# account read, the raw-byte form of the mailbox size, the match cap on each of the
-# search's two match forms, and the case fold on the one question whose value is a
-# domain. A sixth added without a ticket behind it fails here — which is the same
-# friction the list itself exists to impose.
+it "the allowlist names exactly eight flags in a data position"
+# Eight entries, and each arrived with the ticket that needs it: the entry-only
+# account read, the raw-byte form of the mailbox size, the type and the bound of
+# the message search, the bound of the conversation listing, the match cap on each
+# of the log search's two match forms, and the case fold on the one question whose
+# value is a domain. A ninth added without a ticket behind it fails here — which is
+# the same friction the list itself exists to impose.
+#
+# The search's TYPE is the one of these that changes the QUESTION rather than the
+# shape of the answer: without it the server searches conversations, and the ids it
+# prints then name conversations rather than messages.
 #
 # The two caps are one decision written twice, because `-F` and `-E` are two
 # operations: what the cap does behind a literal match and behind a pattern this
@@ -488,8 +493,9 @@ it "the allowlist names exactly five flags in a data position"
 # the first would let `zmprov:-l:ga:-t` be added in silence, which is the entry a
 # maintainer would reach for first.
 data_flags=$(zro_allow_entries | grep -E '^[^:]+:[^-][^:]*:-|^[^:]+:-[^:]*:[^:]*:')
-assert_eq "$data_flags" "$(printf '%s\n%s\n%s\n%s\n%s' \
-  'zmprov:ga:-e' 'zmmailbox:gms:-v' 'grep:-a:-F:-m' 'grep:-a:-E:-m' 'grep:-a:-E:-i')"
+assert_eq "$data_flags" "$(printf '%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s' \
+  'zmprov:ga:-e' 'zmmailbox:gms:-v' 'zmmailbox:s:-t' 'zmmailbox:s:-l' 'zmmailbox:sc:-l' \
+  'grep:-a:-F:-m' 'grep:-a:-E:-m' 'grep:-a:-E:-i')"
 
 # zmprov gmi maps to the admin GetMailboxRequest, whose handler calls
 # MailboxManager.getMailboxByAccount(account) — the AUTOCREATE overload,
@@ -597,12 +603,43 @@ assert_fail zro_allowed zmmailbox -z -m
 assert_fail zro_allowed zmmailbox -m 'ahmet.yilmaz@example.com'
 assert_fail zro_allowed zmmailbox -z -m 'ahmet.yilmaz@example.com'
 
-it "the allowlist names exactly the four reads that binary exposes"
+it "the allowlist names exactly the six reads that binary exposes"
 # Reading the list has to tell a maintainer what may be asked of a mailbox. A
-# fifth entry added without a ticket behind it fails here, and so does a second
+# seventh entry added without a ticket behind it fails here, and so does a second
 # spelling of one of these.
-assert_eq "$(zro_allow_entries | grep '^zmmailbox:')" "$(printf '%s\n%s\n%s\n%s\n%s' \
-  'zmmailbox:gaf' 'zmmailbox:gf' 'zmmailbox:gfg' 'zmmailbox:gms' 'zmmailbox:gms:-v')"
+assert_eq "$(zro_allow_entries | grep '^zmmailbox:')" \
+  "$(printf '%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s' \
+     'zmmailbox:gaf' 'zmmailbox:gf' 'zmmailbox:gfg' 'zmmailbox:gms' 'zmmailbox:gms:-v' \
+     'zmmailbox:s' 'zmmailbox:s:-t' 'zmmailbox:s:-l' 'zmmailbox:sc' 'zmmailbox:sc:-l')"
+
+it "and the two that read messages are approved for the forms this tool really sends"
+# The search asks for messages with the type flag and for conversations without
+# it, and both are bounded. The conversation listing takes its id and this
+# program's own query as data behind its bound.
+assert_ok zro_allowed zmmailbox s -t message -l 50 'in:inbox'
+assert_ok zro_allowed zmmailbox s -l 50 'in:inbox'
+assert_ok zro_allowed zmmailbox sc -l 50 '265' 'is:anywhere'
+
+it "and refuses the forms it does not"
+# `--dumpster` searches the deleted-item store, `-v` replaces the table with JSON
+# this tool has no parser for, and the paging flags need an interactive session a
+# one-shot invocation does not have. None of them is on the list, so each is an
+# operation nobody has to judge.
+assert_fail zro_allowed zmmailbox s --dumpster 'in:inbox'
+assert_fail zro_allowed zmmailbox s -v 'in:inbox'
+assert_fail zro_allowed zmmailbox s -t message -v 'in:inbox'
+assert_fail zro_allowed zmmailbox s -n
+assert_fail zro_allowed zmmailbox sc -t message -l 50 '265' 'is:anywhere'
+assert_fail zro_allowed zmmailbox search -t message -l 50 'in:inbox'
+assert_fail zro_allowed zmmailbox searchConv -l 50 '265' 'is:anywhere'
+
+it "and a conversation id that carries a sign is refused as the flag it looks like"
+# Zimbra names a conversation holding one message with the NEGATION of that
+# message's id. The CLI would take it; this gate cannot, because a token shaped
+# like a flag in the data position is looked up in the list — and no list can carry
+# an entry per id. lib/validate.sh refuses it before anything runs, and this is
+# what would refuse it if that ever stopped.
+assert_fail zro_allowed zmmailbox sc -l 50 '-263' 'is:anywhere'
 
 it "and the binary it names is the one the gate refuses from a foreign caller"
 # Two declarations that have to agree, and nothing else holds them together: the

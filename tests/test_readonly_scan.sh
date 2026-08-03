@@ -316,14 +316,16 @@ assert_not_contains "$allow" "postsuper"
 assert_not_contains "$allow" "mailq"
 assert_not_contains "$allow" "sendmail"
 
-it "the allowlist exposes the mailbox binary as four reads and nothing else"
+it "the allowlist exposes the mailbox binary as six reads and nothing else"
 # AN OPERATION ARRIVES WITH THE TICKET THAT EXPOSES IT, never because the binary
 # it belongs to became reachable. The gate shipped with nothing behind it; the
-# folder, size and quota screens brought four reads, and reading this list is
-# still how a maintainer learns what may be asked of a mailbox.
+# folder, size and quota screens brought four reads, the message search brought
+# the fifth and the conversation listing the sixth, and reading this list is still
+# how a maintainer learns what may be asked of a mailbox.
 assert_eq "$(printf '%s\n' "$allow" | grep '^zmmailbox:')" \
-  "$(printf '%s\n%s\n%s\n%s\n%s' \
-     'zmmailbox:gaf' 'zmmailbox:gf' 'zmmailbox:gfg' 'zmmailbox:gms' 'zmmailbox:gms:-v')"
+  "$(printf '%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s' \
+     'zmmailbox:gaf' 'zmmailbox:gf' 'zmmailbox:gfg' 'zmmailbox:gms' 'zmmailbox:gms:-v' \
+     'zmmailbox:s' 'zmmailbox:s:-t' 'zmmailbox:s:-l' 'zmmailbox:sc' 'zmmailbox:sc:-l')"
 
 it "and none of them is a command that writes, whatever it is named"
 # The write-named siblings live one letter away from every one of these. `gm` is
@@ -350,27 +352,59 @@ it "every mailbox read names its subcommand literally, and the allowlist approve
 # subcommand beside it is written out. What that buys is the thing the guarantee
 # rests on — reading lib/store.sh proves which questions this tool can ask of a
 # mailbox, without running it.
-mbox_calls=$(printf '%s\n' "$raw_code" \
-             | grep -oE 'zro_mbox_run[[:space:]]+[^[:space:]]+[[:space:]]+[A-Za-z][A-Za-z0-9]*([[:space:]]+-[^[:space:]]+)?' \
-             | sort -u)
+mbox_calls=$(printf '%s\n' "$raw_code" | grep -oE 'zro_mbox_run[[:space:]].*' | sort -u)
 assert_contains "$mbox_calls" "gaf"
 uncovered=""
+seen_keys=""
 while IFS= read -r call; do
   [ -n "$call" ] || continue
-  sub=$(printf '%s' "$call" | awk '{print $3}')
-  flag=$(printf '%s' "$call" | awk '{print $4}')
+  # EVERY POSITION IS READ, NOT JUST THE FIRST ONE BEHIND THE SUBCOMMAND, which is
+  # the same rule the exec gate applies at run time. The search asks for its type
+  # with one flag and its bound with another, so a reader that stopped at the first
+  # would leave the second checked by nobody until it ran.
+  #
+  # Globbing is off around the split: a call site is source text, and a token in it
+  # must not be matched against the files in this directory.
+  set -f
+  # shellcheck disable=SC2206
+  toks=(${call#zro_mbox_run})
+  set +f
+  sub=${toks[1]-}
+  case $sub in ''|-*) continue ;; esac
   key="zmmailbox:$sub"
-  case $flag in
-    # A FLAG IN THE DATA POSITION IS NOT DATA. The size read asks for raw bytes
-    # with one, and it is held to the list under the entry that approved the
-    # subcommand, exactly as `zmprov ga -e` is.
-    -*) key="$key:$flag" ;;
-  esac
   printf '%s\n' "$allow" | grep -qxF -- "$key" || uncovered="$uncovered [$key]"
+  i=2
+  while [ "$i" -lt "${#toks[@]}" ]; do
+    case ${toks[i]} in
+      # A FLAG IN THE DATA POSITION IS NOT DATA. The size read asks for raw bytes
+      # with one and the search asks for its type with another; each is held to
+      # the list under the entry that approved the subcommand, exactly as
+      # `zmprov ga -e` is.
+      -*) key="zmmailbox:$sub:${toks[i]}"
+          seen_keys="$seen_keys$key
+"
+          printf '%s\n' "$allow" | grep -qxF -- "$key" || uncovered="$uncovered [$key]" ;;
+    esac
+    i=$((i + 1))
+  done
 done <<EOF
 $mbox_calls
 EOF
 assert_eq "$uncovered" ""
+
+it "and the reader above really sees every flag, not just the first"
+# The extraction is only as good as what it matches, and a call site written in a
+# shape it cannot split would be checked by nobody while passing quietly. So the
+# flags that exist today are asked for by name — and one of them, the search's
+# bound, stands SECOND in the data, which is exactly the position the reader this
+# replaced could not see.
+for key in zmmailbox:gms:-v zmmailbox:s:-t zmmailbox:s:-l zmmailbox:sc:-l; do
+  if zro_t_has_line "$seen_keys" "$key"; then
+    zro_t_pass
+  else
+    zro_t_fail "the call-site reader did not find [$key]; a flag it cannot see is a flag nobody checks"
+  fi
+done
 
 it "and no mailbox read hands the gate a subcommand this reader cannot resolve"
 # The exemption above is only as good as the extraction, and a call site holding
@@ -457,6 +491,19 @@ store=$(zro_scan_file "$ZRO_SRC/lib/store.sh")
 assert_not_contains "$store" "zro_exec"
 assert_not_contains "$store" "zmprov"
 assert_not_contains "$store" "zmmailbox"
+
+it "and neither does the module that searches one"
+# The same rule for the same reason, and one more that belongs to this module
+# alone: message detail is the read that clears the unread flag it reports, so the
+# file that asks a mailbox what it holds may not name it. `gm` and `gru` are
+# refused by the allowlist as well; this is what stops them being written at all.
+search=$(zro_scan_file "$ZRO_SRC/lib/search.sh")
+assert_not_contains "$search" "zro_exec"
+assert_not_contains "$search" "zmprov"
+assert_not_contains "$search" "zmmailbox"
+for sub in 'gm ' 'gru ' 'mm ' 'mmr ' 'tm ' 'dm '; do
+  assert_not_contains "$search" "zro_mbox_run \$acct $sub"
+done
 
 it "the mailbox binary is named in the gate's own file and nowhere else"
 # THE STRUCTURAL HALF OF THE EXISTENCE GATE. A module that could write the binary's
