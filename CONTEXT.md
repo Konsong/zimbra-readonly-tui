@@ -452,6 +452,73 @@ about this program, and they call for different actions.
 _Avoid_: unknown attribute, error — an error is something a screen reports, this
 is something a field says
 
+## What happens to an account's mail
+
+**Mail settings**:
+Everything that decides where an account's mail goes and what it is sent with —
+the [filter rule sets](#what-happens-to-an-accounts-mail), local delivery, the
+aliases, the [send-as identities](#what-happens-to-an-accounts-mail) and the
+signatures. All of it lives on the account entry or on a child entry of it, so
+**none of it needs a mailbox**: it answers in full for an account that has never
+been used, which is exactly when the question is hardest to answer anywhere else.
+_Avoid_: preferences, mail config — the first is one attribute prefix out of
+several, and half of these are not preferences at all
+
+**Filter rule set**:
+The rules an account's mail is run through, incoming or outgoing. It is **one
+attribute holding a whole script** rather than one attribute per rule, so it is
+read, shown and reasoned about as a single multi-line value — and a rule set
+shown as its first line is not a short answer but a wrong one: the rule that
+files invoices is visible and the rule underneath it that discards a sender is
+not.
+_Avoid_: filters (as a count), sieve — the second is the language it is written
+in, which an operator reading the screen never has to know
+
+**Continuation line**:
+A line of a value that is not its first. `zmprov` prints them raw, with nothing
+marking them as belonging to the value above, and all three of the things that
+would identify them by shape are wrong: a continuation may be **blank**, it may
+begin with **`#`** — every rule in a filter is introduced by a comment — and it
+may read exactly like an attribute line, measured in a captured signature whose
+value carries `Tel: 0212 000 00 00`. So what ends a value is **declared**: the
+reader is given the attribute list the read asked for, and a line begins a new
+attribute only when it begins one of those.
+_Avoid_: wrapped line, folded line — LDIF folds with a leading space and this
+does not
+
+**Local delivery**:
+Whether Zimbra leaves a copy in this account's own mailbox. Disabled, mail goes
+only where a forward sends it — and the mailbox stays empty while every other
+screen reports a healthy account, which is why it is read beside the forwarding
+addresses rather than a screen away. Absent means the attribute is
+[unset](#asking-about-an-address) like any other; what Zimbra does in that case
+is a fact about Zimbra and is said as one.
+_Avoid_: delivery disabled (as a state), mailbox delivery
+
+**Send-as identity**:
+A persona an account may send mail under: a from-address, a display name and
+optionally a reply-to. It is a child entry in the directory, not an attribute.
+**Never called an identity alone**, because this tool already has one — an
+[address identity](#asking-about-an-address) is what a selected address turns out
+to be — and two concepts sharing one noun is how a screen ends up answering the
+wrong question under the right label. Zimbra creates one named `DEFAULT` with the
+account itself, carrying the account's own address; the screen says which one
+that is, so it is not read as a persona somebody chose to make.
+_Avoid_: identity, persona, alias — an alias is an address, and this is a way of
+writing one
+
+**Signature**:
+A footer an account can sign a message with, held as a child entry with a name and
+a body. The **plain-text body is shown**, because the question an operator arrives
+with is what a user's outgoing mail looks like and a list of names does not answer
+it. An **HTML** signature is named and measured rather than shown: it routinely
+carries an embedded image as a data URI, so the markup is not a footer anybody can
+read off a terminal. A body is shown to a fixed number of lines and the bound is
+disclosed, as every bound in this tool is. An account with **no signatures answers
+with no output and success** — a result, and one that reaches the operator as
+`yok` rather than as the word this tool keeps for a question nobody could ask.
+_Avoid_: footer, sig
+
 ## Domains and lists
 
 **Domain**:

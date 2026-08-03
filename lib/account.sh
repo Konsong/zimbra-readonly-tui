@@ -62,6 +62,92 @@ zro_attr_all() {
   '
 }
 
+# THE SIBLING READER, for an attribute whose value has more than one line.
+#
+#   $1  the output      $2  the attribute      $@  every attribute the read asked for
+#
+# A filter rule set is one attribute holding a whole script, and zmprov prints
+# its remaining lines RAW — nothing marks them as continuations. So the reader
+# above answers the first line and stops, which on a nine-line rule set is not a
+# short answer but a WRONG one: it shows an operator a filter that files invoices
+# into a folder and hides the rule underneath it that discards mail from a
+# sender. Absence would have been visible; truncation is not.
+#
+# WHAT COUNTS AS THE END OF A VALUE IS DECLARED, NEVER GUESSED FROM THE SHAPE OF
+# A LINE, and that is the whole design. A continuation line may be blank, it may
+# begin with '#' — every rule in a Zimbra filter is introduced by a comment — and
+# it may look exactly like an attribute line. Measured, in a signature captured
+# from the lab server:
+#
+#     zimbraPrefMailSignature: --
+#     Ahmet Yilmaz
+#     Bilgi Islem
+#
+#     Tel: 0212 000 00 00
+#     zimbraSignatureId: cda8ffdd-...
+#
+# A reader that ended a value at the first `word: value` line would cut that
+# signature off at the telephone number. So the caller passes the attribute list
+# it ASKED FOR — zmprov answers with those and no others — and a line begins a
+# new attribute only when it begins one of THOSE. Every other line is a
+# continuation, which is the rule stated as code rather than as a hope about
+# what a value will not contain.
+#
+# THE FIRST VALUE ONLY. A multi-valued attribute is read with zro_attr_all, whose
+# values are single lines by construction; this answers for the single-valued
+# ones, and a second occurrence is left alone rather than appended to the first.
+#
+# TRAILING BLANK LINES ARE DROPPED, interior ones kept — and that is not a
+# preference, it is the only decidable answer. zmprov ends a record with a blank
+# line, so for the attribute that stands LAST in the output the separator and a
+# trailing blank line of the value are the same bytes in the same place: nothing
+# in the format tells them apart. Interior blanks carry no such ambiguity, they
+# are the operator's own, and they are preserved.
+#
+# The read path happens to strip trailing newlines before this reader sees them —
+# zro_prov_read returns a command substitution — so today the ambiguity does not
+# arise through it. This does not rest on that: a reader whose answer depended on
+# which caller fed it would be a reader nobody can reason about.
+zro_attr_block() {
+  local text=$1 name=$2
+  shift 2
+  awk -v key="$name" -v names="$*" '
+    # The declared attribute this line begins, or nothing at all. Matched on the
+    # separator alone rather than on the space after it, so that an attribute
+    # returned with an empty value still ends the value above it.
+    function attr_at(line,   i, nm, l) {
+      for (i = 1; i <= n; i++) {
+        nm = a[i]
+        l = length(nm)
+        if (substr(line, 1, l + 1) == nm ":" &&
+            (length(line) == l + 1 || substr(line, l + 2, 1) == " ")) return nm
+      }
+      return ""
+    }
+    BEGIN { n = split(names, a, " "); last = 0 }
+    {
+      nm = attr_at($0)
+      if (nm != "") {
+        taking = 0
+        if (nm == key && !seen) {
+          seen = 1
+          taking = 1
+          buf[++k] = substr($0, length(key) + 3)
+          if (buf[k] != "") last = k
+        }
+        next
+      }
+      if (taking) {
+        buf[++k] = $0
+        if ($0 != "") last = k
+      }
+    }
+    END { for (i = 1; i <= last; i++) print buf[i] }
+  ' <<EOF
+$text
+EOF
+}
+
 # Whether the output carries a line for this attribute AT ALL, which is not the
 # same question as what its value is.
 #
@@ -174,13 +260,20 @@ zro_prov_fail_code() {
 # stops the retry from being attempted; being absent from the allowlist is what
 # would refuse it if it were. Two independent refusals, and the existence gate
 # rests on the second.
-ZRO_LDAP_READS=' ga getAccount gam getAccountMembership gc getCos gdl getDistributionList gd getDomain '
+#
+# gsig and gid are here on evidence too, and the evidence matters more for them
+# than for their neighbours: signatures and send-as identities are child entries
+# of the account in the directory, so LDAP mode is where they really live.
+# Measured on TEST-C on 2026-08-03, `zmprov -l gsig` and `zmprov -l gid` answered
+# with the same records SOAP returns for the attributes the mail settings screen
+# asks for — captured, not assumed from the family resemblance.
+ZRO_LDAP_READS=' ga getAccount gam getAccountMembership gc getCos gdl getDistributionList gd getDomain gsig getSignatures gid getIdentities '
 
 # The complete set of subcommands zro_prov_read may hand to the gate. It exists
 # because that one call site passes a variable, which a static reader cannot
 # resolve — so the set of values that variable may hold is written down here,
 # enforced at runtime, and checked against the allowlist by the scanner.
-ZRO_PROV_READS=' ga gam gc gdl gd gis '
+ZRO_PROV_READS=' ga gam gc gdl gd gis gsig gid '
 
 zro_prov_ldap_capable() {
   [ -n "${1-}" ] || return 1

@@ -1,0 +1,32 @@
+# name ahmet.yilmaz@example.com
+zimbraMailAlias: a.yilmaz@example.com
+zimbraMailAlias: ayilmaz@example.com
+zimbraMailForwardingAddress: arsiv@example.net
+zimbraMailForwardingAddress: denetim@example.net
+zimbraMailOutgoingSieveScript: require ["fileinto", "copy"];
+
+# Giden kopya
+if anyof (header :contains ["to"] ["arsiv@example.com"])
+{
+    fileinto "Gonderilmis";
+    stop;
+}
+zimbraMailSieveScript: require ["fileinto", "copy", "reject", "tag", "flag", "log"];
+
+# Faturalar
+if anyof (header :contains ["subject"] ["fatura"])
+{
+    fileinto "Faturalar";
+    stop;
+}
+
+# Duyurular
+
+if anyof (header :contains ["from"] ["duyuru@example.com"])
+{
+    fileinto "Duyurular";
+    tag "otomatik";
+    stop;
+}
+zimbraPrefMailForwardingAddress: kisisel-yedek@example.net
+zimbraPrefMailLocalDeliveryDisabled: TRUE

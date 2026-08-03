@@ -1,0 +1,11 @@
+# name Kurumsal
+zimbraPrefMailSignature: --
+Ahmet Yilmaz
+Bilgi Islem
+
+Tel: 0212 000 00 00
+zimbraSignatureName: Kurumsal
+
+# name Kisa
+zimbraPrefMailSignatureHTML: <p>Ahmet Yilmaz</p>
+zimbraSignatureName: Kisa

@@ -26,6 +26,8 @@ ZRO_ROOT=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 . "$ZRO_ROOT/lib/ui.sh"
 # shellcheck source=lib/account.sh
 . "$ZRO_ROOT/lib/account.sh"
+# shellcheck source=lib/mailset.sh
+. "$ZRO_ROOT/lib/mailset.sh"
 # shellcheck source=lib/mailbox.sh
 . "$ZRO_ROOT/lib/mailbox.sh"
 # shellcheck source=lib/store.sh
@@ -399,6 +401,15 @@ zro_account_cost_note() {
     account-provenance)
       printf 'Bu ekran hesap kaydini IKI KEZ okur: once yalnizca hesapta tanimli\n'
       printf 'olanlari, sonra yururlukteki degerleri. Her sorgu birkac saniye surer.' ;;
+    # THE THIRD READ IS NAMED because it is not a field the first one could have
+    # carried: a signature and a send-as identity are child entries in the
+    # directory rather than attributes of the account. An operator told 'several
+    # queries' would not know why one screen about one account costs three.
+    account-mailsettings)
+      printf 'Bu ekran hesabi UC KEZ okur: hesap kaydini, imzalarini ve gonderim\n'
+      printf 'kimliklerini. Son ikisi dizinde ayri kayitlardir. Mailboxa bakilmaz.' ;;
+    account-filters)
+      printf 'Bu ekran hesap kaydini BIR KEZ okur ve mailboxa bakmaz.' ;;
     *)
       printf 'Bu ekran birden fazla sorgu calistirir; her biri birkac saniye surebilir.' ;;
   esac
@@ -442,9 +453,11 @@ Hesap: $acct
 $(zro_account_cost_note "$id")"
 
   case $id in
-    account-card)       out=$(zro_account_card "$acct") || rc=$? ;;
-    account-provenance) out=$(zro_account_provenance "$acct") || rc=$? ;;
-    account-membership) out=$(zro_account_membership "$acct") || rc=$? ;;
+    account-card)         out=$(zro_account_card "$acct") || rc=$? ;;
+    account-provenance)   out=$(zro_account_provenance "$acct") || rc=$? ;;
+    account-membership)   out=$(zro_account_membership "$acct") || rc=$? ;;
+    account-mailsettings) out=$(zro_mailset_card "$acct") || rc=$? ;;
+    account-filters)      out=$(zro_mailset_filters_card "$acct") || rc=$? ;;
     # Declared in the one list and not answered here: a defect in this file, and
     # said out loud rather than swallowed. Without it $out would still hold the
     # PREVIOUS answer and the operator would read one question's result under
@@ -2123,6 +2136,8 @@ EOF
 ZRO_MENU_OPS='account-card:account:1:Hesap karti
 account-provenance:account:1:Deger nereden geliyor (hesap mi, devralma mi)
 account-membership:account:1:Dagitim listesi uyelikleri
+account-mailsettings:account:1:Posta ayarlari (filtre, teslim, imza)
+account-filters:account:1:Filtre kurallarinin tam metni
 mailbox-status:account:2:Mailbox var mi
 mailbox-quota:account:2:Kota kullanimi
 mailbox-size:account:2:Mailbox boyutu

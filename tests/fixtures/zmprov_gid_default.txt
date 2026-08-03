@@ -1,0 +1,4 @@
+# name DEFAULT
+zimbraPrefFromAddress: sade@example.com
+zimbraPrefFromDisplay: Sade Kullanici
+zimbraPrefIdentityName: DEFAULT
