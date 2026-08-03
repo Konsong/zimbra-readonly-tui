@@ -215,7 +215,57 @@ so files are now read newest first and what a cap costs is the oldest evidence.
 The second run answered from the live `audit.log` and named the two older
 rotations as unscanned.
 
-## 6. What was left behind on TEST-C
+## 6. Second pass: the two questions that are about everybody, for issue #37
+
+Same day, same method — the modules driven as `root` through `runuser`, over the
+real mail log, `nice` wrapped so the vector could be recorded.
+
+**The identifiers this server really writes** are `message-id=<...>` at the cleanup
+stage, `Message-ID: <...>` in the amavis line, and `msgid=<...>` in `mailbox.log`
+at delivery. Searching the **bare** identifier finds all three, which is why the
+lookup unwraps a pasted value and matches it literally:
+
+```
+message-id=<20260802134903.C2131104BA8@posta.sirket.lcl>
+```
+
+| Condition | What the tool did |
+|---|---|
+| A real identifier, bare | **0**, one line found, from a complete 5-file scan |
+| The same identifier wearing its angle brackets | **byte-identical answer** |
+| An identifier that is nowhere | **14** (`ZRO_E_NO_RESULT`) — a complete scan that found nothing |
+| Sender domain `sirket.lcl` | **0**, 35 lines across 5 files, pattern `from=<[^>]*@sirket\.lcl>` |
+| Sender domain `nosuchdomain.invalid` | **14** — and this is the point of the pattern |
+| Every reader | wrapped: `grep -a -F -m 200 <id> /var/log/zimbra.log` under `nice`/`ionice` |
+| The mail log files | **byte-identical** before and after |
+
+**A domain is found however it is typed; an identifier is not.** Measured on the
+same log, over the 35 lines that domain really sent:
+
+| Typed | Found |
+|---|---|
+| `sirket.lcl`, `SIRKET.LCL`, `Sirket.Lcl`, `sIRKET.lcl` | **35 lines each** |
+| `NOSUCHDOMAIN.INVALID` and `nosuchdomain.invalid` | **no result** — still the envelope sender, not any mention |
+| The identifier as written | found |
+| The same identifier upper-cased | **no result** |
+
+Those are opposite rules for opposite reasons, and both are the reader's own flag
+rather than anything done to the operator's text. A domain is the same domain
+whatever case either end wrote it in — the operator's typing *and* the sending
+client's `MAIL FROM`, which Postfix logs as it was given — so folding only the
+input would have fixed half the problem and left a false "nothing arrived from
+there" for the other half. An identifier is a token some agent generated, so
+folding it would report a different message as this one.
+
+**`nosuchdomain.invalid` is the case that justifies the one place operator text
+reaches a pattern.** That domain is all over this log — it is the destination of
+the deferred test messages — but it has never *sent* anything. A whole-line match
+for the domain would answer that mail arrived from it, which is the opposite of
+the truth. Matching `from=<[^>]*@…>` answers **no result**, correctly, and that is
+not expressible without interpolating the (validated, escaped) value into the
+pattern.
+
+## 7. What was left behind on TEST-C
 
 - **Two failed authentications** are recorded in `audit.log` and `mailbox.log`, one against
   `zimscope-fixture-populated-20260731@` and one against an address nobody has. Nothing was locked out:

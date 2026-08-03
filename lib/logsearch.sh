@@ -59,8 +59,16 @@ ZRO_LOGSEARCH_TEXT_MAX=200
 #
 # The operator chooses a question and this program owns the pattern. That is the
 # half of this feature that keeps a search from being a way to run a regular
-# expression on a production server: nothing an operator types reaches the pattern
-# form of the reader at all, and a test holds that true by reading the source.
+# expression on a production server: no text an operator types becomes a pattern
+# here, and the address that may narrow one of these questions is matched as the
+# literal it is by a second reader rather than spliced into this one.
+#
+# ONE VALUE IN THIS MODULE REACHES A PATTERN, and it is not here: the sending
+# domain, further down, because *arrived from* is a fact about one field of a line
+# and no whole-line match can express it. It is validated as a domain and escaped
+# before it goes anywhere near the reader, and the function that builds it says
+# why. Everything else an operator can type — free text, an address filter, a
+# message-id — reaches the literal reader and only the literal reader.
 #
 # Every id here must have a pattern below and every pattern must be named here.
 # Neither half can check the other at run time without reaching into its business,
@@ -78,16 +86,30 @@ delivered:syslog:Yerel teslim (mailbox sunucusuna teslim edildi mi)
 sessions:audit:Hesap oturumlari (basarili ve basarisiz girisler)
 mboxerror:mailbox:Mailbox hatalari (istisna ve hata satirlari)'
 
-zro_logsearch_question_entries() {
-  printf '%s' "$ZRO_LOGSEARCH_QUESTIONS" | grep -v '^[[:space:]]*$'
+# --- reading a declaration table ---------------------------------------------
+#
+# TWO TABLES SHARE ONE SHAPE, `<id>:<log>:<label>`, and therefore one parser. They
+# are two tables because their CONTRACTS differ — a question below carries a
+# pattern this program owns and may be narrowed by an address, while a lookup
+# further down takes a value and asks whether it is there at all — and that is a
+# difference between what the entries MEAN, not between how a line is taken apart.
+# A second copy of the taking-apart is a copy that can drift while both tables
+# still look right.
+#
+# The table travels as a value rather than as a name, so nothing here has to know
+# which declarations exist; the four named accessors below say which is which, and
+# they are what call sites and the suite read.
+
+zro_logsearch_entries() {
+  printf '%s' "${1-}" | grep -v '^[[:space:]]*$'
 }
 
-zro_logsearch_questions() {
-  zro_logsearch_question_entries | sed 's/:.*$//'
+zro_logsearch_ids() {
+  zro_logsearch_entries "${1-}" | sed 's/:.*$//'
 }
 
-zro_logsearch_question_entry() {
-  local id=${1-} entry
+zro_logsearch_entry() {
+  local table=${1-} id=${2-} entry
   [ -n "$id" ] || return "$ZRO_E_INPUT"
   while IFS= read -r entry; do
     [ -n "$entry" ] || continue
@@ -96,25 +118,40 @@ zro_logsearch_question_entry() {
       return 0
     fi
   done <<EOF
-$(zro_logsearch_question_entries)
+$(zro_logsearch_entries "$table")
 EOF
   return "$ZRO_E_INPUT"
 }
 
-# Which declared log a named question is about.
-zro_logsearch_question_log() {
+# Which declared log an entry is about.
+zro_logsearch_entry_log() {
   local entry
-  entry=$(zro_logsearch_question_entry "${1-}") || return "$ZRO_E_INPUT"
+  entry=$(zro_logsearch_entry "${1-}" "${2-}") || return "$ZRO_E_INPUT"
   entry=${entry#*:}
   printf '%s' "${entry%%:*}"
 }
 
-# What the question is called on screen.
-zro_logsearch_question_label() {
+# What it is called on screen.
+zro_logsearch_entry_label() {
   local entry
-  entry=$(zro_logsearch_question_entry "${1-}") || return "$ZRO_E_INPUT"
+  entry=$(zro_logsearch_entry "${1-}" "${2-}") || return "$ZRO_E_INPUT"
   entry=${entry#*:}
   printf '%s' "${entry#*:}"
+}
+
+# The four names the rest of the program uses. Thin on purpose: what they carry is
+# WHICH declaration is being read, which is the thing a call site should say out
+# loud and the thing the generic reader above cannot.
+zro_logsearch_questions() {
+  zro_logsearch_ids "$ZRO_LOGSEARCH_QUESTIONS"
+}
+
+zro_logsearch_question_log() {
+  zro_logsearch_entry_log "$ZRO_LOGSEARCH_QUESTIONS" "${1-}"
+}
+
+zro_logsearch_question_label() {
+  zro_logsearch_entry_label "$ZRO_LOGSEARCH_QUESTIONS" "${1-}"
 }
 
 # THE PATTERNS THEMSELVES, one per question, each keyed on a line a real server
@@ -275,12 +312,20 @@ EOF
 # hidden. A shell string cannot hold a NUL at all, so there is no version of this
 # that keeps it; the line is shown without it. Stripping it upstream would mean a
 # third reader in the pipeline for a byte no screen can display anyway.
+#
+# THE THIRD FORM IS THE PATTERN FORM WITH CASE FOLDED, and it exists for exactly
+# one question. A domain is the same domain whatever case it was written in, at
+# both ends: the operator may type `Example.com`, and the sending client may have
+# written `MAIL FROM:<x@eXAMPLE.com>`, which Postfix logs as it was given. Folding
+# the operator's value would fix only their half; the search itself has to be
+# case-blind or it answers "nothing arrived from there" about mail that did.
 zro_logsearch_grep() {
   local form=${1-}
   [ "$#" -eq 0 ] || shift
   case $form in
-    -F) zro_exec grep -a -F "$@" ;;
-    -E) zro_exec grep -a -E "$@" ;;
+    -F)  zro_exec grep -a -F "$@" ;;
+    -E)  zro_exec grep -a -E "$@" ;;
+    -Ei) zro_exec grep -a -E -i "$@" ;;
     *)
       zro_log error "denied, no such log search form: $form"
       return "$ZRO_E_DENIED"
@@ -503,7 +548,7 @@ zro_logsearch_run() {
   fi
 
   case $form in
-    -E|-F) ;;
+    -E|-F|-Ei) ;;
     *) zro_log error "denied, no such log search form: $form"
        return "$ZRO_E_DENIED" ;;
   esac
@@ -726,6 +771,151 @@ zro_logsearch_named() {
     zro_validate_email "$filter" || return "$ZRO_E_INPUT"
   fi
   zro_logsearch_run "$log" -E "$pattern" "$filter" "${3-}" "${4-}" "$label"
+}
+
+# --- the questions that are about everybody ----------------------------------
+#
+# TWO QUESTIONS THAT ARE NOT ABOUT THE SELECTED ADDRESS AT ALL. Has this message
+# passed through the server; has anything arrived from this domain. Asked of the
+# accounts they concern, each would be a query per mailbox and a gate check per
+# account — a server-wide sweep, which this tool refuses to be. Asked of the logs
+# they are ONE SCAN of the window's files, and they open no mailbox.
+#
+# A SERVER-WIDE QUESTION IS NOT A SERVER-WIDE SWEEP, and the difference is the
+# whole reason these can exist here: a sweep's work grows with the number of
+# accounts on the server, and this work grows with the window the operator chose.
+# One is refused by design; the other is what the log is for.
+#
+# They live beside the named questions rather than among them because their
+# contract is different: a named question is "show me every X" and takes at most an
+# address to narrow it, while these take a VALUE and ask whether it is there at
+# all. Two tables, each uniform, rather than one with a mode field in it.
+#
+# THE MAIL LOG ANSWERS BOTH, and only it. Postfix's cleanup stage records every
+# message's identifier as it arrives, and its queue manager records every message's
+# envelope sender, so a scan of that one family covers every message the server
+# took. mailbox.log carries the same identifier again for a message delivered
+# locally — that is a second record of a subset, not a second source, and reaching
+# it costs a second scan of a second family. An operator who wants it has the
+# free-text door.
+ZRO_LOGSEARCH_LOOKUPS='msgid:syslog:Ileti kimligi sunucudan gecti mi
+sender-domain:syslog:Bu alan adindan mail geldi mi'
+
+zro_logsearch_lookups() {
+  zro_logsearch_ids "$ZRO_LOGSEARCH_LOOKUPS"
+}
+
+zro_logsearch_lookup_log() {
+  zro_logsearch_entry_log "$ZRO_LOGSEARCH_LOOKUPS" "${1-}"
+}
+
+zro_logsearch_lookup_label() {
+  zro_logsearch_entry_label "$ZRO_LOGSEARCH_LOOKUPS" "${1-}"
+}
+
+# Whether one message passed through this server, by its identifier.
+#
+#   $1  the identifier, as an operator holds it   $2 start   $3 end
+#
+# MATCHED LITERALLY, AND THE BRACKETS COME OFF FIRST. The log records the same
+# identifier in three shapes — `message-id=<X>` where Postfix cleans the message
+# up, `Message-ID: <X>` where amavis reports it, and `msgid=<X>` where the mailbox
+# server takes delivery — so searching for the bare identifier finds every one of
+# them, while searching for any single one of the three forms would find a third of
+# the truth. All three are captured; see the two research files.
+#
+# The value is punctuation from end to end, which is why it is the literal reader
+# that gets it: read as a pattern, the dots match anything and the answer is
+# somebody else's message.
+#
+# THIS IS NOT THE DELIVERY TRACE, and the two are worth telling apart. The trace
+# asks the tracing binary to assemble a message's hops into a report; this reads
+# the log itself, finds every line carrying the identifier, and shows them as they
+# were written. The trace is the better answer where it can run; this one answers
+# on a host with no tracing binary, and it answers about lines the tracer does not
+# parse.
+#
+# The unwrapping is the delivery trace's, called rather than copied. What an
+# operator has in hand is a header line either way, and a second implementation of
+# "take off the brackets, but only a matching pair, and only one" is the kind of
+# pair that drifts — one screen searching for a value the other would have shown.
+zro_logsearch_msgid() {
+  local id
+  id=$(zro_trace_msgid_bare "${1-}")
+  zro_validate_msgid "$id" || return "$ZRO_E_INPUT"
+  zro_logsearch_run syslog -F "$id" '' "${2-}" "${3-}" \
+    "$(zro_logsearch_lookup_subject msgid "$id")"
+}
+
+# What one of these searches is CALLED once it has a value, written once.
+#
+#   $1  the lookup id      $2  the value it was given
+#
+# ONE NAME FOR ONE SEARCH. The screen says what it is about to do — in the wait
+# notice and on the screen that reports finding nothing — and the report says what
+# it did, and those have to be the same words. Built here rather than composed at
+# each end, because two ends composing their own name is how an operator ends up
+# reading `Bu alan adindan mail geldi mi: x` on one screen and
+# `gonderen alan adi: x` on the next and wondering whether they are the same
+# search.
+zro_logsearch_lookup_subject() {
+  case ${1-} in
+    msgid)         printf 'ileti kimligi: %s' "${2-}" ;;
+    sender-domain) printf 'gonderen alan adi: %s' "${2-}" ;;
+    *) return "$ZRO_E_INPUT" ;;
+  esac
+}
+
+# The pattern that finds one domain in the envelope sender.
+#
+#   $1  a domain the caller has already validated
+#
+# THE ONE PLACE IN THIS MODULE WHERE AN OPERATOR'S VALUE REACHES A PATTERN, and it
+# is deliberate rather than convenient. The question is whether mail ARRIVED FROM
+# this domain, and that is a fact about one field of the line: `from=<user@domain>`.
+# A literal search for the domain answers a different question — it matches the
+# same domain standing in `to=`, so mail sent TO a correspondent would be reported
+# as mail received FROM them, which is the wrong answer to act on. Nothing built
+# out of a whole-line match can tell those apart, because the difference is WHERE
+# on the line the domain sits.
+#
+# TWO THINGS MAKE IT SAFE, and they hold together. The value has already been
+# judged a domain, which admits letters, digits, dots and hyphens and nothing else
+# — no metacharacter survives that. And it is escaped here anyway, so the dots
+# match dots: without that, `mail.example.com` would also match `mailXexample.com`,
+# which is a different organisation. Neither protection is trusted alone, and the
+# suite drives both.
+#
+# `[^>]*` rather than a mail-shaped pattern: what stands before the '@' is a local
+# part, and local parts are far stranger than any pattern this file should claim to
+# know. Everything up to the closing bracket is enough, and it cannot run past the
+# end of the field.
+zro_logsearch_sender_pattern() {
+  printf 'from=<[^>]*@%s>' "$(zro_regex_quote "${1-}")"
+}
+
+# Whether anything arrived from one domain.
+#
+#   $1  the domain, as the operator typed it   $2 start   $3 end
+#
+# EVERY ARRIVAL IS COVERED by the field this matches: Postfix's queue manager
+# writes `from=<...>` for every message it queues, and the rejections that never
+# reach a queue carry the same field on the line that refuses them. The amavis line
+# names the sender in brackets without the field and is therefore not matched —
+# which costs nothing, because the message it describes has a queue manager line of
+# its own.
+# SEARCHED WITHOUT REGARD TO CASE, which is a fact about domains rather than a
+# convenience. The same domain is the same domain however the operator typed it and
+# however the sending client wrote it into the envelope — Postfix logs that as it
+# was given — so a case-sensitive search here would answer "nothing arrived from
+# there" about mail that did, on the one screen that presents an empty answer as
+# proof. The message-id door beside this one stays case-sensitive, because an
+# identifier is a token rather than a name.
+zro_logsearch_sender_domain() {
+  local domain=${1-}
+  zro_validate_domain "$domain" || return "$ZRO_E_INPUT"
+  zro_logsearch_run syslog -Ei "$(zro_logsearch_sender_pattern "$domain")" '' \
+    "${2-}" "${3-}" "$(zro_logsearch_lookup_subject sender-domain "$domain")"
 }
 
 # Free text, matched literally.

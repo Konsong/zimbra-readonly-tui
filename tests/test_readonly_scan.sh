@@ -621,13 +621,22 @@ $search_calls
 EOF
 assert_eq "$unapproved" ""
 
-it "and the search reaches the gate in those two forms and no other"
-# Two call sites in the whole tree, both in the function that owns them. A third
-# would be a form nobody approved, or the same form written twice — and the second
-# is how a maintainer reading the list stops being able to tell what may be run.
-assert_eq "$(printf '%s\n' "$raw_code" | grep -cE 'zro_exec[[:space:]]+grep')" "2"
+it "and the search reaches the gate in those forms and no other"
+# THREE call sites in the whole tree, all in the function that owns them: the
+# literal form, the pattern form, and the pattern form with case folded for the one
+# question whose value is a domain. A fourth would be a form nobody approved, or
+# the same form written twice — and the second is how a maintainer reading the list
+# stops being able to tell what may be run.
+assert_eq "$(printf '%s\n' "$raw_code" | grep -cE 'zro_exec[[:space:]]+grep')" "3"
 assert_eq "$(zro_strip_comments "$ZRO_SRC/lib/logsearch.sh" \
-             | grep -cE 'zro_exec[[:space:]]+grep')" "2"
+             | grep -cE 'zro_exec[[:space:]]+grep')" "3"
+
+it "and the case fold is written on the pattern form alone"
+# Approving it for the literal form would let a message-id search report a
+# different message as this one. The gate refuses it there; this says it is not
+# written down either.
+assert_not_contains "$code" "zro_exec grep -a -F -i"
+assert_eq "$(printf '%s\n' "$raw_code" | grep -cE 'zro_exec[[:space:]]+grep[[:space:]]+-a[[:space:]]+-E[[:space:]]+-i')" "1"
 
 it "and no form of it that walks a directory is written anywhere"
 # `-r`, `-R` and `--include` would read files the log inventory never admitted, and

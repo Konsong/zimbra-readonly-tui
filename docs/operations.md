@@ -399,6 +399,30 @@ complete scan means the thing did not happen in those files — and the screen s
 which files those were. On the lab server the delivery outcomes sit in the first
 fifth of the mail log: a bounded read does not reach them, and this does.
 
+**Two of the questions are about everybody**, not about the selected address:
+
+- *Ileti kimligi sunucudan gecti mi* — whether one message passed through this
+  server at all. It searches the **mail log**, which writes the identifier twice
+  per message — `message-id=<X>` where Postfix cleans it up and `Message-ID: <X>`
+  in the amavis line — so the **bare** identifier is what is searched, and it finds
+  both. Paste it with or without its angle brackets. (`mailbox.log` writes the same
+  identifier a third way, `msgid=<X>`, for a message delivered locally; that is a
+  second record of a subset rather than a second source, and the free-text door
+  reaches it.) Matched **case-sensitively**, as the prompt says: an identifier is a
+  token some agent generated, not a name.
+- *Bu alan adindan mail geldi mi* — whether anything arrived from a domain,
+  matched on the **envelope sender** (`from=<…@domain>`) rather than anywhere on
+  the line. Mail *to* that domain is not in the answer, and the screen says so:
+  the captured rejection carries a recipient at one domain on the same line as a
+  sender at another, so a whole-line match would report the two as the same thing.
+  Matched **without regard to case**, because a domain is the same domain however
+  it was typed and however the sending client wrote it — the opposite rule from
+  the identifier above, and for the opposite reason.
+
+Asked per account, each would be a query per mailbox and a gate check per account.
+Asked of the log they are **one scan** of the window's files, and they open no
+mailbox — which is why they are here and a server-wide sweep is nowhere.
+
 **You never type a pattern.** The named questions carry patterns this tool owns,
 each keyed on a line a real server really wrote — a rejection has the literal
 `NOQUEUE` where every other line carries a queue id; local delivery is the `lmtp`
@@ -406,6 +430,20 @@ hop rather than the first `status=sent`, which only means amavis took it; a
 session is `cmd=Auth` because that is on a successful login and a failed one
 alike. Free text is matched **literally**, so `ali+fatura@example.com` matches
 itself instead of being read as a pattern with a quantifier in it.
+
+**One value does reach a pattern, and only one**: the sending domain, because
+*arrived from* is a fact about one field of the line and no whole-line match can
+express it. Two things make that safe and they hold together — the value is
+validated as a domain first, which admits letters, digits, dots and hyphens and
+nothing else, and it is escaped second, so `mail.example.com` cannot also match
+`mailXexample.com`. A message-id, by contrast, is matched literally like free
+text.
+
+**The message-id question is not the delivery trace.** *Teslim takibi: ileti
+kimligine gore* asks `zmmsgtrace` to assemble a message's hops into a report and
+is the better answer where it can run. This one reads the log itself and shows
+every line carrying the identifier as it was written — which is what answers on a
+host with no tracing binary, and what shows the lines the tracer does not parse.
 
 **A window is required and there is no unbounded range.** It chooses *files*, not
 lines: nothing here parses a timestamp, so the files it selects are read end to

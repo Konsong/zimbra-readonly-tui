@@ -521,6 +521,21 @@ operator asking what just happened actually meant.
 _Avoid_: grep, bounded search — the bound is on matches, and saying which one
 matters is the whole point
 
+**Server-wide question**:
+A question about everybody, answered from the logs in one scan: has this
+message-id passed through the server, has anything arrived from this domain.
+It is the opposite of a [server-wide sweep](#cost) and must never be confused
+with one — a sweep's work grows with the number of accounts, and this work grows
+with the window the operator chose. Asking either of them per account would be
+the sweep; asking them of the log is one pass that opens no mailbox.
+The sending-domain one is the **single exception** to the rule beside it that
+nothing an operator types becomes a pattern: *arrived from* is a fact about one
+field of the line, so the domain — validated as a domain, then escaped — is
+interpolated into a pattern the tool owns. A message-id is matched literally like
+any other typed value.
+_Avoid_: global search, bulk query — a bulk query runs against a list the
+operator supplied, and this asks about nobody in particular
+
 **Reduced priority**:
 The lowest processor priority and the idle disk class, which every log scan runs
 under. Imposed by the exec gate as a property of the binaries that scan rather

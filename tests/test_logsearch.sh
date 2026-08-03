@@ -46,6 +46,10 @@ export ZRO_LOG_DIR="$TREE/zimbra/log"
 . "$ZRO_SRC/lib/window.sh"
 # shellcheck source=../lib/logview.sh
 . "$ZRO_SRC/lib/logview.sh"
+# The message-id lookup unwraps a pasted identifier through the delivery trace's
+# own function rather than through a second copy of that rule.
+# shellcheck source=../lib/delivery.sh
+. "$ZRO_SRC/lib/delivery.sh"
 # shellcheck source=../lib/logsearch.sh
 . "$ZRO_SRC/lib/logsearch.sh"
 
@@ -225,6 +229,183 @@ it "refuses a filter that is not an address"
 assert_status "$ZRO_E_INPUT" zro_logsearch_named deferred 'not an address' "$LIVE_S" "$LIVE_E"
 assert_status "$ZRO_E_INPUT" zro_logsearch_named deferred '-v' "$LIVE_S" "$LIVE_E"
 assert_status "$ZRO_E_INPUT" zro_logsearch_named deferred 'status=' "$LIVE_S" "$LIVE_E"
+
+# --- the questions that are about everybody -----------------------------------
+
+it "finds one message by its identifier, in every shape the log writes it"
+# The same identifier is written three ways — the cleanup stage's `message-id=<X>`,
+# amavis's `Message-ID: <X>`, and the mailbox server's `msgid=<X>` — so the bare
+# identifier is what finds all of them. A search for any one of the three forms
+# would find a third of the truth.
+out=$(zro_logsearch_msgid 'delivered-1785678543@capture.example.com' "$LIVE_S" "$LIVE_E" 2>/dev/null)
+assert_eq "$?" "0"
+assert_contains "$out" "message-id=<delivered-1785678543@capture.example.com>"
+assert_contains "$out" "Message-ID: <delivered-1785678543@capture.example.com>"
+assert_contains "$out" "ileti kimligi: delivered-1785678543@capture.example.com"
+
+it "and takes the angle brackets off a pasted header value"
+# What an operator has in hand carries them. Unwrapped through the delivery
+# trace's own function, so the value searched for and the value on the screen are
+# one string on both screens.
+wrapped=$(zro_logsearch_msgid '<delivered-1785678543@capture.example.com>' "$LIVE_S" "$LIVE_E" 2>/dev/null)
+assert_eq "$(body "$wrapped")" "$(body "$out")"
+
+it "and matches it literally, so a lookalike identifier is not this message"
+printf 'Aug  2 16:49:03 posta postfix/cleanup[1]: X1: message-id=<deliveredX1785678543@capture.example.com>\n' >>"$SYS"
+out=$(zro_logsearch_msgid 'delivered-1785678543@capture.example.com' "$LIVE_S" "$LIVE_E" 2>/dev/null)
+assert_not_contains "$(body "$out")" "deliveredX1785678543"
+
+it "refuses an identifier that is not one, and runs nothing"
+: >"$ZRO_MOCK_LOG"
+assert_status "$ZRO_E_INPUT" zro_logsearch_msgid '' "$LIVE_S" "$LIVE_E"
+assert_status "$ZRO_E_INPUT" zro_logsearch_msgid 'iki parca' "$LIVE_S" "$LIVE_E"
+assert_status "$ZRO_E_INPUT" zro_logsearch_msgid '-v' "$LIVE_S" "$LIVE_E"
+assert_status "$ZRO_E_INPUT" zro_logsearch_msgid '<yarim' "$LIVE_S" "$LIVE_E"
+assert_eq "$(ran)" ""
+
+it "finds mail that arrived from one domain, by its envelope sender"
+out=$(zro_logsearch_sender_domain 'example.com' "$LIVE_S" "$LIVE_E" 2>/dev/null)
+assert_eq "$?" "0"
+assert_contains "$out" "from=<ahmet.yilmaz@example.com>"
+assert_contains "$out" "gonderen alan adi: example.com"
+
+it "and does not answer mail SENT TO that domain as mail received from it"
+# THE CASE THAT DECIDED THE PATTERN. The captured rejection carries
+# to=<someone@example.org> on a line that also carries from=<...@example.com>, so
+# any whole-line match for the domain would report a message sent to a
+# correspondent as one received from them — the wrong answer to act on.
+assert_contains "$(printf '%s\n' "$(cat "$FIX/zimbra_log_outcomes.txt")")" "to=<someone@example.org>"
+assert_status "$ZRO_E_NO_RESULT" zro_logsearch_sender_domain 'example.org' "$LIVE_S" "$LIVE_E"
+
+it "and does not answer the client's own greeting as a sender either"
+# The same line carries helo=<foreign.example.net>, which is what the connecting
+# host called itself and not where the mail came from.
+assert_status "$ZRO_E_NO_RESULT" zro_logsearch_sender_domain 'foreign.example.net' "$LIVE_S" "$LIVE_E"
+
+it "and finds it whatever case either end wrote it in"
+# A DOMAIN IS THE SAME DOMAIN HOWEVER IT IS WRITTEN, at both ends: the operator
+# may type it any way, and the sending client's envelope is logged as it was given.
+# A case-sensitive search would answer "nothing arrived from there" about mail that
+# did — on the one screen that presents an empty answer as proof.
+#
+# The mixed case is written `eXAMPLE` rather than `Example` on purpose:
+# tests/test_bash_compat.sh bans the bash 4.4 parameter transformations as bare
+# substrings, and `@E` in a fixture line reads as one of them.
+printf 'Aug  2 16:49:03 posta postfix/qmgr[1]: X4: from=<Ahmet.Yilmaz@eXAMPLE.com>, size=1\n' >>"$SYS"
+out=$(zro_logsearch_sender_domain 'example.com' "$LIVE_S" "$LIVE_E" 2>/dev/null)
+assert_contains "$(body "$out")" "Ahmet.Yilmaz@eXAMPLE.com"
+out=$(zro_logsearch_sender_domain 'EXAMPLE.com' "$LIVE_S" "$LIVE_E" 2>/dev/null)
+assert_contains "$(body "$out")" "ahmet.yilmaz@example.com"
+assert_contains "$(body "$out")" "Ahmet.Yilmaz@eXAMPLE.com"
+
+it "and the identifier beside it is matched case-sensitively, which is its own rule"
+# The opposite rule for the opposite reason: an identifier is a token some agent
+# generated rather than a name, so folding case there would report a different
+# message as this one.
+printf 'Aug  2 16:49:03 posta postfix/cleanup[1]: X5: message-id=<CASE-1785678543@capture.example.com>\n' >>"$SYS"
+assert_status "$ZRO_E_NO_RESULT" \
+  zro_logsearch_msgid 'case-1785678543@capture.example.com' "$LIVE_S" "$LIVE_E"
+assert_ok zro_logsearch_msgid 'CASE-1785678543@capture.example.com' "$LIVE_S" "$LIVE_E"
+
+it "and the case-folded form is the only one that folds case"
+: >"$ZRO_MOCK_LOG"
+zro_logsearch_sender_domain 'example.com' "$LIVE_S" "$LIVE_E" >/dev/null 2>&1
+assert_contains "$(ran)" "$(printf 'grep\t-a\t-E\t-i')"
+: >"$ZRO_MOCK_LOG"
+zro_logsearch_named rejected '' "$LIVE_S" "$LIVE_E" >/dev/null 2>&1
+assert_not_contains "$(ran)" "$(printf '\t-i\t')"
+: >"$ZRO_MOCK_LOG"
+zro_logsearch_text syslog 'padding' "$LIVE_S" "$LIVE_E" >/dev/null 2>&1
+assert_not_contains "$(ran)" "$(printf '\t-i\t')"
+
+it "and reads the dots in a domain as dots"
+# Without escaping, 'mail.example.com' would also match 'mailXexample.com', which
+# is a different organisation. The value is validated as a domain first and escaped
+# second, and neither protection is trusted on its own.
+assert_out_eq 'from=<[^>]*@example\.com>' zro_logsearch_sender_pattern 'example.com'
+assert_out_eq 'from=<[^>]*@mail\.example\.com>' zro_logsearch_sender_pattern 'mail.example.com'
+printf 'Aug  2 16:49:03 posta postfix/qmgr[1]: X2: from=<x@exampleXcom>, size=1\n' >>"$SYS"
+out=$(zro_logsearch_sender_domain 'example.com' "$LIVE_S" "$LIVE_E" 2>/dev/null)
+assert_not_contains "$(body "$out")" "exampleXcom"
+
+it "and a subdomain is a different domain, in both directions"
+printf 'Aug  2 16:49:03 posta postfix/qmgr[1]: X3: from=<x@mail.example.com>, size=1\n' >>"$SYS"
+out=$(zro_logsearch_sender_domain 'example.com' "$LIVE_S" "$LIVE_E" 2>/dev/null)
+assert_not_contains "$(body "$out")" "x@mail.example.com"
+out=$(zro_logsearch_sender_domain 'mail.example.com' "$LIVE_S" "$LIVE_E" 2>/dev/null)
+assert_contains "$(body "$out")" "x@mail.example.com"
+assert_not_contains "$(body "$out")" "ahmet.yilmaz@example.com"
+
+it "refuses anything that is not a domain, and runs nothing"
+: >"$ZRO_MOCK_LOG"
+assert_status "$ZRO_E_INPUT" zro_logsearch_sender_domain '' "$LIVE_S" "$LIVE_E"
+assert_status "$ZRO_E_INPUT" zro_logsearch_sender_domain 'ahmet@example.com' "$LIVE_S" "$LIVE_E"
+assert_status "$ZRO_E_INPUT" zro_logsearch_sender_domain 'example.com|x' "$LIVE_S" "$LIVE_E"
+assert_status "$ZRO_E_INPUT" zro_logsearch_sender_domain '.*' "$LIVE_S" "$LIVE_E"
+assert_status "$ZRO_E_INPUT" zro_logsearch_sender_domain 'https://example.com' "$LIVE_S" "$LIVE_E"
+assert_status "$ZRO_E_INPUT" zro_logsearch_sender_domain '-example.com' "$LIVE_S" "$LIVE_E"
+assert_eq "$(ran)" ""
+
+it "and no domain that passes validation can carry a pattern into the reader"
+# The value reaches an extended regular expression, which is the one place in this
+# module it does. What keeps that safe is the validator above and the escaping
+# below it — so this asks the validator directly, of every metacharacter there is.
+#
+# Driven over the tool's OWN declared set of metacharacters rather than a list
+# written out here: a character added to that declaration and forgotten in this
+# case would be exactly the one nobody checked.
+bad="" metas=$ZRO_RE_META
+for (( i = 0; i < ${#metas}; i++ )); do
+  m=${metas:i:1}
+  # A bare metacharacter is not a domain, and neither is a real domain wearing one.
+  zro_validate_domain "$m" && bad="$bad [$m]"
+  zro_validate_domain "example${m}com" && bad="$bad [example${m}com]"
+done
+# The dot is the one metacharacter a domain really contains, and it is escaped
+# rather than refused.
+assert_eq "$bad" " [example.com]"
+
+it "answers both questions in one scan of the window, and asks about no account"
+: >"$ZRO_MOCK_LOG"
+zro_logsearch_msgid 'delivered-1785678543@capture.example.com' "$LIVE_S" "$LIVE_E" >/dev/null 2>&1
+assert_eq "$(ran | grep -c .)" "1"
+: >"$ZRO_MOCK_LOG"
+zro_logsearch_sender_domain 'example.com' "$LIVE_S" "$LIVE_E" >/dev/null 2>&1
+assert_eq "$(ran | grep -c .)" "1"
+log=$(cat "$ZRO_MOCK_LOG")
+assert_not_contains "$log" "zmprov"
+assert_not_contains "$log" "zmmailbox"
+assert_not_contains "$log" "zmmsgtrace"
+
+it "names a log and a label for every declared lookup"
+missing=""
+while IFS= read -r id; do
+  [ -n "$id" ] || continue
+  zro_logsearch_lookup_label "$id" >/dev/null 2>&1 || missing="$missing [label:$id]"
+  zro_logview_label "$(zro_logsearch_lookup_log "$id")" >/dev/null 2>&1 ||
+    missing="$missing [log:$id]"
+done <<EOF
+$(zro_logsearch_lookups)
+EOF
+assert_eq "$missing" ""
+assert_fail zro_logsearch_lookup_log nosuchlookup
+assert_fail zro_logsearch_lookup_label ''
+
+it "and a lookup is not a named question, nor the other way round"
+# Two tables with two contracts: a named question lists what happened and takes at
+# most an address, a lookup asks whether one value is there at all. An id in both
+# would be a question whose behaviour depends on which table was read first.
+overlap=""
+while IFS= read -r id; do
+  [ -n "$id" ] || continue
+  zro_logsearch_question_log "$id" >/dev/null 2>&1 && overlap="$overlap [$id]"
+done <<EOF
+$(zro_logsearch_lookups)
+EOF
+assert_eq "$overlap" ""
+
+# The padding lines added by the cases above are left in place: what follows reads
+# the file for its own patterns, and a longer file is a truer one.
 
 # --- free text ----------------------------------------------------------------
 

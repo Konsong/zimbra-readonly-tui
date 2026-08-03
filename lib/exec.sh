@@ -256,6 +256,18 @@ ZRO_LIB_EXEC_LOADED=1
 # search that did that would answer "no record" from the newest lines of a log
 # whose older ones hold the record.
 #
+# `-i` IS APPROVED FOR THE PATTERN FORM ONLY, and it arrived with the question
+# that needs it. A DOMAIN IS CASE-INSENSITIVE — it is the same domain however it
+# was typed and however the sending client wrote it into the envelope — so a
+# case-sensitive search for one answers "nothing arrived from there" about mail
+# that did. On the screen where an empty answer is presented as proof, that is the
+# worst thing this tool can do, and it cannot be fixed by folding the operator's
+# text: the log line carries whatever case the client sent.
+#
+# It is NOT approved for the literal form. A message-id is case-SENSITIVE — the
+# tracer's own rule, and the identifier is a token some agent generated rather than
+# a name — so folding case there would report a different message as this one.
+#
 # `-r`, `-R` and `--include` ARE NOWHERE HERE and may not arrive: each walks a
 # directory, which would read files the log inventory never admitted. `-f` reads
 # its patterns from a file, which is operator text becoming a pattern by another
@@ -338,6 +350,7 @@ grep:-a:-F
 grep:-a:-E
 grep:-a:-F:-m
 grep:-a:-E:-m
+grep:-a:-E:-i
 '
 
 zro_allow_entries() {
