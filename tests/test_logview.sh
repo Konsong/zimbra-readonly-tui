@@ -17,6 +17,8 @@ export ZRO_SYSTEM_BIN="$ZRO_TEST_ROOT/mocks/system"
 export ZRO_ID_BIN="$ZRO_TEST_ROOT/mocks/bin/id"
 export ZRO_RUNUSER="$ZRO_TEST_ROOT/mocks/bin/runuser"
 export ZRO_TIMEOUT_BIN="$ZRO_TEST_ROOT/mocks/bin/timeout"
+export ZRO_NICE_BIN="$ZRO_TEST_ROOT/mocks/bin/nice"
+export ZRO_IONICE_BIN="$ZRO_TEST_ROOT/mocks/bin/ionice"
 export ZRO_MOCK_ID_USER=zimbra
 chmod +x "$ZRO_TEST_ROOT"/mocks/bin/* "$ZRO_TEST_ROOT"/mocks/libexec/* \
          "$ZRO_TEST_ROOT"/mocks/system/* 2>/dev/null || true

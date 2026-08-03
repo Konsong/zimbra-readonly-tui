@@ -331,6 +331,21 @@ zro_inv_mtime() {
   "$ZRO_STAT_BIN" -c '%Y' -- "${1-}" 2>/dev/null
 }
 
+# How many bytes a file holds. Prints nothing when it cannot be stat'ed at all.
+#
+# Beside the modification time because it is the same stat asked the third
+# question this program has about a log file, and because every stat here belongs
+# to the module that declares where the logs are.
+#
+# WHAT IT MEANS IS NOT DECIDED HERE. For a search this is the cost about to be
+# spent, and for a compressed file it is the cost ON DISK rather than the bytes
+# that will be read out of it — the screen that shows it says so, because a
+# rotated log decompresses to several times this and an operator deciding whether
+# now is the moment deserves the number they can check against `ls`.
+zro_inv_size() {
+  "$ZRO_STAT_BIN" -c '%s' -- "${1-}" 2>/dev/null
+}
+
 # The three facts that decide who may read a file, as "<owner> <group> <mode>",
 # with the mode in octal. Prints nothing when the file cannot be stat'ed at all.
 #

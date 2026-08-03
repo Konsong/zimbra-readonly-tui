@@ -38,6 +38,8 @@ ZRO_ROOT=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 . "$ZRO_ROOT/lib/delivery.sh"
 # shellcheck source=lib/logview.sh
 . "$ZRO_ROOT/lib/logview.sh"
+# shellcheck source=lib/logsearch.sh
+. "$ZRO_ROOT/lib/logsearch.sh"
 # shellcheck source=lib/queue.sh
 . "$ZRO_ROOT/lib/queue.sh"
 # shellcheck source=lib/service.sh
@@ -224,8 +226,16 @@ explicit:Belirli aralik gir'
 # operator actually asks cost no typing and cannot be mistyped. The explicit
 # range is the only path that takes a date as text, and therefore the only one
 # that can be refused as invalid input.
+#
+# The explanatory text is an argument because two screens ask this question about
+# two different things. On a delivery trace the window is compared against when a
+# message ARRIVED, by a tracer that reads timestamps. On a log search it selects
+# FILES and nothing else, and the files are then read whole — so the same prompt
+# would tell one of the two screens' operators something untrue about their own
+# answer. The trace's wording stays the default, because it was here first and
+# every existing caller means it.
 zro_prompt_window() {
-  local choice rc=0 now day_start entry
+  local text=${1:-$ZRO_TXT_ARRIVAL} choice rc=0 now day_start entry
   local -a items=()
   while IFS= read -r entry; do
     [ -n "$entry" ] || continue
@@ -234,7 +244,7 @@ zro_prompt_window() {
 $ZRO_WINDOW_CHOICES
 EOF
 
-  choice=$(zro_ui_menu "Varis araligi" "$ZRO_TXT_ARRIVAL" "${items[@]}") || rc=$?
+  choice=$(zro_ui_menu "Varis araligi" "$text" "${items[@]}") || rc=$?
   [ "$rc" -eq 0 ] || return "$ZRO_E_CANCEL"
 
   if [ "$choice" = explicit ]; then
@@ -1277,6 +1287,25 @@ Islem kesildi ve dosyaya DOKUNULMADI. Gerekirse ZRO_TIMEOUT degerini
 yukseltip yeniden deneyin."
       continue
     fi
+    if [ "$rc" -eq "$ZRO_E_UNAVAILABLE" ] && ! zro_cap_search_available; then
+      # A COMPRESSED FILE IS THE ONE THING THIS SCREEN READS AT REDUCED PRIORITY.
+      # Decompressing a rotated log is the same disk and the same processor
+      # whether a search or this screen asked for it, so the gate wraps it — and a
+      # host without the two commands that do the wrapping is refused rather than
+      # given an ordinary-priority read. Named here rather than left to the shared
+      # reporter, because the plain files on this same list still work and an
+      # operator has to be told that.
+      zro_ui_msgbox "Sikistirilmis dosya acilamadi" \
+"Bu dosya sikistirilmis, ve bir sikistirilmis logu acmak bu araca gore bir
+TARAMA kadar is demektir: dusuk islemci onceligi ve bos disk onceligi ile
+calistirilir. Bunu yapan iki komut bu sunucuda bulunamadi.
+
+Beklenen: nice ve ionice (Ubuntu/Debian: coreutils ve util-linux paketleri).
+
+Sikistirilmamis dosyalar bu ekrandan okunmaya devam eder: listede .gz uzantisi
+olmayan bir dosya secebilirsiniz."
+      continue
+    fi
     if [ "$rc" -ne 0 ]; then
       zro_report_error "$rc"
       continue
@@ -1286,6 +1315,382 @@ yukseltip yeniden deneyin."
     # which file they are reading.
     zro_show_text "Log: ${path##*/}" "$out"
   done
+}
+
+# ------------------------------------------------------------ the log search --
+#
+# The viewer's other half. It reads the WHOLE of every file an arrival window
+# covers, so that "nothing found" is a fact about the server rather than about how
+# far the tool bothered to look — which is the one thing the bounded viewer above
+# can never say, and says so on its own screen.
+
+ZRO_TXT_LOGSEARCH='Secilen aralikta kalan log dosyalarinin TAMAMI taranir; dosyalar yalnizca
+okunur. Hazir sorularin arama kaliplari araca aittir: siz yazmazsiniz.
+
+Neyi ariyorsunuz?'
+
+ZRO_TXT_LOGSEARCH_LOG='Duz metin, sectiginiz logda harfi harfine aranir: yazdiginiz nokta, arti ve
+parantez kendisiyle eslesir, kalip olarak yorumlanmaz.
+
+Hangi logda aranacak?'
+
+ZRO_TXT_LOGSEARCH_TEXT='Aranacak metin (ornek: B0CC6104BA2, ali+fatura@example.com,
+connection refused)
+
+Yazdiginiz metin oldugu gibi aranir; bosluklu bir ifade de yazabilirsiniz.
+BUYUK/kucuk harf duyarlidir ve metin - ile baslayamaz.'
+
+# THE WINDOW SAYS SOMETHING DIFFERENT HERE than it does on a delivery trace, and
+# the difference is worth a screen of its own. The trace hands its window to a
+# tracer that compares it against each line. This one uses it to choose FILES, and
+# then reads those files from end to end — so an answer can carry lines from either
+# side of the range, and an operator who read this as a line filter would think the
+# tool had ignored them.
+ZRO_TXT_LOGSEARCH_WINDOW='Aralik, hangi log DOSYALARININ taranacagini secer. Secilen dosyalar bastan
+sona okunur, bu yuzden sonuclarda araligin biraz disindaki satirlar da
+gorunebilir.
+
+Aralik secin:'
+
+# WHY THE SEARCH CANNOT RUN, as its own screen. One cause today, and it is not
+# about a log: this tool runs every scan at reduced processor and idle disk
+# priority, and a host without the two commands that do it cannot be offered a
+# scan that keeps that promise.
+zro_logsearch_unavailable() {
+  case $(zro_cap_search_reason) in
+    noprio)
+      zro_ui_msgbox "Kullanilamaz" \
+"Log aramasi bu sunucuda calistirilamiyor.
+
+Bu arac her log taramasini DUSUK islemci onceligi ve BOS disk onceligi ile
+calistirir; boylece yuk altindaki bir mail sunucusunda sorun ararken sorunu
+buyutmez. Bunu yapan iki komut bu sunucuda bulunamadi.
+
+Beklenen: nice ve ionice (Ubuntu/Debian: coreutils ve util-linux paketleri).
+Baska bir yerdelerse ZRO_NICE_BIN ve ZRO_IONICE_BIN degiskenleriyle
+gosterebilirsiniz.
+
+Tarama, onceligi dusurmeden CALISTIRILMAZ: log dosyalarinin son satirlari icin
+'Log dosyalari' ekranini kullanabilirsiniz." ;;
+    *) zro_log error "menu defect, no unavailability screen for the log search: $(zro_cap_search_reason)"
+       zro_report_defect ;;
+  esac
+}
+
+# The questions this screen offers, and the one door that is not a question.
+#
+# THE OPERATOR NEVER TYPES A PATTERN. Every entry but the last carries a pattern
+# the tool owns, and the last one is matched literally — so there is no path from
+# this screen to a regular expression an operator wrote, on a production mail
+# server.
+zro_menu_logsearch() {
+  local choice rc id label
+  local -a items=()
+  while :; do
+    items=()
+    while IFS= read -r id; do
+      [ -n "$id" ] || continue
+      # A declared question with no label would reach the operator as a menu entry
+      # with no name. Left out and said out loud; the suite holds the two sets
+      # equal, which is where this is really prevented.
+      if ! label=$(zro_logsearch_question_label "$id"); then
+        zro_log error "no label for declared log search question: $id"
+        continue
+      fi
+      items+=("$id" "$label")
+    done <<EOF
+$(zro_logsearch_questions)
+EOF
+    items+=(text "Duz metin ara (harfi harfine)")
+
+    rc=0
+    choice=$(zro_ui_menu "Log arama" "$ZRO_TXT_LOGSEARCH" "${items[@]}") || rc=$?
+    [ "$rc" -eq 0 ] || return 0
+
+    if [ "$choice" = text ]; then
+      zro_screen_logsearch_text
+      continue
+    fi
+    # Judged against the list this program itself drew. Nothing else may name a
+    # question, so a value that is not one of those ids is a defect rather than a
+    # question nobody declared.
+    if ! zro_logsearch_question_log "$choice" >/dev/null 2>&1; then
+      zro_log error "not a declared log search question: $choice"
+      continue
+    fi
+    zro_screen_logsearch_named "$choice"
+  done
+}
+
+# A named question, and the one thing an operator may supply to it.
+#
+# THE FILTER IS OFFERED ONLY WHEN THE SESSION HAS AN ADDRESS, because it can only
+# be the selected one: this screen does not ask for an address, it uses the one
+# every other screen is already about. Offered as a menu rather than as a
+# confirmation so that cancelling goes back rather than quietly meaning "no".
+zro_screen_logsearch_named() {
+  local id=${1-} log label filter='' choice rc=0
+  if ! log=$(zro_logsearch_question_log "$id"); then
+    zro_log error "menu defect, no log for log search question: $id"
+    zro_report_defect
+    return 0
+  fi
+  label=$(zro_logsearch_question_label "$id")
+
+  if zro_sel_have; then
+    rc=0
+    choice=$(zro_ui_menu "Adres suzgeci" \
+"Bu soru secili adrese gore daraltilabilir. Suzgec SATIR BAZLIDIR: yalnizca
+adresi de iceren satirlar listelenir, ve adresi tasimayan satirlar (ornegin bir
+istisna izinin govdesi) bu durumda gorunmez.
+
+Nasil aransin?" \
+      all "Butun kayitlar" \
+      one "Yalnizca $(zro_sel_address)") || rc=$?
+    [ "$rc" -eq 0 ] || return 0
+    [ "$choice" != one ] || filter=$(zro_sel_address)
+  fi
+
+  zro_screen_logsearch_do "$log" named "$id" "$filter" "$label"
+}
+
+# Free text, in whichever declared log the operator names.
+#
+# The log is offered by name and comes back as one of the names this program drew,
+# exactly as the viewer's file list comes back as a position. Nothing an operator
+# types is ever a path or a log name.
+zro_screen_logsearch_text() {
+  local key text rc=0 label
+  local -a items=()
+  while IFS= read -r key; do
+    [ -n "$key" ] || continue
+    if ! label=$(zro_logview_label "$key"); then
+      zro_log error "no label for declared log: $key"
+      continue
+    fi
+    items+=("$key" "$label")
+  done <<EOF
+$(zro_inv_keys)
+EOF
+  if [ "${#items[@]}" -eq 0 ]; then
+    zro_log error "no log is both declared and named; the search has nothing to offer"
+    zro_ui_msgbox "Kullanilamaz" "Aranabilecek log tanimli degil."
+    return 0
+  fi
+
+  rc=0
+  key=$(zro_ui_menu "Duz metin arama" "$ZRO_TXT_LOGSEARCH_LOG" "${items[@]}") || rc=$?
+  [ "$rc" -eq 0 ] || return 0
+  if ! zro_logview_label "$key" >/dev/null 2>&1; then
+    zro_log error "not a declared log: $key"
+    return 0
+  fi
+
+  rc=0
+  text=$(zro_ui_input "Duz metin arama" "$ZRO_TXT_LOGSEARCH_TEXT") || rc=$?
+  [ "$rc" -eq 0 ] || return 0
+  # Cancel and a rejected value are told apart here as they are for an address:
+  # the first returns the operator to the previous screen, the second says what
+  # was wrong with what they typed.
+  if ! zro_logsearch_validate_text "$text"; then
+    zro_ui_msgbox "Gecersiz girdi" \
+"Bu metin aranamaz.
+
+Metin bos olamaz, satir sonu veya kontrol karakteri iceremez, basinda ya da
+sonunda bosluk olamaz, '-' ile baslayamaz ve $ZRO_LOGSEARCH_TEXT_MAX karakteri
+gecemez.
+
+Ortada bosluk serbesttir: 'connection refused' gibi bir ifade aranabilir."
+    return 0
+  fi
+
+  zro_screen_logsearch_do "$key" text "$text" '' "$(printf 'duz metin: %s' "$text")"
+}
+
+# The window, the cost, the confirmation, the scan and the answer.
+#
+#   $1  a declared log   $2  'named' or 'text'   $3  the question id or the text
+#   $4  an address filter or empty               $5  what to call it on screen
+#
+# THE COST IS DECLARED AND CONFIRMED BEFORE ANYTHING IS READ, which is what cost
+# class 3 means on a screen rather than in a table: how many files and how many
+# bytes, from the same rule the scan will select by.
+#
+# IT IS THE SAME RULE, NOT THE SAME LIST, and the difference is worth stating. The
+# selection is made again when the scan runs, because a path is never carried into
+# the engine from a screen — the files come from the log inventory, which is what
+# keeps this from being a general-purpose file reader. So a rotation that happens
+# between the confirmation and the scan can move a file across the boundary. The
+# residual runs in the visible direction: the answer names the files it really
+# read, file by file, so what was scanned is on the screen next to what was
+# promised rather than assumed to match it.
+#
+# Shared by both doors deliberately. What differs between a named question and free
+# text is the pattern and the label; the window, the cost, the wait and every
+# ending are the same, and a second copy of them is a second set to get wrong.
+zro_screen_logsearch_do() {
+  local key=${1-} kind=${2-} subject=${3-} filter=${4-} label=${5-}
+  local window ws we plan files bytes out rc=0
+
+  rc=0
+  window=$(zro_prompt_window "$ZRO_TXT_LOGSEARCH_WINDOW") || rc=$?
+  if [ "$rc" -ne 0 ]; then
+    # Cancel is navigation, and a rejected date has already been shown on its own
+    # screen. The clock is named rather than passed to the shared reporter,
+    # because the only thing in that prompt which can be unavailable is the clock.
+    case $rc in
+      "$ZRO_E_CANCEL"|"$ZRO_E_INPUT") ;;
+      "$ZRO_E_UNAVAILABLE")
+        zro_ui_msgbox "Saat okunamadi" \
+"Sistem saati okunamadi, bu nedenle aralik hesaplanamadi.
+
+'date' komutu bu sunucuda calismiyor olabilir." ;;
+      *) zro_report_error "$rc" ;;
+    esac
+    return 0
+  fi
+  ws=${window%%"$ZRO_TAB"*}
+  we=${window#*"$ZRO_TAB"}
+
+  rc=0
+  plan=$(zro_logsearch_plan "$key" "$ws" "$we") || rc=$?
+  if [ "$rc" -ne 0 ]; then
+    zro_report_error "$rc"
+    return 0
+  fi
+  files=${plan%%"$ZRO_TAB"*}
+  bytes=${plan#*"$ZRO_TAB"}
+
+  if [ "$files" -eq 0 ]; then
+    # ORDINARY, not a failure: a host that does not write this log has none of its
+    # files. Its own screen because an empty file list must never be read as an
+    # empty answer — one says nothing was written, the other says there was
+    # nothing to read.
+    zro_ui_msgbox "Bulunamadi" \
+"Bu log bu sunucuda bulunamadi: $(zro_inv_base_path "$key")
+
+Dosya hic yok olabilir, ya da bulundugu dizin zimbra kullanicisi tarafindan
+acilamiyor olabilir. Bu ikisi buradan ayirt edilemez.
+
+Bu, aradiginiz kaydin olmadigini GOSTERMEZ."
+    return 0
+  fi
+
+  # THE DECISION IS THE OPERATOR'S, and this is the screen where they can still
+  # make it. A scan of a production mail log is real disk work on the server that
+  # is already in trouble; the numbers are what turn "this might be slow" into
+  # something anybody can decide.
+  if ! zro_ui_yesno "Tarama maliyeti" \
+"Aranacak: $files dosya, $(zro_human_bytes "$bytes") (diskteki boyut).
+
+Dosyalar BASTAN SONA okunur. Sikistirilmis dosyalar acildiginda bu boyuttan
+birkac kat buyuk olur, ve acilmalari zaman alir.
+
+Tarama dusuk islemci onceligi ve bos disk onceligi ile calisir: mail sunucusu
+diski isterse tarama bekler. Hicbir dosya degistirilmez.
+
+Devam edilsin mi?"; then
+    return 0
+  fi
+
+  zro_ui_notice "Calisiyor" "Log dosyalari taraniyor, lutfen bekleyin.
+
+$label
+Aralik: $(zro_win_human "$ws") - $(zro_win_human "$we")
+$files dosya bastan sona okunacak; bu islem birkac dakika surebilir."
+
+  rc=0
+  case $kind in
+    named) out=$(zro_logsearch_named "$subject" "$filter" "$ws" "$we") || rc=$? ;;
+    text)  out=$(zro_logsearch_text "$key" "$subject" "$ws" "$we") || rc=$? ;;
+    # Unreachable while the two callers above agree with this list, and here so
+    # that they may only disagree loudly: without it a door added to one and
+    # missed here would leave $out holding the PREVIOUS search's answer and $rc at
+    # zero, and the operator would read the last question's answer under this
+    # question's label.
+    *) zro_log error "menu defect, no log search door for: $kind"
+       zro_report_defect
+       return 0 ;;
+  esac
+
+  # AN EMPTY ANSWER IS THE ANSWER, and this is the only screen in the tool that
+  # may say so. Every file the window selected was opened and read from its first
+  # line, so nothing found means nothing was there — as long as nothing was
+  # missed, which is exactly what this code means and what the partial one below
+  # does not.
+  if [ "$rc" -eq "$ZRO_E_NO_RESULT" ]; then
+    # THE FILES BY NAME, not just how many. This is the one screen in the tool
+    # that says an absence means something, and an absence is only worth what the
+    # list of what was read is worth: an operator has to be able to see that
+    # yesterday's rotation was in it before they conclude anything from it. The
+    # engine printed nothing — that is what this code means — so the list is
+    # rebuilt from the same selection, which costs a glob and opens no file.
+    zro_ui_msgbox "Kayit yok" \
+"$label
+
+Aralik: $(zro_win_human "$ws") - $(zro_win_human "$we")
+Taranan dosyalar (en yeniden eskiye, her biri BASTAN SONA okundu):
+$(zro_logsearch_files "$key" "$ws" "$we" | cut -f2 | sed 's/^/  /')
+
+Bu aralikta eslesen satir YOK. Dosyalarin tamami okundugu icin bu, aranan seyin
+YUKARIDAKI dosyalarda gerceklesmedigi anlamina gelir — daha eskisi icin araligi
+genisletin."
+    return 0
+  fi
+  # A PARTIAL SCAN IS AN ANSWER, not a failure, so it is shown rather than
+  # reported. What makes it honest is that the disclosure travels in two places:
+  # the banner the answer carries at the top, and this title — whiptail keeps a
+  # title on the box frame while the text scrolls, so it is the one part of the
+  # screen a long answer cannot push out of view.
+  if [ "$rc" -eq "$ZRO_E_PARTIAL" ]; then
+    zro_show_text "Log arama - EKSIK TARAMA" "$out"
+    return 0
+  fi
+  if [ "$rc" -eq "$ZRO_E_NO_LOG" ]; then
+    zro_screen_logsearch_no_log "$key"
+    return 0
+  fi
+  if [ "$rc" -eq "$ZRO_E_TIMEOUT" ]; then
+    zro_ui_msgbox "Zaman asimi" \
+"Tarama ayrilan surede bitmedi.
+
+Islem kesildi ve hicbir dosyaya DOKUNULMADI. Bu, aradiginiz kaydin olmadigini
+GOSTERMEZ: tarama yarim kaldi.
+
+Araligi daraltip yeniden deneyin, ya da ZRO_TIMEOUT degerini yukseltin."
+    return 0
+  fi
+  if [ "$rc" -eq "$ZRO_E_UNAVAILABLE" ] && ! zro_cap_search_available; then
+    # The host lost the priority tools between the menu being drawn and the scan
+    # being run, or the operator started the tool on a host that never had them.
+    # Either way this is the screen that names the repair.
+    zro_logsearch_unavailable
+    return 0
+  fi
+  if [ "$rc" -ne 0 ]; then
+    zro_report_error "$rc"
+    return 0
+  fi
+  zro_show_text "Log arama" "$out"
+}
+
+# Not one file could be read. Named file by file rather than through the shared
+# reporter, whose message for this code is about an arrival window a trace
+# selected — a window nobody chose on this screen.
+zro_screen_logsearch_no_log() {
+  local detail
+  detail=$(zro_last_error)
+  [ -n "$detail" ] && detail="
+
+Sistemin bildirdigi:
+$detail"
+  zro_ui_msgbox "Log okunamadi" \
+"Bu logun secilen araliktaki dosyalarindan HICBIRI okunamadi:
+$(zro_inv_base_path "${1-}")
+
+Bu, aradiginiz kaydin olmadigini GOSTERMEZ: hicbir dosya taranamadi.
+
+$ZRO_TXT_LOG_UNREADABLE$detail"
 }
 
 # ------------------------------------------------------------ the mail queue --
@@ -1640,6 +2045,7 @@ trace-recipient:address:3:Teslim takibi: bu adrese gelenler
 trace-sender:address:3:Teslim takibi: bu adresten gidenler
 trace-msgid:server:3:Teslim takibi: ileti kimligine gore
 logview:server:3:Log dosyalari (son satirlar)
+log-search:server:3:Log arama (dosyalarin tamaminda)
 mail-queue:server:5:Mail kuyrugu (bekleyen iletiler)
 service-status:server:5:Servis durumu'
 
@@ -1741,6 +2147,12 @@ zro_menu_refusal() {
     # marked from the moment the operator has met it — and never before, because
     # the only way to ask is to ask.
     mail-queue) zro_cap_queue_available || { ZRO_MENU_REASON=nocap; return 0; } ;;
+    # The search's one host fact, and it is about how a scan RUNS rather than
+    # about what it reads: a host that cannot reduce priority cannot be offered a
+    # scan that keeps this tool's promise to yield. Which files are readable is
+    # answered by the scan itself and disclosed as a partial scan, exactly as the
+    # viewer answers it — so this entry is marked for that and nothing else.
+    log-search) zro_cap_search_available || { ZRO_MENU_REASON=nocap; return 0; } ;;
   esac
   case $(zro_menu_scope "$id" 2>/dev/null) in
     account)
@@ -1793,6 +2205,7 @@ zro_menu_unavailable() {
       case ${1-} in
         trace-*)    zro_delivery_unavailable ;;
         mail-queue) zro_queue_unavailable ;;
+        log-search) zro_logsearch_unavailable ;;
         *) zro_log error "menu defect, no unavailability screen for: ${1-} (${2-})"
            zro_report_defect ;;
       esac ;;
@@ -1988,6 +2401,7 @@ EOF
       domain-card) zro_screen_domain "$choice" ;;
       trace-*)     zro_screen_trace "$choice" ;;
       logview)     zro_menu_logview ;;
+      log-search)  zro_menu_logsearch ;;
       mail-queue)  zro_menu_queue ;;
       service-status) zro_screen_service ;;
       # Declared in the list above and dispatched nowhere: a defect in this file.

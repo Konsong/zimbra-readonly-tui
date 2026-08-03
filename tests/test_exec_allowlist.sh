@@ -248,6 +248,99 @@ it "the allowlist names one bounded read and one decompression, and nothing else
 assert_eq "$(zro_allow_entries | grep -E '^(tail|gzip):')" \
   "$(printf '%s\n%s' 'tail:-n' 'gzip:-dc')"
 
+# ------------------------------------------------------------- the log search --
+#
+# The third system binary. Its mode flag is approved only together with a match
+# form, for the reason `zmprov -l` is never approved alone.
+
+it "approves the log search in the two match forms it exposes"
+assert_ok zro_allowed grep -a -F
+assert_ok zro_allowed grep -a -E
+assert_ok zro_allowed grep -a -F 'ali+fatura@example.com' '/var/log/zimbra.log'
+assert_ok zro_allowed grep -a -E 'status=(deferred|bounced)' '/var/log/zimbra.log'
+
+it "and the cap that bounds what a search prints"
+assert_ok zro_allowed grep -a -F -m 200 'ali@example.com' '/var/log/zimbra.log'
+assert_ok zro_allowed grep -a -E -m 200 'NOQUEUE: reject:' '/var/log/zimbra.log'
+
+it "a search mode alone approves nothing"
+# The same rule the LDAP mode flag lives by. Were `-a` approvable on its own,
+# every form behind it — the directory walkers among them — would ride in free.
+assert_fail zro_allowed grep -a
+assert_fail zro_allowed grep -a 'alpha'
+assert_fail zro_allowed grep -a -r
+assert_fail zro_allowed grep -a -f
+
+it "and a match form without it approves nothing either"
+# One operation, one spelling: the form the tool really runs carries both tokens,
+# so a vector missing the mode is a vector nobody in this program writes.
+assert_fail zro_allowed grep -F
+assert_fail zro_allowed grep -E
+assert_fail zro_allowed grep -F -a
+assert_fail zro_allowed grep 'alpha' '/var/log/zimbra.log'
+assert_fail zro_allowed grep ''
+
+it "refuses every form of the search that would read what the inventory did not admit"
+# `-r` and `-R` walk a directory; `--include` and `--exclude` choose files by name;
+# `-f` takes its patterns from a file, which is operator text becoming a pattern by
+# another route. None of them writes — this binary cannot — and all of them read
+# something nobody declared, which is the same objection.
+for form in -r -R --recursive -f --file --include --exclude --exclude-dir -d -D -Z; do
+  assert_fail zro_allowed grep -a "$form"
+  assert_fail zro_allowed grep -a -F "$form" 'x' '/var/log/zimbra.log'
+  assert_fail zro_allowed grep -a -E "$form" 'x' '/var/log/zimbra.log'
+done
+
+it "and the neighbouring programs that search by another name"
+for bin in egrep fgrep zgrep zegrep rgrep ack ripgrep rg awk sed perl; do
+  assert_fail zro_allowed "$bin" -a -F 'x'
+  assert_fail zro_allowed "$bin" -F 'x'
+done
+
+it "the allowlist names exactly the two searches the tool exposes"
+# The equality that keeps the list the complete account of what may be asked of
+# this binary: a third match form, or a second spelling of one of these, fails
+# here rather than passing as an ordinary new entry.
+assert_eq "$(zro_allow_entries | grep -E '^grep:')" \
+  "$(printf '%s\n%s\n%s\n%s' 'grep:-a:-F' 'grep:-a:-E' 'grep:-a:-F:-m' 'grep:-a:-E:-m')"
+
+# -------------------------------------------- the priority the gate imposes --
+
+it "every binary declared to run at reduced priority is one this list names"
+# The declaration is about HOW this program agrees to behave, not about what may
+# run — so it may never become a second, quieter allowlist. A name here that the
+# list above does not carry would be exactly that.
+unlisted=""
+while IFS= read -r bin; do
+  [ -n "$bin" ] || continue
+  found=""
+  while IFS= read -r entry; do
+    case $entry in
+      "$bin":*) found=1; break ;;
+    esac
+  done <<INNER
+$(zro_allow_entries)
+INNER
+  [ -n "$found" ] || unlisted="$unlisted [$bin]"
+done <<EOF
+$(zro_low_priority_bins)
+EOF
+assert_eq "$unlisted" ""
+
+it "and the readers that scan a whole log are the ones declared"
+# The searcher and the decompression, which are what a scan really spends. The
+# bounded read is deliberately absent: it reads the end of one file and returns.
+assert_ok zro_runs_low_priority grep
+assert_ok zro_runs_low_priority gzip
+assert_fail zro_runs_low_priority tail
+assert_fail zro_runs_low_priority zmprov
+assert_fail zro_runs_low_priority ''
+
+it "and the declaration is matched whole, never as a prefix"
+assert_fail zro_runs_low_priority gre
+assert_fail zro_runs_low_priority 'grep:-a'
+assert_fail zro_runs_low_priority 'gzip -dc'
+
 it "allows the LDAP-mode reads as three-token prefixes"
 assert_ok zro_allowed zmprov -l ga
 assert_ok zro_allowed zmprov -l gam
@@ -368,18 +461,24 @@ assert_ok zro_allowed tail -n 500 '/var/log/zimbra.log'
 assert_ok zro_allowed gzip -dc '/var/log/zimbra.log.1.gz'
 assert_ok zro_allowed zmcontrol -v
 
-it "the allowlist names exactly two flags in a data position"
-# Two entries, and each arrived with the ticket that needs it: the entry-only
-# account read, and the raw-byte form of the mailbox size. A third added without a
-# ticket behind it fails here — which is the same friction the list itself exists
-# to impose.
+it "the allowlist names exactly four flags in a data position"
+# Four entries, and each arrived with the ticket that needs it: the entry-only
+# account read, the raw-byte form of the mailbox size, and the match cap on each
+# of the search's two match forms. A fifth added without a ticket behind it fails
+# here — which is the same friction the list itself exists to impose.
+#
+# The two caps are one decision written twice, because `-F` and `-E` are two
+# operations: what the cap does behind a literal match and behind a pattern this
+# program owns is the same thing, and approving it for one may not approve it for
+# the other.
 #
 # Both shapes a data-position flag can take are read: a third token behind a
 # subcommand, and a fourth behind a mode flag and its subcommand. Reading only
 # the first would let `zmprov:-l:ga:-t` be added in silence, which is the entry a
 # maintainer would reach for first.
 data_flags=$(zro_allow_entries | grep -E '^[^:]+:[^-][^:]*:-|^[^:]+:-[^:]*:[^:]*:')
-assert_eq "$data_flags" "$(printf '%s\n%s' 'zmprov:ga:-e' 'zmmailbox:gms:-v')"
+assert_eq "$data_flags" "$(printf '%s\n%s\n%s\n%s' \
+  'zmprov:ga:-e' 'zmmailbox:gms:-v' 'grep:-a:-F:-m' 'grep:-a:-E:-m')"
 
 # zmprov gmi maps to the admin GetMailboxRequest, whose handler calls
 # MailboxManager.getMailboxByAccount(account) — the AUTOCREATE overload,

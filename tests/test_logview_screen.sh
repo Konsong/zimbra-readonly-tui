@@ -12,6 +12,8 @@ export ZRO_SYSTEM_BIN="$ZRO_TEST_ROOT/mocks/system"
 export ZRO_ID_BIN="$ZRO_TEST_ROOT/mocks/bin/id"
 export ZRO_RUNUSER="$ZRO_TEST_ROOT/mocks/bin/runuser"
 export ZRO_TIMEOUT_BIN="$ZRO_TEST_ROOT/mocks/bin/timeout"
+export ZRO_NICE_BIN="$ZRO_TEST_ROOT/mocks/bin/nice"
+export ZRO_IONICE_BIN="$ZRO_TEST_ROOT/mocks/bin/ionice"
 export ZRO_UI_BACKEND=stub
 export ZRO_SOURCED_ONLY=1
 # The queue's probe is pinned: whether the machine running the suite ships a
@@ -207,6 +209,29 @@ out=$(transcript)
 assert_contains "$out" "Zaman asimi"
 assert_contains "$out" "$SYS"
 assert_contains "$out" "DOKUNULMADI"
+
+it "a compressed file on a host that cannot reduce priority says which it is"
+# Decompressing a rotated log is as much disk and processor work as a search, so
+# the gate wraps it in the same reduced priority — and a host without the two
+# commands that do the wrapping is refused rather than given an ordinary-priority
+# read. The shared reporter would say only that something was unavailable; this
+# screen names the compression, the two commands, and the fact that the plain
+# files on the same list still work.
+queue "logview" "syslog" "2" "__CANCEL__" "__CANCEL__" "__CANCEL__"
+: >"$ZRO_UI_OUT"; : >"$ZRO_MOCK_LOG"
+ZRO_IONICE_BIN='' zro_menu_main
+out=$(transcript)
+assert_contains "$out" "Sikistirilmis dosya acilamadi"
+assert_contains "$out" "ionice"
+assert_not_contains "$out" "TEXT Log:"
+
+it "and the plain files on the same list are still readable there"
+queue "syslog" "1" "__CANCEL__" "__CANCEL__" "__CANCEL__"
+: >"$ZRO_UI_OUT"
+ZRO_IONICE_BIN='' ZRO_LOGVIEW_LINES=5 zro_menu_logview
+out=$(transcript)
+assert_contains "$out" "TEXT Log:"
+assert_contains "$out" "line 40"
 
 it "cancelling the log menu returns to the caller"
 queue "__CANCEL__"

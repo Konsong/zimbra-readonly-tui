@@ -1,0 +1,13 @@
+2026-07-29 21:03:07,345 WARN  [main] [] extensions - no Zimbra-Extension-Class found, ignored: /opt/zimbra/lib/ext/zimbra-freebusy
+2026-07-29 21:03:09,911 INFO  [LmtpServer] [] TcpServer/7025 - Starting accept loop: 1 core threads, 20 max threads.
+2026-08-02 02:28:18,054 INFO  [qtp393040818-94:https://localhost:7071/service/admin/soap/GetAccountRequest] [name=zimbra;ua=zmprov/9.0.0_GA_4200046;soapId=6d55c861;] misc - delegated access: doc=GetAccount, authenticated account=zimbra, target account=mehmet.kaya@example.com
+2026-08-02 02:28:53,494 INFO  [MailboxPurge] [name=mehmet.kaya@example.com;mid=9;] purge - Purging messages.
+com.zimbra.common.service.ServiceException: system failure: mailbox not found for account 344c2c64-458c-4447-ae21-4a18b4284e28
+	at com.zimbra.common.service.ServiceException.FAILURE(ServiceException.java:292) ~[zimbracommon.jar:9.0.0_GA_4200046]
+	at com.zimbra.cs.service.admin.GetIndexStats.handle(GetIndexStats.java:82) ~[zimbrastore.jar:9.0.0_GA_4200046]
+com.zimbra.cs.account.AccountServiceException: no such account: olmayan-kullanici@example.com
+	at com.zimbra.cs.account.AccountServiceException.NO_SUCH_ACCOUNT(AccountServiceException.java:220) ~[zimbrastore.jar:9.0.0_GA_4200046]
+2026-08-02 16:49:04,242 INFO  [LmtpServer-1] [ip=192.0.2.12;] lmtp - Delivering message: size=840 bytes, nrcpts=1, sender=ahmet.yilmaz@example.com, msgid=<delivered-1785678543@capture.example.com>
+2026-08-02 16:49:04,248 INFO  [LmtpServer-1] [name=ayse.demir@example.com;mid=10;ip=192.0.2.12;] filter - Variables extension is loaded
+2026-08-03 10:02:13,041 INFO  [qtp393040818-23://localhost:8080/service/soap/AuthRequest] [ua=zmsoap;soapId=16108ede;] account - Error occurred during authentication: authentication failed for [olmayan-kullanici@example.com]. Reason: account not found.
+2026-08-03 10:02:13,041 INFO  [qtp393040818-23://localhost:8080/service/soap/AuthRequest] [ua=zmsoap;soapId=16108ede;] SoapEngine - handler exception: authentication failed for [olmayan-kullanici@example.com], account not found

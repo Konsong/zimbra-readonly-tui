@@ -263,6 +263,33 @@ chmod 000 -- "$SYS"
 assert_fail zro_cap_trace_log
 chmod 644 -- "$SYS"
 
+# --- the log search, and the promise it cannot keep without two commands ------
+
+it "a log search needs the two commands that make it yield"
+# NOT a probe about a log. Which files are readable is answered by the scan itself
+# and disclosed as a partial scan; what can be known beforehand is whether this
+# host can run a scan at reduced processor and idle disk priority at all.
+assert_ok zro_cap_search_available
+assert_out_eq "ok" zro_cap_search_reason
+
+it "and reports a host without either of them as the same one cause"
+# One cause because there is one repair: both commands come from the base system,
+# and a scan that cannot yield is refused whichever of them is missing.
+ZRO_NICE_BIN='' assert_out_eq "noprio" zro_cap_search_reason
+ZRO_IONICE_BIN='' assert_out_eq "noprio" zro_cap_search_reason
+ZRO_NICE_BIN='' ZRO_IONICE_BIN='' assert_out_eq "noprio" zro_cap_search_reason
+ZRO_NICE_BIN='' assert_fail zro_cap_search_available
+ZRO_IONICE_BIN='' assert_fail zro_cap_search_available
+
+it "and it is not cached, because the fact it reads cannot go stale"
+# The trace's probes cache because each costs a filesystem walk or an invocation.
+# This one reads two variables the gate reads anyway, so a cache would be a second
+# copy of a fact that is already free — and one that zro_cap_reset would have to
+# remember to clear.
+zro_cap_reset
+ZRO_NICE_BIN='' assert_out_eq "noprio" zro_cap_search_reason
+assert_out_eq "ok" zro_cap_search_reason
+
 rm -f -- "$ZRO_MOCK_LOG"
 rm -rf -- "$LOGTREE"
 zro_t_report
