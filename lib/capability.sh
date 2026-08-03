@@ -399,6 +399,43 @@ zro_cap_queue_available() {
   [ "$(zro_cap_queue_reason)" = ok ]
 }
 
+# --- the log search, and the promise it cannot keep without two commands ------
+#
+# ONE REASON, and it is not about a log at all. Which files a search can read is
+# answered file by file by the search itself, disclosed as a partial scan — the
+# same arrangement the bounded viewer has, and why neither is marked for a log it
+# cannot open. What CAN be known before an operator spends anything is whether this
+# host can run a scan the way this tool promises to: at reduced processor priority
+# and idle disk priority, so that diagnosing a loaded mail server does not deepen
+# the load.
+#
+# A host without those two commands is offered the entry and then refused by the
+# gate, which is the one thing a mark exists to prevent. It is a fact about the
+# host, it holds for every question and every window, and there is one repair — a
+# package — so it belongs here with the other host facts rather than inside a
+# screen.
+#
+# NO FORCED FORM, unlike the trace's two probes, and deliberately: what this reads
+# is already an overridable variable. Pointing ZRO_NICE_BIN at nothing IS a host
+# without nice, so the suite scripts this the way an operator would meet it rather
+# than through a second switch that could answer differently from the gate.
+# ONE WORD, and no table of the words it may answer — unlike the trace's four,
+# which exist because a forced value has to be judged against something. There is
+# nothing to force here and nothing to typo: the two facts are read from the
+# variables that hold them, and the screen behind the mark has a defect branch for
+# a word this function does not yet return.
+zro_cap_search_reason() {
+  if [ -z "$ZRO_NICE_BIN" ] || [ -z "$ZRO_IONICE_BIN" ]; then
+    printf 'noprio'
+    return 0
+  fi
+  printf 'ok'
+}
+
+zro_cap_search_available() {
+  [ "$(zro_cap_search_reason)" = ok ]
+}
+
 # Both probes, as the one question a menu asks: can a delivery trace answer
 # anything at all on this host?
 #

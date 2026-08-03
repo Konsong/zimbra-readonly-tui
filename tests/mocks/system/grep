@@ -1,0 +1,25 @@
+#!/usr/bin/env bash
+set -uo pipefail
+# shellcheck source=../mock_common.sh
+. "${ZRO_MOCK_LIB:?ZRO_MOCK_LIB is required}/mock_common.sh"
+zro_mock_record grep "$@"
+
+# Records its argv and then does the real thing, like the two readers beside it.
+# It matters most here: what the cases turn on is that a whole file really is
+# searched, that the cap really bounds the matches, and that the exit status
+# tells "nothing matched" apart from "could not be read" — and a mock printing a
+# fixture would pass whether or not any of that held.
+#
+# The real binary is reached through $PATH, which never contains this directory:
+# the gate resolves every mock by absolute path out of its declared root.
+#
+# A file that cannot be read is scripted rather than produced with a mode, for the
+# reason the tail mock gives — the suite is run as root often enough that
+# chmod 000 proves nothing. Status 2 is what GNU grep exits with when it cannot
+# open a file, measured on the lab server; 1 is what it exits with when the file
+# was read and nothing matched.
+if [ -n "${ZRO_MOCK_GREP_ERR:-}" ]; then
+  printf '%s\n' "$ZRO_MOCK_GREP_ERR" >&2
+  exit "${ZRO_MOCK_GREP_RC:-2}"
+fi
+exec grep "$@"

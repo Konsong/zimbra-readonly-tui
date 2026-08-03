@@ -224,9 +224,47 @@ ZRO_LIB_EXEC_LOADED=1
 # operator text. `-f` is absent and therefore refused — it follows a growing file
 # and never returns, which on a screen is a tool that has hung.
 #
-# `zmprov:ga:-e` IS AN ENTRY IN THE DATA POSITION, and the only one. What follows
-# an approved subcommand is the caller's already-validated data — but a flag
-# written there is not data at all: it changes what the command does. `zmprov`
+# `grep` IS THE LOG SEARCH, AND IT IS THE THIRD BINARY HERE THAT IS NOT ZIMBRA'S.
+# It is listed for the reason `tail` and `gzip` are: it reads the content an
+# operator asked for. That is also the line that keeps it OFF this list in its
+# other role — the inventory and this file both run a bare `grep` over this
+# program's OWN text: the tables declared here, and the stderr of a command it has
+# just run. That is plumbing, exactly as `sort` and `sed` are.
+#
+# What decides is not the binary and not even the file, but WHOSE CONTENT it is: a
+# log the operator chose is an operation and goes on this list; something this
+# program wrote itself is not, and does not.
+#
+# `-a` IS A MODE AND IS NEVER APPROVED ALONE, the way `zmprov -l` is not. It makes
+# the reader treat a file with an odd byte in it as text, which mailbox.log needs
+# — measured on TEST-C, where a single byte otherwise leaves `grep` printing
+# nothing at all and an operator reading that as "it never happened". A `grep:-a`
+# entry would let every operation behind it ride in free, so the mode and the
+# match form are approved together.
+#
+# TWO MATCH FORMS, AND THE DIFFERENCE IS WHOSE TEXT IT IS. `-F` matches the
+# operator's own text as the literal it is, which is what lets an address carrying
+# a '.' or a '+' match itself. `-E` runs a pattern this program owns and the
+# operator cannot type — the named questions in lib/logsearch.sh, one per line of
+# a mail log the lab server really wrote. Nothing an operator types ever reaches
+# `-E`, and a test holds that true.
+#
+# `-m` IS THE MATCH CAP, and it is grep's own bound exactly as `-n` is tail's.
+# What follows it is a count computed here, then the pattern and the file. The cap
+# is on MATCHES rather than on lines read, which is the whole difference between
+# this and the bounded viewer: the viewer answers from the end of one file, and a
+# search that did that would answer "no record" from the newest lines of a log
+# whose older ones hold the record.
+#
+# `-r`, `-R` and `--include` ARE NOWHERE HERE and may not arrive: each walks a
+# directory, which would read files the log inventory never admitted. `-f` reads
+# its patterns from a file, which is operator text becoming a pattern by another
+# route. None of them writes — grep cannot — but the list is what may be ASKED,
+# and a form nobody approved is a form nobody has to judge.
+#
+# `zmprov:ga:-e` IS AN ENTRY IN THE DATA POSITION, and it was the first. What
+# follows an approved subcommand is the caller's already-validated data — but a
+# flag written there is not data at all: it changes what the command does. `zmprov`
 # carries `-t`, which writes binary attribute values to files under the
 # localconfig temp directory and deletes whatever stood at the path first: a
 # local write, performed by a read. Whether that tool's parser honours the flag
@@ -296,6 +334,10 @@ zmmsgtrace:--id
 postqueue:-p
 tail:-n
 gzip:-dc
+grep:-a:-F
+grep:-a:-E
+grep:-a:-F:-m
+grep:-a:-E:-m
 '
 
 zro_allow_entries() {
@@ -446,6 +488,69 @@ ZRO_RUNUSER="${ZRO_RUNUSER:-$(zro_first_existing /sbin/runuser /usr/sbin/runuser
 ZRO_TIMEOUT_BIN="${ZRO_TIMEOUT_BIN:-$(zro_first_existing /usr/bin/timeout /bin/timeout)}"
 ZRO_ID_BIN="${ZRO_ID_BIN:-$(zro_first_existing /usr/bin/id /bin/id)}"
 ZRO_TIMEOUT="${ZRO_TIMEOUT:-60}"
+# The two wrappers that make a scan yield to the mail server. Plumbing, beside
+# timeout and runuser and for the same reason ADR-0002 gives: they are this
+# program's own conduct rather than an operation an operator chose, so they are
+# absent from the allowlist — which stays the complete account of what may be RUN,
+# not of how this program agrees to behave while running it.
+ZRO_NICE_BIN="${ZRO_NICE_BIN:-$(zro_first_existing /usr/bin/nice /bin/nice)}"
+ZRO_IONICE_BIN="${ZRO_IONICE_BIN:-$(zro_first_existing /usr/bin/ionice /bin/ionice)}"
+
+# WHICH BINARIES RUN AT REDUCED PRIORITY, declared here rather than decided at a
+# call site. A per-call switch is a switch a caller can forget, and the caller who
+# forgets is the one scanning 700 MB of mail log on a server that is already
+# struggling — which is the moment this exists for. So it is a property of the
+# binary, read by the gate, and no module can express a scan that runs any other
+# way.
+#
+# BOTH READERS, not just the searcher. `gzip -dc` is what a compressed rotated log
+# is read through, and decompressing 78 MB is the same disk and the same processor
+# whether a search or the bounded viewer asked for it.
+#
+# THE CONSEQUENCE IS STATED RATHER THAN DISCOVERED: on a host without these two
+# commands, the viewer's COMPRESSED files stop being readable as well — the gate
+# refuses rather than reading them at ordinary priority. Its plain files are
+# unaffected, and the screen behind that refusal says so and names the repair. The
+# alternative was leaving the biggest read this tool makes outside the promise it
+# makes about every other one.
+#
+# `tail` IS DELIBERATELY ABSENT. It reads the end of one file and returns; there is
+# nothing there to yield. An entry for it would be priority as a habit rather than
+# as an answer to a cost, and this table is meant to be read as the second.
+ZRO_LOW_PRIORITY='
+grep
+gzip
+'
+
+zro_low_priority_bins() {
+  printf '%s' "$ZRO_LOW_PRIORITY" | grep -v '^[[:space:]]*$'
+}
+
+# Whether this binary's work is heavy enough to be made to wait for the server's.
+# Matched as one whole line, the way the allowlist is, and fed in on a heredoc for
+# the same measured reason: `printf | grep -q` reports a spurious failure when the
+# reader wins the race, and here that would be a scan that quietly ran at ordinary
+# priority.
+zro_runs_low_priority() {
+  local bin=${1-}
+  [ -n "$bin" ] || return 1
+  grep -qxF -- "$bin" <<EOF
+$ZRO_LOW_PRIORITY
+EOF
+}
+
+# HOW FAR REDUCED, as literals rather than as overridable variables. The level and
+# the class are a promise this tool makes to the server it is diagnosing, and a
+# variable holding them would be the off switch that promise may not have — the
+# same rule lib/capability.sh states about the account every command runs as.
+#
+# Nineteen is the lowest processor priority there is, and class 3 is the idle disk
+# class: a scan gets the disk when nothing else wants it. Both are settable by an
+# unprivileged account — measured on TEST-C as the zimbra user, where the child
+# really reported `nice=19` and `ionice=idle`. Raising the niceness of one's own
+# child never needs a privilege; lowering it would.
+ZRO_NICE_LEVEL=19
+ZRO_IONICE_CLASS=3
 
 zro_current_user() {
   [ -n "$ZRO_ID_BIN" ] || return "$ZRO_E_UNAVAILABLE"
@@ -503,6 +608,7 @@ zmmsgtrace:ZRO_ZIMBRA_LIBEXEC
 postqueue:ZRO_POSTFIX_SBIN
 tail:ZRO_SYSTEM_BIN
 gzip:ZRO_SYSTEM_BIN
+grep:ZRO_SYSTEM_BIN
 '
 
 zro_bin_root_entries() {
@@ -664,7 +770,25 @@ zro_exec() {
   # read there as data, so the flag rule above saw it exactly as it sees an
   # account name after `zmprov ga`.
   local -a argv
-  argv=("$ZRO_TIMEOUT_BIN" -k 5 "$ZRO_TIMEOUT" "$path")
+  argv=("$ZRO_TIMEOUT_BIN" -k 5 "$ZRO_TIMEOUT")
+
+  # INSIDE THE CLOCK, NOT AROUND IT. Both wrappers exec through to what follows,
+  # so the process timeout is watching is still the one doing the work — and the
+  # order keeps the timeout guarantee exactly where every existing case asserts
+  # it, immediately inside the privilege wrapper.
+  #
+  # A host without them refuses the operation rather than running it at ordinary
+  # priority. That is the same refusal the missing clock gets below, and it is the
+  # honest one: this program promises that a scan yields, and a scan that cannot
+  # yield is not the operation the operator was offered.
+  if zro_runs_low_priority "$bin"; then
+    if [ -z "$ZRO_NICE_BIN" ] || [ -z "$ZRO_IONICE_BIN" ]; then
+      zro_log error "cannot run at reduced priority: nice or ionice is not on this host"
+      return "$ZRO_E_UNAVAILABLE"
+    fi
+    argv+=("$ZRO_NICE_BIN" -n "$ZRO_NICE_LEVEL" "$ZRO_IONICE_BIN" -c "$ZRO_IONICE_CLASS")
+  fi
+  argv+=("$path")
   if [ "$bin" = "$ZRO_GATED_BIN" ]; then
     argv+=("${ZRO_GATED_PREFIX[@]}" "$1")
     shift

@@ -142,7 +142,13 @@ while IFS= read -r call; do
     -*)
       case $t2 in
         '"'*|'$'*) continue ;;      # dynamic subcommand behind a mode flag
-        [A-Za-z]*) key="$bin:$t1:$t2" ;;
+        # A subcommand behind a mode flag, as `zmprov -l ga` — and a second FLAG
+        # behind one, as the search's `grep -a -F`. Both are three-token
+        # operations, and the second shape arrived with the log search: a mode
+        # that is never approved alone, then the form that says what is being
+        # asked. Reading only the alphabetic shape left the key at two tokens,
+        # which is not on the list and never can be.
+        [A-Za-z]*|-*) key="$bin:$t1:$t2" ;;
         *) ;;                       # a redirection or operator: two-token key
       esac
       ;;
@@ -594,6 +600,105 @@ assert_eq "$unapproved" ""
 it "and every approved system operation has a call site, in exactly one spelling"
 assert_eq "$(printf '%s\n' "$viewer_calls" | grep -c 'zro_exec')" \
           "$(printf '%s\n' "$allow" | grep -c '^\(tail\|gzip\):')"
+
+# The log search hands the gate a mode flag, a match form, and then a cap and a
+# pattern this program computed. The generic extraction above resolves the
+# operation, but the equality below is what holds the two match forms to being the
+# only two — the same rule the tracer's filters live by.
+it "every log search call site names an operation the allowlist approves"
+search_calls=$(printf '%s\n' "$raw_code" \
+               | grep -oE 'zro_exec[[:space:]]+grep[[:space:]]+-a[[:space:]]+-[A-Za-z]' \
+               | sort -u)
+assert_contains "$search_calls" "zro_exec grep -a -F"
+assert_contains "$search_calls" "zro_exec grep -a -E"
+unapproved=""
+while IFS= read -r call; do
+  [ -n "$call" ] || continue
+  form=$(printf '%s' "$call" | awk '{print $4}')
+  printf '%s\n' "$allow" | grep -qxF -- "grep:-a:$form" || unapproved="$unapproved [$form]"
+done <<EOF
+$search_calls
+EOF
+assert_eq "$unapproved" ""
+
+it "and the search reaches the gate in those two forms and no other"
+# Two call sites in the whole tree, both in the function that owns them. A third
+# would be a form nobody approved, or the same form written twice — and the second
+# is how a maintainer reading the list stops being able to tell what may be run.
+assert_eq "$(printf '%s\n' "$raw_code" | grep -cE 'zro_exec[[:space:]]+grep')" "2"
+assert_eq "$(zro_strip_comments "$ZRO_SRC/lib/logsearch.sh" \
+             | grep -cE 'zro_exec[[:space:]]+grep')" "2"
+
+it "and no form of it that walks a directory is written anywhere"
+# `-r`, `-R` and `--include` would read files the log inventory never admitted, and
+# `-f` takes its patterns from a file, which is operator text becoming a pattern by
+# another route. The gate refuses all of them; this says they are not written down
+# either.
+for form in -r -R --recursive --include --exclude --exclude-dir; do
+  assert_not_contains "$code" "zro_exec grep -a -F $form"
+  assert_not_contains "$code" "zro_exec grep -a -E $form"
+  assert_not_contains "$code" "grep $form"
+done
+for bin in egrep fgrep zgrep zegrep rgrep; do
+  assert_not_contains "$code" "zro_exec $bin"
+done
+
+it "the log searcher writes no path of its own"
+# Every path it reads comes from the log inventory, and every binary it runs is
+# resolved under a root declared in lib/exec.sh — the same rule the viewer lives
+# by, and for the same reason.
+logsearch=$(zro_scan_file "$ZRO_SRC/lib/logsearch.sh")
+for prefix in /usr /bin /sbin /var /opt /etc; do
+  assert_not_contains "$logsearch" "$prefix"
+done
+
+it "the log searcher reaches no Zimbra binary and no mailbox"
+assert_not_contains "$logsearch" "zmmailbox"
+assert_not_contains "$logsearch" "zmprov"
+assert_not_contains "$logsearch" "zmmsgtrace"
+
+it "every scan this tool can express runs at reduced priority"
+# The promise is kept by the gate, so what has to be true here is that the gate is
+# the only place it is decided: a module reaching for the priority wrappers itself
+# would be a scan that could be written without them.
+#
+# READ WITH COMMENTS STRIPPED AND QUOTES LEFT ON, unlike almost everything else in
+# this file, and looking for the EXPANSION rather than the name. A variable is
+# nearly always read inside double quotes, so the quote-stripping reader would find
+# no mention of these two anywhere and pass without checking anything — while the
+# bare name legitimately appears in an operator-facing message, which tells
+# somebody where to point them and reads nothing at all. The '$' is what tells a
+# read from a mention.
+#
+# Two files may read them: the gate, which builds the wrapper, and the capability
+# module, which asks whether this host has them before an operator spends a search
+# finding out.
+#
+# SC2016: the dollar sign is the point. These are the literal text of a read, not
+# variables to expand — the same reason the gate call site above is written this
+# way.
+# shellcheck disable=SC2016
+for f in "${SOURCES[@]}"; do
+  case $f in
+    */lib/exec.sh|*/lib/capability.sh) continue ;;
+  esac
+  body=$(zro_strip_comments "$f")
+  assert_not_contains "$body" '$ZRO_NICE_BIN'
+  assert_not_contains "$body" '$ZRO_IONICE_BIN'
+done
+
+it "and the two files that may read them are the gate and the probe"
+# The exemption above is only worth anything if it is checked: without this, a
+# third file could be added to that case list and nothing would notice.
+# shellcheck disable=SC2016
+assert_contains "$(zro_strip_comments "$ZRO_SRC/lib/exec.sh")" '$ZRO_NICE_BIN'
+# shellcheck disable=SC2016
+assert_contains "$(zro_strip_comments "$ZRO_SRC/lib/capability.sh")" '$ZRO_NICE_BIN'
+
+it "and the binaries declared to run that way are the ones that scan a whole file"
+gate=$(zro_scan_file "$ZRO_SRC/lib/exec.sh")
+assert_contains "$gate" "ZRO_LOW_PRIORITY"
+assert_eq "$(zro_low_priority_bins)" "$(printf '%s\n%s' 'grep' 'gzip')"
 
 it "no in-place decompression is expressible anywhere in the tree"
 # THE POINT OF APPROVING ONLY ONE FORM. Bare gzip and gzip -d replace the file

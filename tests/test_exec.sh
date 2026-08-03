@@ -19,6 +19,8 @@ export ZRO_SYSTEM_BIN="$ZRO_TEST_ROOT/mocks/system"
 export ZRO_ID_BIN="$ZRO_TEST_ROOT/mocks/bin/id"
 export ZRO_RUNUSER="$ZRO_TEST_ROOT/mocks/bin/runuser"
 export ZRO_TIMEOUT_BIN="$ZRO_TEST_ROOT/mocks/bin/timeout"
+export ZRO_NICE_BIN="$ZRO_TEST_ROOT/mocks/bin/nice"
+export ZRO_IONICE_BIN="$ZRO_TEST_ROOT/mocks/bin/ionice"
 export ZRO_TIMEOUT=60
 chmod +x "$ZRO_TEST_ROOT"/mocks/bin/* "$ZRO_TEST_ROOT"/mocks/libexec/* \
          "$ZRO_TEST_ROOT"/mocks/system/* 2>/dev/null || true
@@ -282,9 +284,108 @@ ZRO_MOCK_ID_USER=zimbra assert_status "$ZRO_E_DENIED" zro_exec tail -f '/var/log
 ZRO_MOCK_ID_USER=zimbra assert_status "$ZRO_E_DENIED" zro_exec tail '/var/log/zimbra.log'
 assert_eq "$(cat "$ZRO_MOCK_LOG")" ""
 
+# ------------------------------------------------- the log search, and its cost --
+#
+# The third system binary, and the first operation in this tool that is made to
+# WAIT for the server it is diagnosing. Both halves are asserted the way the
+# timeout wrapper already is: on the vector that really reached the binary.
+
+it "runs a literal search with the cap and the file in the vector"
+: >"$ZRO_MOCK_LOG"
+hay=$(mktemp)
+printf 'alpha\nbeta ali+fatura@example.com\ngamma\n' >"$hay"
+ZRO_MOCK_ID_USER=zimbra assert_out_eq "beta ali+fatura@example.com" \
+  zro_exec grep -a -F -m 5 'ali+fatura@example.com' "$hay"
+assert_contains "$(grep '^grep' "$ZRO_MOCK_LOG")" \
+  "$(printf -- 'grep\t-a\t-F\t-m\t5\tali+fatura@example.com\t%s' "$hay")"
+
+it "and the operator's text stayed a literal, not a pattern"
+# THE POINT OF THE -F FORM. '+' is a quantifier to a regular-expression engine, so
+# the same address matched as a pattern finds nothing — a silent empty answer on
+# the one screen where empty is supposed to mean something.
+ZRO_MOCK_ID_USER=zimbra assert_status 1 zro_exec grep -a -E -m 5 'ali+fatura@example.com' "$hay"
+
+it "runs the pattern form this program owns"
+ZRO_MOCK_ID_USER=zimbra assert_out_eq "alpha" zro_exec grep -a -E -m 5 '^a(lpha|mber)$' "$hay"
+
+it "reports a file it could not open with a status of its own"
+# Two failures that must never arrive as one: nothing matched, and the file was
+# never read. Measured on the lab server as 1 and 2.
+ZRO_MOCK_ID_USER=zimbra assert_status 1 zro_exec grep -a -F -m 5 'delta' "$hay"
+ZRO_MOCK_ID_USER=zimbra ZRO_MOCK_GREP_RC=2 \
+  ZRO_MOCK_GREP_ERR="grep: $hay: Permission denied" \
+  assert_status 2 zro_exec grep -a -F -m 5 'alpha' "$hay"
+
+it "wraps a scan in reduced processor and idle disk priority"
+# The promise that diagnosing a loaded mail server does not deepen the load. It is
+# not a comment in the search module: it is in the vector, on every scan, put
+# there by the gate — so no caller can express a scan that runs any other way.
+: >"$ZRO_MOCK_LOG"
+ZRO_MOCK_ID_USER=zimbra zro_exec grep -a -F -m 5 'alpha' "$hay" >/dev/null
+assert_contains "$(grep '^nice' "$ZRO_MOCK_LOG")" \
+  "$(printf -- 'nice\t-n\t19\t%s/mocks/bin/ionice\t-c\t3\t%s/mocks/system/grep' \
+     "$ZRO_TEST_ROOT" "$ZRO_TEST_ROOT")"
+assert_contains "$(grep '^ionice' "$ZRO_MOCK_LOG")" \
+  "$(printf -- 'ionice\t-c\t3\t%s/mocks/system/grep' "$ZRO_TEST_ROOT")"
+
+it "and the clock still wraps both of them"
+# ORDER, not merely presence. timeout has to be the outermost thing after the
+# privilege wrapper, or a scan that yields for ever is a scan nothing interrupts.
+assert_contains "$(grep '^timeout' "$ZRO_MOCK_LOG")" \
+  "$(printf -- 'timeout\t-k\t5\t60\t%s/mocks/bin/nice\t-n\t19' "$ZRO_TEST_ROOT")"
+
+it "decompresses at the same priority, because it reads the same files"
+: >"$ZRO_MOCK_LOG"
+packed2=$(mktemp -u).gz
+seq 1 5 | gzip -c >"$packed2"
+ZRO_MOCK_ID_USER=zimbra zro_exec gzip -dc "$packed2" >/dev/null
+assert_contains "$(grep '^nice' "$ZRO_MOCK_LOG")" \
+  "$(printf -- '%s/mocks/system/gzip' "$ZRO_TEST_ROOT")"
+rm -f -- "$packed2"
+
+it "and the bounded read is not wrapped at all"
+# It reads the end of one file and returns. Priority as a habit rather than as an
+# answer to a cost would make the declaration unreadable.
+: >"$ZRO_MOCK_LOG"
+plain2=$(mktemp)
+seq 1 5 >"$plain2"
+ZRO_MOCK_ID_USER=zimbra zro_exec tail -n 2 "$plain2" >/dev/null
+assert_eq "$(grep -c '^nice' "$ZRO_MOCK_LOG")" "0"
+assert_eq "$(grep -c '^ionice' "$ZRO_MOCK_LOG")" "0"
+rm -f -- "$plain2"
+
+it "refuses a scan on a host that cannot reduce priority, and runs nothing"
+# The honest refusal. Running it anyway would be this tool taking the disk from
+# the mail server it was opened to diagnose, and doing it silently.
+: >"$ZRO_MOCK_LOG"
+ZRO_MOCK_ID_USER=zimbra ZRO_NICE_BIN='' \
+  assert_status "$ZRO_E_UNAVAILABLE" zro_exec grep -a -F -m 5 'alpha' "$hay"
+ZRO_MOCK_ID_USER=zimbra ZRO_IONICE_BIN='' \
+  assert_status "$ZRO_E_UNAVAILABLE" zro_exec grep -a -F -m 5 'alpha' "$hay"
+# The identity read is the gate's own plumbing and runs before any of this; what
+# must not have happened is the search.
+assert_eq "$(grep -cE '^(grep|nice|ionice)' "$ZRO_MOCK_LOG")" "0"
+
+it "refuses every search form nobody approved, and runs nothing"
+# The mode alone approves nothing, the way `zmprov -l` does not. The directory
+# walkers would read files the log inventory never admitted, and the pattern-file
+# form is operator text becoming a pattern by another route.
+: >"$ZRO_MOCK_LOG"
+for form in -r -R -f -i -v -l -c -o -q -z --include --exclude -A -B -C; do
+  ZRO_MOCK_ID_USER=zimbra assert_status "$ZRO_E_DENIED" zro_exec grep -a "$form" 'x' "$hay"
+done
+ZRO_MOCK_ID_USER=zimbra assert_status "$ZRO_E_DENIED" zro_exec grep -a 'alpha' "$hay"
+ZRO_MOCK_ID_USER=zimbra assert_status "$ZRO_E_DENIED" zro_exec grep -F 'alpha' "$hay"
+ZRO_MOCK_ID_USER=zimbra assert_status "$ZRO_E_DENIED" zro_exec grep -a -F -r 'alpha' "$hay"
+ZRO_MOCK_ID_USER=zimbra assert_status "$ZRO_E_DENIED" zro_exec egrep -a 'alpha' "$hay"
+ZRO_MOCK_ID_USER=zimbra assert_status "$ZRO_E_DENIED" zro_exec zgrep -a 'alpha' "$hay"
+assert_eq "$(cat "$ZRO_MOCK_LOG")" ""
+rm -f -- "$hay"
+
 it "resolves the system binaries without consulting either Zimbra root"
 assert_out_eq "$ZRO_TEST_ROOT/mocks/system/tail" zro_bin_path tail
 assert_out_eq "$ZRO_TEST_ROOT/mocks/system/gzip" zro_bin_path gzip
+assert_out_eq "$ZRO_TEST_ROOT/mocks/system/grep" zro_bin_path grep
 ZRO_ZIMBRA_BIN=/nonexistent ZRO_ZIMBRA_LIBEXEC=/nonexistent assert_ok zro_bin_available tail
 ZRO_ZIMBRA_BIN=/nonexistent ZRO_ZIMBRA_LIBEXEC=/nonexistent assert_ok zro_bin_available gzip
 

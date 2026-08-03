@@ -74,8 +74,10 @@ accommodated. They are not needed on a standard host.
 |---|---|---|
 | `ZRO_ZIMBRA_BIN` | `/opt/zimbra/bin` | where the Zimbra binaries live |
 | `ZRO_ZIMBRA_LIBEXEC` | `/opt/zimbra/libexec` | where `zmmsgtrace` lives |
-| `ZRO_SYSTEM_BIN` | `/usr/bin` | where `tail` and `gzip` live. A host that keeps one of them elsewhere — Ubuntu before the merged `/usr` ships `gzip` in `/bin` — sets this; the log viewer then reports the binary as unavailable rather than searching `$PATH` for it |
+| `ZRO_SYSTEM_BIN` | `/usr/bin` | where `tail`, `gzip` and `grep` live. A host that keeps one of them elsewhere — Ubuntu before the merged `/usr` ships `gzip` in `/bin` — sets this; the log screens then report the binary as unavailable rather than searching `$PATH` for it |
 | `ZRO_LOGVIEW_LINES` | `500` | how many lines the log viewer's bounded read is |
+| `ZRO_LOGSEARCH_MATCHES` | `200` | how many matching lines one log search may print. The cap is on **matches**, never on how much of a file is read |
+| `ZRO_NICE_BIN`, `ZRO_IONICE_BIN` | resolved by path | the two commands every log scan is wrapped in. Set them if this host keeps them somewhere unusual; **how far** the priority is reduced is not settable, because that is a promise this tool makes to the server rather than a preference |
 | `ZRO_POSTFIX_SBIN` | `/opt/zimbra/common/sbin` | where the mail queue tool lives. Zimbra ships its Postfix under `common`, not under `bin`; a host that keeps it elsewhere sets this, and the queue screen then reports the tool as absent rather than searching `$PATH` for it |
 | `ZRO_QUEUE_DETAIL_MAX` | `50` | how many queue entries the detail behind the counts may show |
 | `ZRO_SYSLOG_FILE` | `/var/log/zimbra.log` | the primary mail log — Postfix, amavis and auth |
@@ -327,6 +329,7 @@ report is the claim.
   an address is too broad a question. It is the one trace that asks you to type
   something, because an identifier is not an address.
 - **Log dosyalari (son satirlar)** — described below.
+- **Log arama (dosyalarin tamaminda)** — described below.
 - **Mail kuyrugu (bekleyen iletiler)** — described below.
 - **Servis durumu** — described below.
 
@@ -381,6 +384,66 @@ on this host at all is its own screen for the same reason.
 The viewer is offered whether or not delivery tracing is available here. The two
 read the same files, but tracing needs `zmmsgtrace` and the primary mail log,
 while this screen can still show `mailbox.log` on a host that has neither.
+
+*Log arama (dosyalarin tamaminda)*:
+
+- The other half of the viewer above, and the opposite trade. Pick a **question**
+  — rejected, deferred or bounced mail, local delivery, account sessions, mailbox
+  errors — or search **free text**, choose a window, and every log file that
+  window covers is read **from its first line to its last**.
+
+**This is the one screen in the tool where finding nothing means something.** The
+viewer reads the end of a file, so an absence there is only an absence in the last
+five hundred lines. Here every selected file is read whole, so *kayit yok* on a
+complete scan means the thing did not happen in those files — and the screen says
+which files those were. On the lab server the delivery outcomes sit in the first
+fifth of the mail log: a bounded read does not reach them, and this does.
+
+**You never type a pattern.** The named questions carry patterns this tool owns,
+each keyed on a line a real server really wrote — a rejection has the literal
+`NOQUEUE` where every other line carries a queue id; local delivery is the `lmtp`
+hop rather than the first `status=sent`, which only means amavis took it; a
+session is `cmd=Auth` because that is on a successful login and a failed one
+alike. Free text is matched **literally**, so `ali+fatura@example.com` matches
+itself instead of being read as a pattern with a quantifier in it.
+
+**A window is required and there is no unbounded range.** It chooses *files*, not
+lines: nothing here parses a timestamp, so the files it selects are read end to
+end and the answer can carry lines from a little either side of the range. The
+screen says so, because an operator who read it as a line filter would think the
+tool had ignored them.
+
+**The cost is declared and confirmed before anything is read** — how many files
+and how many bytes, from the same selection the scan then uses. The number is the
+size on disk; a compressed rotation is several times that once opened, and the
+screen says so rather than inventing a multiplier. This is cost class 3 made
+visible: the decision to spend it is yours, at a moment when you can still decline.
+
+**Scans yield to the mail server.** Every reader runs at the lowest processor
+priority and in the idle disk class, so a search for a problem does not deepen the
+problem it is looking for. That is imposed by the gate rather than by this screen,
+so no operation can be written that scans any other way — and a host without
+`nice` and `ionice` gets the entry marked `KULLANILAMAZ` rather than a scan that
+quietly competes with delivery.
+
+**The output is capped, not the input** — two hundred matching lines by default.
+Reaching the cap is disclosed in the answer and in the screen's title, together
+with the files the scan therefore never opened. That is the difference between
+"this did not happen" and "I stopped looking", and the screen is not allowed to
+blur it.
+
+A file that could not be read makes the answer a **partial scan**: the answer that
+could be found is shown, under a banner naming the files that were missed and
+`zmfixperms`, and the title carries the warning too. Nothing found in a partial
+scan is reported as the partial scan it is and never as an empty result.
+
+**Searching `audit.log` can show you a password.** Not one this tool reads or
+stores — one Zimbra itself wrote there. `zmprov` records administrative changes in
+that file with their values, so a domain modified with an external directory bind
+password has that password in the clear in the log. None of the named questions
+matches such a line, but free text searches whatever you type, and the tool prints
+what the file says without editing it. Treat the audit log the way you would treat
+the file itself.
 
 *Mail kuyrugu (bekleyen iletiler)*:
 
@@ -475,6 +538,16 @@ The second can only be learned by being refused: that setting is read *inside*
 `postqueue`, so there is nothing this tool could stat beforehand. It asks once,
 remembers the refusal for the session, and marks the entry from then on rather
 than charging you for the same refusal twice.
+
+**The log search entry carries the mark for one cause, and it is not about a
+log.** `nice` or `ionice` is missing, so this host cannot run a scan the way this
+tool promises to run one — at the lowest processor priority and in the idle disk
+class. The repair is a package (`coreutils` and `util-linux`), or pointing
+`ZRO_NICE_BIN` and `ZRO_IONICE_BIN` at wherever they live. The scan is **refused
+rather than run at ordinary priority**: a search that competes with delivery on a
+struggling mail server is not the operation you were offered. Which log files are
+readable is not asked here at all — that is answered file by file by the scan
+itself and disclosed as a partial scan, exactly as the viewer answers it.
 
 **Read access is judged for the `zimbra` account, never for you.** Every command
 runs as `zimbra` — see section 2 — so a log that `root` can read and `zimbra`
@@ -662,6 +735,9 @@ zmmsgtrace --id                             delivery trace by message-id
 postqueue -p                                the mail queue, listing form ONLY
 tail -n                                     the log viewer's bounded read
 gzip -dc                                    decompress a rotated log TO STDOUT
+grep -a -F                                  the log search, matching text LITERALLY
+grep -a -E                                  the log search, with a pattern THIS TOOL owns
+grep -a -F -m / grep -a -E -m               the cap on how many matches are printed
 ```
 
 **Two of these have no LDAP form, and in both cases that was decided rather than
@@ -747,11 +823,41 @@ and its permissive default, `static:anyone` — and never as code 90, which in t
 program means a defect. The two send you to different files, so they are kept
 apart.
 
-`tail` and `gzip` are the only entries here that are not Zimbra's. They are on
-this list rather than treated as plumbing beside `timeout` and `id`, because
-those two serve the tool itself while these two read the content an operator
+`tail`, `gzip` and `grep` are the only entries here that are not Zimbra's. They are
+on this list rather than treated as plumbing beside `timeout` and `id`, because
+those two serve the tool itself while these three read the content an operator
 asked for — and because the thing keeping bare `gzip` out would otherwise be
 discipline instead of this list.
+
+**`grep` is on this list in the role where it reads a log, and off it in the role
+where it does not.** The tool also runs a bare `grep` over strings it is already
+holding — its own tables, its own output — and that is plumbing, exactly as `sort`
+and `sed` are. What decides is not the binary but what it reads: a log file the
+operator chose is an operation, and an operation belongs on the list that
+enumerates them.
+
+**`-a` is a mode and is never approved alone**, the way `zmprov -l` is not. It
+makes the reader treat a file with an odd byte in it as text, which `mailbox.log`
+needs — one byte otherwise leaves `grep` printing nothing at all, which an operator
+would read as *it never happened*. **`-F` matches your text as the literal it is**;
+**`-E` runs a pattern this tool owns and you cannot type.** Nothing an operator
+types ever reaches `-E`, and a test drives every screen to prove it. **`-m` is the
+cap** on how many matches are printed — grep's own bound, exactly as `-n` is
+tail's, so a search never holds a whole log's matches in this server's memory.
+
+`-r`, `-R` and `--include` walk a directory and would read files the log inventory
+never admitted; `-f` takes its patterns from a file, which is operator text
+becoming a pattern by another route. None of them writes — `grep` cannot — and all
+of them are absent, because this list is what may be *asked*.
+
+**Two commands wrap every scan and neither is on this list**: `nice -n 19` and
+`ionice -c 3`. They are plumbing beside `timeout` and `runuser` — this program's
+own conduct rather than an operation you chose — and they are declared in
+`lib/exec.sh` as a property of the binaries that scan, so no module can express a
+scan that runs without them. A host missing either refuses the scan rather than
+running it at ordinary priority. Measured on the lab server as the `zimbra`
+account: the child really reports `nice=19` and `ionice=idle`, and neither needs a
+privilege.
 
 **`gzip -dc` is approved and nothing else about `gzip` is.** Bare `gzip`
 compresses in place and deletes the original; `gzip -d` decompresses in place and

@@ -1,0 +1,23 @@
+#!/usr/bin/env bash
+set -uo pipefail
+# shellcheck source=../mock_common.sh
+. "${ZRO_MOCK_LIB:?ZRO_MOCK_LIB is required}/mock_common.sh"
+zro_mock_record nice "$@"
+
+# Records its argv and then runs what it was given, exactly as the timeout and
+# runuser mocks do. What has to be proved here is that the scan really was
+# wrapped — and a mock that answered from a fixture would prove only that a
+# canned file was printed, with the wrapper free to have been left out.
+#
+# The level is stripped rather than applied. Whether this machine lets the suite
+# renice anything is not the question; whether the gate asked it to is, and the
+# recorded vector is the answer.
+while [ $# -gt 0 ]; do
+  case $1 in
+    -n) shift 2 ;;
+    -*) shift ;;
+    *)  break ;;
+  esac
+done
+[ $# -gt 0 ] || exit 0
+exec "$@"

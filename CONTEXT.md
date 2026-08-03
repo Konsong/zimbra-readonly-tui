@@ -281,9 +281,12 @@ equally unusable, so the screen names the cause instead.
 _Avoid_: one-sided gate — this design has no one-sided oracle; gate failure
 
 **Partial scan**:
-A trace answered from fewer log files than the arrival window selected, because
-one could not be read. It is about **how much of the evidence was seen**, and its
-cost is that finding nothing stops being proof that nothing happened.
+An answer assembled from less than the arrival window selected. It is about **how
+much of the evidence was seen**, and its cost is always the same: finding nothing
+stops being proof that nothing happened. Two things produce one — a file that
+could not be read, and a [match-bounded scan](#searching-logs) that hit its cap
+before the last file was opened. They are different sentences on the screen and
+the same fact to a caller, so both are disclosed and both report the partial code.
 _Avoid_: incomplete result, silent skip
 
 ## Cost
@@ -509,5 +512,20 @@ opposite trade from a bounded read: coverage is complete and the **output** is
 what is capped. It is the answer to a search, where a bounded read is the answer
 to a listing — because a search that quietly examined only the newest lines
 reports an absence nobody bounded.
+
+Reaching the cap ends the scan where it had got to, so the files not yet opened
+are never read. That makes a capped answer a [partial scan](#reduced-service) and
+it is disclosed as one. Files are read **newest first** for that reason alone: the
+cap has to fall on the oldest evidence rather than on today's, which is what an
+operator asking what just happened actually meant.
 _Avoid_: grep, bounded search — the bound is on matches, and saying which one
 matters is the whole point
+
+**Reduced priority**:
+The lowest processor priority and the idle disk class, which every log scan runs
+under. Imposed by the exec gate as a property of the binaries that scan rather
+than chosen per call, so no operation can be written that scans without it: a tool
+for diagnosing a struggling mail server may not compete with it for the disk. A
+host that cannot do it is refused the operation rather than given an
+ordinary-priority scan.
+_Avoid_: nice (as a verb), throttling, rate limit

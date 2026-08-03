@@ -181,6 +181,18 @@ it "and answers nothing at all about a file that is not there"
 # an empty answer here has to stay empty.
 assert_out_eq "" zro_inv_file_perms "$TREE/empty/nope.log"
 
+it "reports how many bytes a file holds, which is what a scan is about to cost"
+# The third question this program asks a log file, and it belongs to the module
+# that declares where the logs are. What it MEANS is decided by the screen: for a
+# compressed rotation this is the size on disk, not the bytes that come out of it.
+assert_out_eq "$(stat -c '%s' -- "$SYS")" zro_inv_size "$SYS"
+
+it "and answers nothing about a file that is not there, rather than zero"
+# Zero is a fact about an empty file. A file nobody could stat is not one, and a
+# cost declaration that showed it as zero would understate what it is about to
+# spend — the caller decides what to do with the silence.
+assert_out_eq "" zro_inv_size "$TREE/empty/nope.log"
+
 chmod 644 -- "$AUDIT.1.gz" 2>/dev/null || true
 rm -rf -- "$TREE"
 zro_t_report
