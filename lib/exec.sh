@@ -40,6 +40,26 @@ ZRO_LIB_EXEC_LOADED=1
 # therefore refused. What it may NOT be used for is the count of accounts in a
 # domain: that is `gaa`, it is a server-wide sweep, and it is nowhere here.
 #
+# `zmprov gsig` (getSignatures) and `zmprov gid` (getIdentities) are here so that
+# the mail settings screen can say what an account sends as and signs with. Both
+# read CHILD ENTRIES of the account in the directory — a signature and a send-as
+# identity are entries, not attributes, which is why no attribute list on the
+# account read could have carried them.
+#
+# THEY OPEN NO MAILBOX, MEASURED RATHER THAN ASSUMED, and that was the question
+# worth settling: a command that reads what a user composes with sounds like a
+# command that reads a mailbox. On TEST-C on 2026-08-03 both were run against an
+# account with no mailbox, and `zmprov gis` reported no mailbox for it before and
+# after — the same control the folder reads were admitted under. `gsig` on such an
+# account answers with NOTHING and exit 0, which is what makes the empty case a
+# result rather than a failure on the screen above.
+#
+# The write-named siblings that live one letter away — `csig`, `msig`, `dsig`,
+# `cid`, `mid`, `did` — are absent from this list and therefore refused. They are
+# the reason these two were worth a second look: `createSignature` and
+# `deleteIdentity` are one letter from the reads and change what a user sends as.
+# See docs/research/2026-08-03-mail-settings-and-multiline-attributes.md.
+#
 # `zmprov gis` (getIndexStats) is the EXISTENCE ORACLE, and it is the only reason
 # any mailbox screen can exist at all. `zmmailbox` creates a mailbox for an account
 # that has none, during session setup rather than inside any subcommand, so a
@@ -323,6 +343,10 @@ zmprov:gd
 zmprov:getDomain
 zmprov:gis
 zmprov:getIndexStats
+zmprov:gsig
+zmprov:getSignatures
+zmprov:gid
+zmprov:getIdentities
 zmprov:-l:ga
 zmprov:-l:getAccount
 zmprov:-l:gam
@@ -333,6 +357,10 @@ zmprov:-l:gdl
 zmprov:-l:getDistributionList
 zmprov:-l:gd
 zmprov:-l:getDomain
+zmprov:-l:gsig
+zmprov:-l:getSignatures
+zmprov:-l:gid
+zmprov:-l:getIdentities
 zmmailbox:gaf
 zmmailbox:gf
 zmmailbox:gfg

@@ -191,6 +191,59 @@ report is the claim.
   rather than being retried into a denial. See *Commands this release can run*
   below.
 - **Dagitim listesi uyelikleri** — the distribution lists the account belongs to.
+- **Posta ayarlari (filtre, teslim, imza)** — everything that decides what happens
+  to this account's mail: whether local delivery is disabled, both kinds of
+  forwarding, the aliases, a summary of each filter rule set, the send-as
+  identities and the signatures.
+
+  **It opens no mailbox.** Every fact on it lives on the account entry or on a
+  child entry of it in the directory, so the screen answers in full for an account
+  that has never been used — which is exactly when "why is this user's mail not
+  arriving" is hardest to answer anywhere else.
+
+  **`Yerel teslim: kapali` is the line to read first.** With it set, Zimbra leaves
+  nothing in this account's own mailbox: the mailbox can be empty while every
+  other screen reports a perfectly healthy account. It is normally set beside a
+  forward, which is why the forwarding lines are repeated here from the account
+  card rather than left one screen away — a forward with local delivery *on* is a
+  copy, and a forward with local delivery *off* is the mailbox never receiving the
+  message at all. An absent value reads as `tanimsiz` like every other absent
+  attribute; what Zimbra does in that case is said underneath, as a fact about
+  Zimbra rather than as a value nobody read.
+
+  The filter rule sets are shown here as a **summary with a line count**, not as
+  the script. The full text is the next screen.
+
+  **It reads the account three times**, and the screen says so before it spends
+  them: the entry itself, then its signatures, then its send-as identities.
+  Signatures and identities are separate entries in the directory rather than
+  attributes, so no attribute list on the first read could have carried them.
+
+  **Signatures are shown with their text**, not merely by name — the question this
+  answers is what a user's outgoing mail looks like, which a list of names does
+  not. A signature written in **HTML** is named and measured instead of shown: it
+  routinely carries an embedded image as a data URI, and that is not a footer
+  anybody can read off a terminal. A long body is cut to its first few lines and
+  the screen says so.
+
+  A signature lookup that fails and an account with no signatures are **different
+  answers** and are shown as different words: `yok` means this account has no
+  signatures, `bilinmiyor` means nobody managed to ask. The same holds for the
+  send-as identities.
+
+  **`Gonderim kimlikleri`, never `Kimlikler`.** A Zimbra identity — a persona the
+  account may send mail under — is not the *address identity* on the `Adres
+  kimligi` screen, which is what the selected address turns out to be. Two
+  different questions, and the labels keep them apart.
+- **Filtre kurallarinin tam metni** — both filter rule sets in full, incoming and
+  outgoing, exactly as the directory carries them.
+
+  **Nothing is truncated and nothing is tidied.** A rule set is one attribute
+  holding a whole script, and `zmprov` prints its remaining lines raw, with nothing
+  marking them as continuations — so a reader that took the rest of the matching
+  line would show the first rule and hide every rule under it. Blank lines and the
+  `#` lines that name each rule are preserved, because that is what makes the text
+  match rule-for-rule against what the web client shows the account holder.
 - **Mailbox var mi** — whether the account has a mailbox at all. Three answers,
   three screens: the mailbox is there; the account has none *yet*, meaning it is
   provisioned and has never been logged into or delivered to; or there is no such
@@ -704,6 +757,8 @@ What still works, and what does not:
 | Hesap karti | works in full |
 | Deger nereden geliyor (hesap mi, devralma mi) | **refused** — the entry-only read has no approved LDAP form |
 | Dagitim listesi uyelikleri | works in full |
+| Posta ayarlari (filtre, teslim, imza) | works in full — all three reads have an approved LDAP form |
+| Filtre kurallarinin tam metni | works in full |
 | Dagitim listesi karti | works in full |
 | Alan adi karti | works in full |
 | Mailbox var mi | **refused**, with the cause named |
@@ -761,6 +816,8 @@ zmprov gc        getCos                     zmprov -l gc    same, from LDAP
 zmprov gdl       getDistributionList        zmprov -l gdl   same, from LDAP
 zmprov gd        getDomain                  zmprov -l gd    same, from LDAP
 zmprov gis       getIndexStats              (no LDAP form — see below)
+zmprov gsig      getSignatures              zmprov -l gsig  same, from LDAP
+zmprov gid       getIdentities              zmprov -l gid   same, from LDAP
 zmmailbox gaf    getAllFolders              behind the existence gate
 zmmailbox gf     getFolder                  behind the existence gate
 zmmailbox gfg    getFolderGrant             behind the existence gate
@@ -785,6 +842,17 @@ is not written down here on the strength of resembling one that has. The tool
 asks the allowlist *before* it retries a read against LDAP, so a question it can
 only answer through `mailboxd` reports the outage that stopped it rather than an
 allowlist denial, which would mean a defect nobody committed.
+
+**`gsig` and `gid` read child entries, not attributes.** A signature and a send-as
+identity are entries of their own in the directory below the account, which is why
+no attribute list on the account read could have carried them and why the mail
+settings screen costs three reads instead of one. Both were measured against an
+account with **no mailbox** on 2026-08-03: they answered, and `zmprov gis` still
+reported no mailbox for that account afterwards — the same control the folder
+reads were admitted under. `csig`, `msig`, `dsig`, `cid`, `mid` and `did` are one
+letter away, change what a user sends as, and are absent from the list and
+therefore refused. See
+[`docs/research/2026-08-03-mail-settings-and-multiline-attributes.md`](research/2026-08-03-mail-settings-and-multiline-attributes.md).
 
 **`zmmailbox` is on this list as four reads, and every one of them is refused
 until the existence gate has answered.** That binary creates a mailbox for an

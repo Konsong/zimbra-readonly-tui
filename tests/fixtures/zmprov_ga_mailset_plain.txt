@@ -1,0 +1,6 @@
+# name ahmet.yilmaz@example.com
+zimbraMailAlias: a.yilmaz@example.com
+zimbraMailAlias: ayilmaz@example.com
+zimbraMailForwardingAddress: denetim@example.net
+zimbraMailForwardingAddress: arsiv@example.net
+zimbraPrefMailForwardingAddress: kisisel-yedek@example.net

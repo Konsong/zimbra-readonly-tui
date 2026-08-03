@@ -1,0 +1,11 @@
+# name Destek
+zimbraPrefFromAddress: a.yilmaz@example.com
+zimbraPrefFromDisplay: Destek Masasi
+zimbraPrefIdentityName: Destek
+zimbraPrefReplyToAddress: destek@example.com
+zimbraPrefReplyToEnabled: TRUE
+
+# name DEFAULT
+zimbraPrefFromAddress: ahmet.yilmaz@example.com
+zimbraPrefFromDisplay: Ahmet Yilmaz
+zimbraPrefIdentityName: DEFAULT

@@ -30,6 +30,17 @@ Bash + whiptail. No runtime dependencies beyond what a Zimbra host already has.
 > [ADR-0005](docs/adr/0005-zmcontrol-status-is-a-declared-artifact.md) records
 > the judgement.
 >
+> **And what decides where an account's mail goes.** Filter rules, local
+> delivery, aliases, send-as identities and signatures are read from the
+> directory and open no mailbox, so they answer in full for an account that has
+> never been used — measured on the lab server, where `zmprov gis` reported no
+> mailbox for that account before the reads and again after them. The filter
+> rules get a screen of their own because a rule set is one attribute holding a
+> whole script: the single-line attribute reader truncates it to its first rule,
+> which hides every rule underneath, so a sibling reader treats any line that
+> does not begin a **declared** attribute as a continuation — a continuation may
+> be blank, may begin with `#`, and may look exactly like an attribute line.
+>
 > Message search is next; see the
 > [design spec](docs/superpowers/specs/2026-07-29-zimbra-readonly-tui-design.md).
 
