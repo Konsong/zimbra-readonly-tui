@@ -8,6 +8,7 @@ set -uo pipefail
 export ZRO_MOCK_LIB="$ZRO_TEST_ROOT/mocks"
 export ZRO_ZIMBRA_BIN="$ZRO_TEST_ROOT/mocks/bin"
 export ZRO_ZIMBRA_LIBEXEC="$ZRO_TEST_ROOT/mocks/libexec"
+export ZRO_POSTFIX_SBIN="$ZRO_TEST_ROOT/mocks/sbin"
 export ZRO_SYSTEM_BIN="$ZRO_TEST_ROOT/mocks/system"
 export ZRO_ID_BIN="$ZRO_TEST_ROOT/mocks/bin/id"
 export ZRO_RUNUSER="$ZRO_TEST_ROOT/mocks/bin/runuser"
@@ -16,13 +17,16 @@ export ZRO_UI_BACKEND=stub
 export ZRO_SOURCED_ONLY=1
 export ZRO_MOCK_ID_USER=zimbra
 chmod +x "$ZRO_TEST_ROOT"/mocks/bin/* "$ZRO_TEST_ROOT"/mocks/libexec/* \
-         "$ZRO_TEST_ROOT"/mocks/system/* 2>/dev/null || true
+         "$ZRO_TEST_ROOT"/mocks/system/* "$ZRO_TEST_ROOT"/mocks/sbin/* 2>/dev/null || true
 
 # This file is about the mailbox screen, not about what this host ships. Both
 # trace probes are pinned so that a mark on some other entry is never the machine
 # running the suite deciding something.
 export ZRO_CAP_FORCE_TRACE_BIN=yes
 export ZRO_CAP_FORCE_TRACE_LOG=ok
+# And the queue's, for the same reason: whether the machine running the suite
+# ships a mail transfer agent has nothing to say about the cases below.
+export ZRO_CAP_FORCE_QUEUE_BIN=yes
 
 ZRO_MBOX_PROOF_FILE=$(mktemp); export ZRO_MBOX_PROOF_FILE
 

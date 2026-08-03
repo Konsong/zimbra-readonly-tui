@@ -1,0 +1,14 @@
+-Queue ID-  --Size-- ----Arrival Time---- -Sender/Recipient-------
+21E9B104C1C     316 Sun Aug  2 23:26:43  ahmet.yilmaz@example.com
+(Host or domain name not found. Name service error for name=nosuchdomain.invalid type=MX: Host not found, try again)
+                                         kullanici@nosuchdomain.invalid
+
+29AF4104C1D     316 Sun Aug  2 23:26:43  ahmet.yilmaz@example.com
+(Host or domain name not found. Name service error for name=nosuchdomain.invalid type=MX: Host not found, try again)
+                                         baska@nosuchdomain.invalid
+
+26D3F102FBF!     316 Sun Aug  2 23:26:43  ahmet.yilmaz@example.com
+            (connect to dc01.example.com[192.0.2.5]:25: Connection refused)
+                                         kuyruk-test@dc01.example.com
+
+-- 0 Kbytes in 3 Requests.

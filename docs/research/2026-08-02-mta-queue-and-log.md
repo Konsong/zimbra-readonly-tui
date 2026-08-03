@@ -215,13 +215,148 @@ not committed — 716 KB of mostly startup noise — and stays on the lab server
 - The installer's license agreement was accepted. The "notify Zimbra of your installation" step, which
   transmits the admin address, was **declined**.
 
-## 7. Still open
+## 7. Still open after the first pass
 
-Everything the ticket asked for was observed except these, which are recorded rather than guessed:
+Everything the ticket asked for was observed except these, which are recorded rather than guessed. **Three
+of the four were settled in the second pass below**; the rows are left as they were written, with what
+answered them.
 
-| Question | Why it is still open |
+| Question | Why it was still open | Answered |
+|---|---|---|
+| `postqueue` behaviour when `authorized_mailq_users` is **narrowed** | The default is `static:anyone` and it was not changed. What the refusal looks like — exit status and message — is unobserved, and the capability probe in #33 needs it. Producing it means editing a Postfix parameter, which no capture so far has needed. | §9.3 — and the obvious way to narrow it does not narrow it at all |
+| The queue tool's behaviour on an **active** or **hold** queue | Both captures are of the `deferred` queue. `queue_name` is a field in the structured form, so the other values exist; none was observed. | §9.2 for `hold`. `active` remains unobserved |
+| A queue large enough to need bounding | Two entries. The screen is specified to summarise by status first, and two entries cannot show that a large queue is unreadable without it. | Still open. Three entries is what the second pass produced |
+| Whether a **rejected** message can be produced without a client outside `mynetworks` | Not on this configuration. Any site whose `mynetworks` covers its own hosts has the same property, so the tool should not expect to reproduce a rejection locally. | Still open, and expected to stay so |
+
+## 8. Second pass: the service status, for issue #33
+
+Captured on **TEST-C** on **2026-08-02**, late evening, with the same substitutions as everywhere above.
+`zmcontrol status` had never been captured at all — it was described in the CLI reference from source, and
+the screen that renders it needed the real shape.
+
+**Everything running** (`tests/fixtures/zmcontrol_status_ok.txt`), exit **0**:
+
+```
+Host mail01.example.com
+	amavis                  Running
+	ldap                    Running
+	mailbox                 Running
+	mta                     Running
+	service webapp          Running
+	stats                   Running
+	zimbra webapp           Running
+	zimbraAdmin webapp      Running
+	zimlet webapp           Running
+	zmconfigd               Running
+```
+
+**Three things a parser has to survive here.** The host stands in column 1 and every service hangs under it
+behind a **tab**. Four of the ten service names **contain a space** — `service webapp`, `zimbra webapp`,
+`zimbraAdmin webapp`, `zimlet webapp` — so a reader that split on whitespace and took the second field as
+the state would report four services in a state that does not exist. And the name is padded to a fixed
+width, which is presentation and not data: the state is the **last** word on the line.
+
+**With one service stopped** (`tests/fixtures/zmcontrol_status_stopped.txt`): `stats` was stopped with
+`zmstatctl stop` and started again straight afterwards, which is the only way a stopped line could be
+observed on a box where everything runs.
+
+```
+	stats                   Stopped
+```
+
+**The exit status is 0 either way.** A stopped service is not an error to this command, so nothing about
+whether the server is healthy can be read from the status code — only from the lines.
+
+**A service line is an aggregate, and `stats` is what showed it.** Hours after the capture the same host
+reported `stats Stopped` again without anybody stopping it. `zmstatctl status` listed ten of its collectors
+running and one — `zmstat-ldap` — with a pid file pointing at a process that was gone, and exited 1. So
+`Stopped` on this screen means *this service is not fully up*, not *nothing of it is running*, and the
+screen is right to show the word the command chose rather than a healthier reading of it. `zmstatctl start`
+brought it back.
+
+## 9. Second pass: the queue, on a queue that had something in it
+
+The two deferred messages from the first pass had expired by the time this was captured: `postqueue -p`
+answered `Mail queue is empty` and `postqueue -j` printed **nothing at all**, both on exit 0. Three fresh
+messages were injected with `sendmail` — two to a domain that does not resolve, one to a host that refuses
+port 25 — and the captures below are of that queue.
+
+### 9.1 What an empty queue is
+
+`Mail queue is empty` on stdout, exit **0**, for `-p`; **no output at all** for `-j`. An empty queue is not
+an error and must not be rendered as one.
+
+### 9.2 Two statuses in one listing
+
+`tests/fixtures/postqueue_p_deferred_hold.txt` — two deferred and one placed on hold with
+`postsuper -h <id>`:
+
+```
+-Queue ID-  --Size-- ----Arrival Time---- -Sender/Recipient-------
+21E9B104C1C     316 Sun Aug  2 23:26:43  ahmet.yilmaz@example.com
+(Host or domain name not found. Name service error for name=nosuchdomain.invalid type=MX: Host not found, try again)
+                                         kullanici@nosuchdomain.invalid
+
+26D3F102FBF!     316 Sun Aug  2 23:26:43  ahmet.yilmaz@example.com
+            (connect to dc01.example.com[192.0.2.5]:25: Connection refused)
+                                         kuyruk-test@dc01.example.com
+
+-- 0 Kbytes in 3 Requests.
+```
+
+**The hold marker is a `!` appended directly to the queue id**, with no space — so the id is one word and
+the marker is the last character of it, exactly as the manual page describes. The structured form of the
+same queue confirms it reads `"queue_name": "hold"` where the traditional form marks `!`, and `"deferred"`
+where it marks nothing. **`active` was still not observed**: an entry is active only while it is being
+delivered, which on a box with nothing to deliver to is a window too small to catch.
+
+The unstable indentation of the reason line reproduced exactly as in the first pass — column 1 for the long
+one, twelve spaces for the short one — in the same listing, which is what the parser is held to.
+
+### 9.3 The access-control setting, and the way it is not narrowed
+
+**`authorized_mailq_users = static:root` does not narrow anything.** Set that way, `postqueue -p` as
+`zimbra` still answered, exit 0. A `static:` map returns its value for **every** lookup, so `static:root`
+permits everyone exactly as `static:anyone` does — the word after the colon is the value, not the
+permitted user. This is the trap the first pass would have walked into, and it is why the refusal is worth
+capturing rather than reasoning about.
+
+**A plain name list narrows it.** With `authorized_mailq_users = root`, as `zimbra`:
+
+```
+postqueue: fatal: User zimbra(997) is not allowed to view the mail queue
+```
+
+on **stderr**, exit **69** (`EX_NOPERM`). The empty value — `authorized_mailq_users =` — refuses everybody
+with the same message and the same status. `-j` prints nothing on stdout and exits 69 too. As `root` with
+the same setting the listing works, exit 0, which is the point: the refusal is about the account every
+command in this tool runs as, and reading the queue as `root` would be escalating around a setting somebody
+chose.
+
+The setting was restored to `static:anyone` and the listing as `zimbra` confirmed working before the capture
+ended.
+
+## 10. What the second pass left behind on TEST-C
+
+- **The queue is empty again.** The three injected messages were released from hold and deleted with
+  `postsuper -d ALL`; `postqueue -p` answers `Mail queue is empty`.
+- **`authorized_mailq_users` is back to `static:anyone`**, restored from a copy of `main.cf` taken before
+  the edit, and the copy was removed.
+- **`stats` is running.** It was stopped for one capture and started again — and found stopped once more a
+  few hours later, of its own accord, with `zmstat-ldap`'s pid file stale. Started again; see §8.
+- Nothing else was changed. No message was sent to a real recipient: every injected message was addressed to
+  a domain that does not resolve or to a host that refuses port 25.
+
+## 11. The tool itself, run against this server
+
+The modules were copied to `/tmp/zro` on the lab server and driven as `zimbra` — the real binaries, the real
+directory, no mocks — because a fixture proves a parser and only the server proves the path. Removed
+afterwards.
+
+| Condition | What the tool did |
 |---|---|
-| `postqueue` behaviour when `authorized_mailq_users` is **narrowed** | The default is `static:anyone` and it was not changed. What the refusal looks like — exit status and message — is unobserved, and the capability probe in #33 needs it. Producing it means editing a Postfix parameter, which no capture so far has needed. |
-| The queue tool's behaviour on an **active** or **hold** queue | Both captures are of the `deferred` queue. `queue_name` is a field in the structured form, so the other values exist; none was observed. |
-| A queue large enough to need bounding | Two entries. The screen is specified to summarise by status first, and two entries cannot show that a large queue is unreadable without it. |
-| Whether a **rejected** message can be produced without a client outside `mynetworks` | Not on this configuration. Any site whose `mynetworks` covers its own hosts has the same property, so the tool should not expect to reproduce a rejection locally. |
+| Ordinary host | Service card rendered all ten services with `stats` correctly shown as stopped; queue summary counted the two injected messages as waiting, and the detail rendered both with their reasons |
+| `authorized_mailq_users = root` | `zro_queue_fetch` returned **20** (`ZRO_E_PERM`), the capability answered **`denied`**, and the message the tool quotes is Postfix's own |
+| `ZRO_POSTFIX_SBIN` pointed at a directory with no queue tool | `zro_queue_fetch` returned **92** (`ZRO_E_NOCAP`) and the capability answered **`nobin`** — a different answer with a different repair, which is what the ticket asked for |
+
+The queue was emptied and the Postfix setting restored at the end of the run.

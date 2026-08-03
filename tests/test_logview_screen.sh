@@ -7,15 +7,19 @@ set -uo pipefail
 export ZRO_MOCK_LIB="$ZRO_TEST_ROOT/mocks"
 export ZRO_ZIMBRA_BIN="$ZRO_TEST_ROOT/mocks/bin"
 export ZRO_ZIMBRA_LIBEXEC="$ZRO_TEST_ROOT/mocks/libexec"
+export ZRO_POSTFIX_SBIN="$ZRO_TEST_ROOT/mocks/sbin"
 export ZRO_SYSTEM_BIN="$ZRO_TEST_ROOT/mocks/system"
 export ZRO_ID_BIN="$ZRO_TEST_ROOT/mocks/bin/id"
 export ZRO_RUNUSER="$ZRO_TEST_ROOT/mocks/bin/runuser"
 export ZRO_TIMEOUT_BIN="$ZRO_TEST_ROOT/mocks/bin/timeout"
 export ZRO_UI_BACKEND=stub
 export ZRO_SOURCED_ONLY=1
+# The queue's probe is pinned: whether the machine running the suite ships a
+# mail transfer agent has nothing to say about the entries these cases read.
+export ZRO_CAP_FORCE_QUEUE_BIN=yes
 export ZRO_MOCK_ID_USER=zimbra
 chmod +x "$ZRO_TEST_ROOT"/mocks/bin/* "$ZRO_TEST_ROOT"/mocks/libexec/* \
-         "$ZRO_TEST_ROOT"/mocks/system/* 2>/dev/null || true
+         "$ZRO_TEST_ROOT"/mocks/system/* "$ZRO_TEST_ROOT"/mocks/sbin/* 2>/dev/null || true
 
 export TZ=UTC
 

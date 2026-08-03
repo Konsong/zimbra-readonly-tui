@@ -10,7 +10,7 @@ export ZRO_TEST_ROOT ZRO_SRC
 # One directory per declared binary root, so a binary resolved under the wrong
 # root is not found by accident.
 for d in "$ZRO_TEST_ROOT"/mocks/bin "$ZRO_TEST_ROOT"/mocks/libexec \
-         "$ZRO_TEST_ROOT"/mocks/system; do
+         "$ZRO_TEST_ROOT"/mocks/system "$ZRO_TEST_ROOT"/mocks/sbin; do
   [ -d "$d" ] || continue
   chmod +x "$d"/* 2>/dev/null || true
 done

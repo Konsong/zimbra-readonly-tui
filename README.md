@@ -20,6 +20,16 @@ Bash + whiptail. No runtime dependencies beyond what a Zimbra host already has.
 > four reads was measured on a lab server with the account's row in the `mailbox`
 > table captured either side, against a control that moved it: see
 > [the research note](docs/research/2026-08-02-folders-size-and-quota.md).
+> **And the two screens about the server itself.** The mail queue is read with
+> the listing form of `postqueue` and no other — the forms that flush, requeue or
+> delete are refused, because each of them makes the transfer agent act — and it
+> answers with counts by status before it answers with a bounded list. Service
+> status is the one operation whose command **writes**: `zmcontrol status`
+> rewrites a cache inside Zimbra's tree, changes no domain state, and is admitted
+> only because the screen says what it writes and
+> [ADR-0005](docs/adr/0005-zmcontrol-status-is-a-declared-artifact.md) records
+> the judgement.
+>
 > Message search is next; see the
 > [design spec](docs/superpowers/specs/2026-07-29-zimbra-readonly-tui-design.md).
 

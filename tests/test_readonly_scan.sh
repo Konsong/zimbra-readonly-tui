@@ -286,10 +286,29 @@ for sub in gaa getAllAccounts gqu getQuotaUsage searchAccounts \
   assert_not_contains "$declared" " $sub "
 done
 
-it "the allowlist itself names no write verb"
-for verb in create modify delete remove move mark flag tag empty import post recover sync; do
-  assert_not_contains "$allow" "$verb"
-done
+it "the allowlist itself names no write verb in a position that could be one"
+# ASKED OF THE TOKENS, never of the whole entry: the mail transfer agent's own
+# programs are all named `post...`, so a search over the line reports the queue
+# tool's listing flag as a write verb. What may be ASKED of a binary is the rule
+# worth keeping, and the binary names answer for themselves in the case below.
+while IFS= read -r entry; do
+  [ -n "$entry" ] || continue
+  tokens=${entry#*:}
+  for verb in create modify delete remove move mark flag tag empty import post recover sync; do
+    assert_not_contains "$tokens" "$verb"
+  done
+done <<EOF
+$allow
+EOF
+
+it "and the queue tool is the one binary whose name carries such a word"
+# Written out rather than patterned away. It is approved for its listing flag
+# alone; `postsuper`, which holds, requeues and deletes, is not on the list at
+# all, and neither is `mailq`, which is a link to the mail submission program.
+assert_eq "$(printf '%s\n' "$allow" | sed 's/:.*//' | sort -u | grep -c '^post')" "1"
+assert_not_contains "$allow" "postsuper"
+assert_not_contains "$allow" "mailq"
+assert_not_contains "$allow" "sendmail"
 
 it "the allowlist exposes the mailbox binary as four reads and nothing else"
 # AN OPERATION ARRIVES WITH THE TICKET THAT EXPOSES IT, never because the binary
@@ -380,6 +399,50 @@ it "and every approved mailbox read has a call site, in exactly one spelling"
 # reader of the list would have to count rather than read.
 assert_eq "$(printf '%s\n' "$mbox_calls" | awk '{print $3}' | sort -u)" \
           "$(printf '%s\n' "$allow" | sed -n 's/^zmmailbox:\([^:]*\).*$/\1/p' | sort -u)"
+
+it "the mail queue is read in one form, at one call site"
+# THE WRITING FORMS LIVE IN THE SAME BINARY, which is what makes this worth
+# checking statically as well as at the gate: `-f` flushes the deferred queue,
+# `-s` flushes one site, `-i` requeues one message and `-d` deletes. Reading
+# lib/queue.sh must prove which of them this tool can ask for, without running it.
+assert_contains "$calls" "zro_exec postqueue -p"
+assert_eq "$(printf '%s\n' "$raw_code" | grep -cE 'zro_exec[[:space:]]+postqueue')" "1"
+for form in -f -s -i -d -h -H -r -j; do
+  assert_not_contains "$code" "zro_exec postqueue $form"
+done
+
+it "and the neighbouring programs that act on a queue are named nowhere at all"
+# `postsuper` holds, releases, requeues and deletes; `mailq` is a link to the
+# mail submission program. Neither is on the allowlist, and neither may be
+# written at a call site either — the gate would refuse them, and a line that
+# tried is a line somebody meant to run.
+for bin in postsuper mailq sendmail postfix postdrop; do
+  assert_not_contains "$code" "zro_exec $bin"
+done
+
+it "the queue module reaches no Zimbra binary, and no second path to its own"
+queue=$(zro_scan_file "$ZRO_SRC/lib/queue.sh")
+assert_eq "$(printf '%s\n' "$queue" | grep -cE 'zro_exec')" "1"
+assert_not_contains "$queue" "zmprov"
+assert_not_contains "$queue" "zmmailbox"
+assert_not_contains "$queue" "zmcontrol"
+
+it "the service status is asked for once, and nothing else of that binary is"
+# The one command in this tool that WRITES, and the one binary here whose family
+# changes service state. The entry that approves `status` may never become a call
+# site for `stop`.
+assert_contains "$calls" "zro_exec zmcontrol status"
+assert_eq "$(printf '%s\n' "$raw_code" | grep -cE 'zro_exec[[:space:]]+zmcontrol[[:space:]]+status')" "1"
+for verb in start stop restart shutdown maintenance kill; do
+  assert_not_contains "$code" "zro_exec zmcontrol $verb"
+done
+
+it "and the module that asks for it reaches nothing else"
+svc=$(zro_scan_file "$ZRO_SRC/lib/service.sh")
+assert_eq "$(printf '%s\n' "$svc" | grep -cE 'zro_exec')" "1"
+assert_not_contains "$svc" "zmprov"
+assert_not_contains "$svc" "zmmailbox"
+assert_not_contains "$svc" "postqueue"
 
 it "and the module that makes them reaches no directory command of its own"
 # The quota screen reads the account entry too, and it does it through the account

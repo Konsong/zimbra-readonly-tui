@@ -10,11 +10,34 @@ ZRO_CAP_VERSION_CACHE=""
 # refusing one have to be told apart, or a cleared cache would read as a refusal.
 ZRO_CAP_TRACE_BIN_CACHE=""
 ZRO_CAP_TRACE_LOG_CACHE=""
+# The queue tool's own probe. Same shape and same reason as the tracer's.
+ZRO_CAP_QUEUE_BIN_CACHE=""
+
+# THE HOST'S REFUSAL, WHICH IS NOT A PROBE AND CANNOT BE ONE.
+#
+# `authorized_mailq_users` is read by the queue tool INSIDE ITSELF, so the only
+# thing that can answer whether this host permits the read is the read. There is
+# no file to stat and no setting this program may go and look at: reading it would
+# mean a second binary in the allowlist to answer a question the first one already
+# answers, on every menu redraw, for an operator who may never open the screen.
+#
+# So it is learned the once it can be learned — when the listing is refused — and
+# remembered for the session, which is what lets the menu mark the entry from then
+# on instead of charging the operator for the same refusal twice.
+#
+# A FILE RATHER THAN A VARIABLE, for the reason this module already records about
+# the version cache: screens run inside command substitution, and a variable set
+# in that subshell dies with it. Emptied at startup like every other session file,
+# because the name carries a process id and process ids are reused.
+ZRO_CAP_QUEUE_DENIED_FILE="${ZRO_CAP_QUEUE_DENIED_FILE:-${TMPDIR:-/tmp}/zro-queue-denied.$$}"
+zro_session_file "$ZRO_CAP_QUEUE_DENIED_FILE"
 
 zro_cap_reset() {
   ZRO_CAP_VERSION_CACHE=""
   ZRO_CAP_TRACE_BIN_CACHE=""
   ZRO_CAP_TRACE_LOG_CACHE=""
+  ZRO_CAP_QUEUE_BIN_CACHE=""
+  rm -f -- "$ZRO_CAP_QUEUE_DENIED_FILE" 2>/dev/null || true
 }
 
 # Fills the cache IN THE CALLER'S SHELL, and says whether the host answered.
@@ -305,6 +328,75 @@ zro_cap_probe_log() {
   zro_log warn \
     "delivery trace unavailable: $path is $owner:$group $mode and $ZRO_CAP_RUN_ACCOUNT cannot read it"
   printf 'unreadable'
+}
+
+# --- the mail queue, and the two ways this host can have no answer -----------
+#
+# TWO ANSWERS WITH TWO REPAIRS, and they are kept apart for the reason the trace's
+# four reasons are: a screen that said only 'unavailable' would send an operator
+# to install a package that is already there, or to a permission setting on a
+# server that has no queue tool at all.
+#
+#   nobin   the mail transfer agent is not on this build. There is no queue here
+#           and no setting that would produce one; the repair is a package.
+#   denied  the tool is present and refuses. `authorized_mailq_users` does not
+#           list the account every command runs as; the repair is that setting.
+
+# Whether this build has the queue tool.
+#
+# Asked as the OPERATION the allowlist names rather than as a bare file test, so
+# that a tool present on a host where the listing form was never approved cannot
+# read as available. Forced the same yes-or-no way the tracer's binary probe is,
+# and an unrecognised forced value is read as the strictest answer there is.
+zro_cap_queue_bin() {
+  if [ -n "${ZRO_CAP_FORCE_QUEUE_BIN:-}" ]; then
+    case $ZRO_CAP_FORCE_QUEUE_BIN in
+      yes) return 0 ;;
+      no)  return 1 ;;
+    esac
+    zro_log error "not a probe answer: ZRO_CAP_FORCE_QUEUE_BIN=$ZRO_CAP_FORCE_QUEUE_BIN (expected: yes no)"
+    return 1
+  fi
+  if [ -z "$ZRO_CAP_QUEUE_BIN_CACHE" ]; then
+    if zro_cap_op_available postqueue -p; then
+      ZRO_CAP_QUEUE_BIN_CACHE=yes
+    else
+      ZRO_CAP_QUEUE_BIN_CACHE=no
+      zro_log warn "mail queue unavailable: the queue tool is not on this build"
+    fi
+  fi
+  [ "$ZRO_CAP_QUEUE_BIN_CACHE" = yes ]
+}
+
+# That this host refused the listing, recorded where a subshell cannot lose it.
+zro_cap_queue_deny_record() {
+  ( umask 077; : >"$ZRO_CAP_QUEUE_DENIED_FILE" ) 2>/dev/null || true
+  return 0
+}
+
+# NO FORCED FORM, unlike the two probes above, and that is deliberate: this one
+# is not a probe. It records something that HAPPENED, and the suite scripts it by
+# making it happen — the mock queue tool refuses exactly as the lab server's did,
+# and the screen learns it the way an operator's would.
+zro_cap_queue_denied() {
+  [ -f "$ZRO_CAP_QUEUE_DENIED_FILE" ]
+}
+
+# WHY the queue cannot be read, in one word: 'ok', 'nobin' or 'denied'.
+#
+# The one place the two are ranked, exactly as the trace's are, so the mark on the
+# menu entry and the screen behind it cannot name different causes. A missing tool
+# is reported first because it is the repair that has to happen first: on a host
+# with no transfer agent, the access-control setting is a setting on a program
+# that is not installed.
+zro_cap_queue_reason() {
+  zro_cap_queue_bin || { printf 'nobin'; return 0; }
+  zro_cap_queue_denied && { printf 'denied'; return 0; }
+  printf 'ok'
+}
+
+zro_cap_queue_available() {
+  [ "$(zro_cap_queue_reason)" = ok ]
 }
 
 # Both probes, as the one question a menu asks: can a delivery trace answer

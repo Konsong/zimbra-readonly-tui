@@ -10,12 +10,17 @@ set -uo pipefail
 export ZRO_MOCK_LIB="$ZRO_TEST_ROOT/mocks"
 export ZRO_ZIMBRA_BIN="$ZRO_TEST_ROOT/mocks/bin"
 export ZRO_ZIMBRA_LIBEXEC="$ZRO_TEST_ROOT/mocks/libexec"
+export ZRO_POSTFIX_SBIN="$ZRO_TEST_ROOT/mocks/sbin"
 export ZRO_ID_BIN="$ZRO_TEST_ROOT/mocks/bin/id"
 export ZRO_RUNUSER="$ZRO_TEST_ROOT/mocks/bin/runuser"
 export ZRO_TIMEOUT_BIN="$ZRO_TEST_ROOT/mocks/bin/timeout"
 export ZRO_UI_BACKEND=stub
 export ZRO_SOURCED_ONLY=1
-chmod +x "$ZRO_TEST_ROOT"/mocks/bin/* "$ZRO_TEST_ROOT"/mocks/libexec/* 2>/dev/null || true
+# The queue's probe is pinned: whether the machine running the suite ships a
+# mail transfer agent has nothing to say about the entries these cases read.
+export ZRO_CAP_FORCE_QUEUE_BIN=yes
+chmod +x "$ZRO_TEST_ROOT"/mocks/bin/* "$ZRO_TEST_ROOT"/mocks/libexec/* \
+         "$ZRO_TEST_ROOT"/mocks/sbin/* 2>/dev/null || true
 
 # Local wall clock is this tool's only time model, and these cases read the real
 # clock rather than a fixed moment. The ZONE is pinned all the same, as it is in

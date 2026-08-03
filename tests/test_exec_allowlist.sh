@@ -119,6 +119,81 @@ traces=$(zro_allow_entries | grep '^zmmsgtrace:')
 assert_eq "$traces" "$(printf '%s\n%s\n%s' \
   'zmmsgtrace:--recipient' 'zmmsgtrace:--sender' 'zmmsgtrace:--id')"
 
+# The service status read, which is the one command in the allowlist that writes.
+# It is admitted as a DECLARED ARTIFACT — no domain state changes, the screen says
+# what it writes, and an ADR records the judgement — and the family it belongs to
+# is the reason that admission needs guarding rather than trusting.
+it "approves the service status read"
+assert_ok zro_allowed zmcontrol status
+assert_ok zro_allowed zmcontrol -v
+
+it "and refuses every command of that binary which changes what a service is doing"
+# THE ENTRY FOR `status` IS NOT APPROVAL OF THE BINARY. Service state is domain
+# state, and this is the one binary in the tool whose siblings change it — so the
+# refusal is asserted here rather than left to nobody having written the call.
+for form in start stop restart shutdown maintenance kill startservices \
+            stopservices; do
+  assert_fail zro_allowed zmcontrol "$form"
+  assert_fail zro_allowed zmcontrol "$form" mailbox
+done
+
+it "and the status read in exactly one spelling"
+# One operation, one spelling, as everywhere in this list: a reader of a call site
+# must be able to name the entry that approves it without knowing the binary's
+# option table by heart.
+assert_fail zro_allowed zmcontrol --status
+assert_fail zro_allowed zmcontrol -status
+assert_fail zro_allowed zmcontrol status2
+
+it "the allowlist names exactly the two things that binary may be asked"
+assert_eq "$(zro_allow_entries | grep '^zmcontrol:')" \
+  "$(printf '%s\n%s' 'zmcontrol:-v' 'zmcontrol:status')"
+
+# The mail queue. Postfix puts the read and the writes in ONE binary and tells
+# them apart by flag, so the flag is the whole operation and is approved the way
+# `zmcontrol -v` is.
+it "approves the mail queue in its listing form"
+assert_ok zro_allowed postqueue -p
+
+it "and refuses every form of it that makes the transfer agent act"
+# JUDGE BY EFFECT: none of these edits a message, and every one of them changes
+# what the server DOES with the queue — mail leaves, a remote host is contacted,
+# bounces are generated, or an entry is gone. `-f` flushes the whole deferred
+# queue, `-s` flushes one site, `-i` requeues one message, `-d` deletes.
+for form in -f -s -i -d -h -H -r -F; do
+  assert_fail zro_allowed postqueue "$form"
+done
+assert_fail zro_allowed postqueue -s example.com
+assert_fail zro_allowed postqueue -i C800B104BA4
+assert_fail zro_allowed postqueue -d ALL
+
+it "and refuses the neighbouring binaries that do the same by another name"
+# `postsuper` holds, releases, requeues and deletes; `mailq` is a symbolic link
+# to `sendmail`, which lists the queue under -bp and SUBMITS MAIL under every
+# other form of itself. Neither is on the list, so both are refused whatever a
+# call site asked for.
+for bin in postsuper mailq sendmail postcat postdrop postfix; do
+  assert_fail zro_allowed "$bin" -p
+  assert_fail zro_allowed "$bin" -d
+done
+
+it "and the structured listing form, which was decided rather than left out"
+# `-j` is the better source — it carries the queue name as a field instead of as
+# a marker on the id — and this tool has no JSON parser and does not grow one for
+# a question the traditional form already answers. An approved form nobody calls
+# would be an operation no reader of this list could reach.
+assert_fail zro_allowed postqueue -j
+
+it "the allowlist names one queue operation and nothing else"
+assert_eq "$(zro_allow_entries | grep '^postqueue:')" 'postqueue:-p'
+
+it "and the queue tool resolves under a root of its own"
+# Zimbra ships its Postfix under `common`, not under `bin`. The root is declared
+# per binary for the same reason the tracer's is: a tool searched for on $PATH is
+# a different program answering about a different queue.
+ZRO_POSTFIX_SBIN=/opt/zimbra/common/sbin
+assert_out_eq "/opt/zimbra/common/sbin/postqueue" zro_bin_path postqueue
+
 # The bounded log viewer's two binaries, and the first two in this list that are
 # not Zimbra's at all. Each is a flag that IS the whole operation, so both are
 # approved the way `zmcontrol -v` is.
@@ -448,11 +523,44 @@ assert_fail zro_allowed "" ga
 assert_fail zro_allowed zmprov ""
 assert_fail zro_allowed
 
-it "the allowlist itself contains no write verb"
-entries=$(zro_allow_entries)
-for verb in create modify delete remove move mark flag tag empty import post recover sync; do
-  assert_not_contains "$entries" "$verb"
-done
+# The write verbs, in one place. Both cases below read this list; two copies is
+# how one of them would come to ban a word the other allows.
+ZRO_T_WRITE_VERBS='create modify delete remove move mark flag tag empty import post recover sync'
+
+it "the allowlist itself contains no write verb in a position that could be one"
+# READ ON THE TOKENS, NOT ON THE WHOLE ENTRY, and that changed when the mail
+# transfer agent arrived: every one of its programs is named `post...`, so a
+# search over the whole line reports `postqueue:-p` — a listing flag — as a write
+# verb. What has to stay meaningful is the rule about what may be ASKED of a
+# binary, so it is asked of the tokens. The binary names are held to their own
+# rule below rather than folded in here, because a widened pattern that stopped
+# failing is indistinguishable from one that never applied.
+while IFS= read -r entry; do
+  [ -n "$entry" ] || continue
+  tokens=${entry#*:}
+  for verb in $ZRO_T_WRITE_VERBS; do
+    assert_not_contains "$tokens" "$verb"
+  done
+done <<EOF
+$(zro_allow_entries)
+EOF
+
+it "and names no binary whose own name says it writes, but the one it declares"
+# The exception is written out rather than pattern-matched away. `postqueue` is
+# approved for its listing flag alone — the flushing, requeueing and deleting
+# forms are refused above, and `postsuper` is not on this list at all — so the
+# word in its name says nothing about what this tool may ask of it.
+while IFS= read -r bin; do
+  [ -n "$bin" ] || continue
+  case $bin in
+    postqueue) zro_t_pass; continue ;;
+  esac
+  for verb in $ZRO_T_WRITE_VERBS; do
+    assert_not_contains "$bin" "$verb"
+  done
+done <<EOF
+$(zro_allow_entries | sed 's/:.*//' | sort -u)
+EOF
 
 it "every allowlisted binary declares the root it resolves under"
 # There is no default root. A binary the allowlist names and the root table does

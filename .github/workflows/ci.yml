@@ -18,7 +18,7 @@ jobs:
         run: |
           shellcheck zimbra-ro-tui.sh lib/*.sh tests/*.sh tests/lib/*.sh \
                      tests/mocks/*.sh tests/mocks/bin/* tests/mocks/libexec/* \
-                     tests/mocks/system/*
+                     tests/mocks/system/* tests/mocks/sbin/*
 
   tests:
     runs-on: ubuntu-latest

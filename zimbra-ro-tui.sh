@@ -38,6 +38,10 @@ ZRO_ROOT=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 . "$ZRO_ROOT/lib/delivery.sh"
 # shellcheck source=lib/logview.sh
 . "$ZRO_ROOT/lib/logview.sh"
+# shellcheck source=lib/queue.sh
+. "$ZRO_ROOT/lib/queue.sh"
+# shellcheck source=lib/service.sh
+. "$ZRO_ROOT/lib/service.sh"
 
 trap zro_cleanup EXIT INT TERM
 
@@ -1284,6 +1288,225 @@ yukseltip yeniden deneyin."
   done
 }
 
+# ------------------------------------------------------------ the mail queue --
+
+ZRO_TXT_QUEUE_WAIT='Kuyruk yalnizca LISTELENIR; hicbir ileti gonderilmez, yeniden siraya
+alinmaz ve silinmez. Cok dolu bir kuyrukta bu islem birkac saniye surebilir.'
+
+ZRO_TXT_QUEUE_PICK='Once sayilar, sonra ayrinti. Kuyruk okundu ve bu ekranda tutuluyor:
+ayrintiya bakmak sunucuya yeni bir sorgu GONDERMEZ.'
+
+# WHY THE QUEUE CANNOT BE READ, as its own screen per cause.
+#
+# TWO CAUSES WITH NOTHING IN COMMON. A build without the mail transfer agent has
+# no queue tool and no setting that would produce one — the repair is a package.
+# A host whose access-control setting does not list the account every command runs
+# as HAS the tool, and refuses; the repair is that setting, and naming a package
+# there would send an operator to install what is already installed.
+#
+# The cause comes from the capability module rather than being worked out again
+# here, so the mark on the menu entry and this screen cannot disagree.
+zro_queue_unavailable() {
+  local said
+  said=$(zro_last_error)
+  [ -n "$said" ] && said="
+
+Programin bildirdigi:
+$said"
+
+  case $(zro_cap_queue_reason) in
+    nobin)
+      zro_queue_unavailable_box \
+"Kuyruk programi (postqueue) bu kurulumda bulunamadi. Bu sunucuda mail transfer
+agent (zimbra-mta) paketi kurulu degil gorunuyor, dolayisiyla burada bir mail
+kuyrugu YOKTUR. Bu bir izin sorunu DEGILDIR; izin veya ayar onarimi bunu
+duzeltmez.
+
+Beklenen konum: $ZRO_POSTFIX_SBIN/postqueue
+
+Kontrol edin: bu sunucuda zimbra-mta paketi kurulu mu (zmcontrol status
+ciktisinda mta satiri var mi)." ;;
+
+    denied)
+      zro_queue_unavailable_box \
+"Kuyruk programi var ve calisiyor, ancak SUNUCU bu hesaba kuyrugu gostermeyi
+reddediyor. Reddeden bu arac degil, Postfixin kendi ayaridir: kuyruk
+authorized_mailq_users ayarindaki hesaplara gosterilir ve zimbra kullanicisi bu
+listede degil.
+
+Yetki YUKSELTILMEZ, sorun bildirilir: bu arac her komutu zimbra kullanicisi
+olarak calistirir ve bunu degistirmez.
+
+Kontrol edin: postconf -h authorized_mailq_users
+Kurulumun varsayilan degeri static:anyone, yani herkese aciktir.$said" ;;
+
+    # Reached only when the capability module learned to answer something this
+    # case list has not caught up with, which is a defect in this file rather
+    # than a fact about the server.
+    *) zro_log error "menu defect, no unavailability screen for the mail queue: $(zro_cap_queue_reason)"
+       zro_report_defect ;;
+  esac
+}
+
+# The sentence both messages open with, written once, exactly as the delivery
+# trace's four share theirs.
+zro_queue_unavailable_box() {
+  zro_ui_msgbox "Kullanilamaz" \
+"Mail kuyrugu bu sunucuda okunamiyor.
+
+${1-}"
+}
+
+# THE MAIL QUEUE: what is waiting, as counts first and bounded detail behind
+# them.
+#
+# READ ONCE, and both screens are rendered from that one reading. An operator who
+# looks at the counts, opens the detail and comes back has spent one invocation,
+# not three — and the two screens cannot disagree about a queue that moved
+# between them, which on a busy server it does every few seconds.
+zro_menu_queue() {
+  local title listing out choice rc=0
+  if ! title=$(zro_menu_label mail-queue); then
+    zro_log error "menu defect, no label for the mail queue"
+    zro_report_defect
+    return 0
+  fi
+  # REFUSED BEFORE THE WAIT, not from inside it. The entry that brought the
+  # operator here is already marked; this is where they learn why and what
+  # repairs it.
+  if ! zro_cap_queue_available; then
+    zro_queue_unavailable
+    return 0
+  fi
+
+  zro_ui_notice "Calisiyor" "Mail kuyrugu okunuyor, lutfen bekleyin.
+
+$ZRO_TXT_QUEUE_WAIT"
+
+  listing=$(zro_queue_fetch) || rc=$?
+  if [ "$rc" -ne 0 ]; then
+    case $rc in
+      # BOTH OF THESE ARE CAPABILITY ANSWERS, and the screen for them is the one
+      # the menu mark points at. The refusal was recorded when it happened, so
+      # asking the capability module again here answers 'denied' rather than
+      # sending the operator to a second explanation of the same thing.
+      #
+      # ASKED RATHER THAN ASSUMED, and that is the difference between a screen
+      # and a defect log. A tool that was there when the menu was drawn and is
+      # gone now — a package removed while the session ran — refuses with a code
+      # the capability cache still answers 'ok' for, and there is no repair
+      # screen to draw for a state nobody can be in twice. It is reported as the
+      # failure it was.
+      "$ZRO_E_PERM"|"$ZRO_E_NOCAP")
+        if zro_cap_queue_available; then
+          zro_report_error "$rc"
+        else
+          zro_queue_unavailable
+        fi ;;
+      "$ZRO_E_TIMEOUT")
+        zro_ui_msgbox "Zaman asimi" \
+"Mail kuyrugu ayrilan surede okunamadi.
+
+Islem kesildi ve kuyruga DOKUNULMADI: hicbir ileti gonderilmedi, yeniden
+siraya alinmadi veya silinmedi.
+
+Cok buyuk bir kuyrukta listeleme uzun surebilir. Gerekirse ZRO_TIMEOUT
+degerini yukseltip yeniden deneyin." ;;
+      *) zro_report_error "$rc" ;;
+    esac
+    return 0
+  fi
+
+  while :; do
+    zro_show_text "$title" "$(zro_queue_summary_card "$listing")"
+
+    rc=0
+    choice=$(zro_ui_menu "$title" "$ZRO_TXT_QUEUE_PICK" \
+      detail "Ayrintili liste (en fazla $ZRO_QUEUE_DETAIL_MAX kayit)" \
+      back "Geri") || rc=$?
+    [ "$rc" -eq 0 ] || return 0
+    [ "$choice" = detail ] || return 0
+
+    rc=0
+    out=$(zro_queue_detail_card "$listing") || rc=$?
+    case $rc in
+      0) zro_show_text "$title" "$out" ;;
+      # An empty queue has no detail, and that is the summary's answer rather
+      # than a failure of this screen.
+      "$ZRO_E_NO_RESULT")
+        zro_ui_msgbox "$title" "Kuyruk bos: gosterilecek kayit yok." ;;
+      # A bound that is not a count is a defect in whatever set it.
+      *) zro_report_defect ;;
+    esac
+  done
+}
+
+# --------------------------------------------------------- the service status --
+
+ZRO_TXT_SVC_WAIT='Bu komut once dizin (LDAP) sunucusuna sorar, sonra her servisi tek tek
+sorar; birkac saniye surer. Hicbir servis baslatilmaz veya durdurulmaz.
+
+Yazdigi tek sey Zimbranin kendi agacindaki .zmcontrol.cache dosyasi ve
+gecici dosyalardir; ekranda yeniden soylenir.'
+
+# WHICH SERVICES ARE RUNNING. One invocation, and the only operation in this tool
+# whose command writes anything at all — which the screen says, above and below
+# the answer.
+zro_screen_service() {
+  local title out card rc=0
+  if ! title=$(zro_menu_label service-status); then
+    zro_log error "menu defect, no label for the service status"
+    zro_report_defect
+    return 0
+  fi
+
+  zro_ui_notice "Calisiyor" "Servis durumu soruluyor, lutfen bekleyin.
+
+$ZRO_TXT_SVC_WAIT"
+
+  out=$(zro_svc_fetch) || rc=$?
+  if [ "$rc" -ne 0 ]; then
+    if [ "$rc" -eq "$ZRO_E_TIMEOUT" ]; then
+      # NAMED HERE RATHER THAN LEFT TO THE SHARED REPORTER, which says only that
+      # a command timed out. On this screen there is one cause worth naming: the
+      # command asks the directory server before it asks anything else and has NO
+      # ALARM OF ITS OWN around that step, so a directory that does not answer
+      # leaves it waiting forever. The bound below is the only thing that ends
+      # it, and an operator who is not told that reads a hang where there was a
+      # refusal.
+      zro_ui_msgbox "Zaman asimi" \
+"Servis durumu ayrilan surede alinamadi ve komut $ZRO_TIMEOUT saniyede kesildi.
+
+Bu komut once dizin (LDAP) sunucusuna sorar ve BU ADIMDA KENDI ZAMAN SINIRI
+YOKTUR: dizin yanit vermezse suresiz bekler. Onu kesen, bu aracin her komuta
+uyguladigi ust siniridir.
+
+Islem kesildi ve hicbir servise DOKUNULMADI.
+
+Kontrol edin: dizin (ldap) servisi calisiyor mu, ve sunucu asiri yuklu mu."
+      return 0
+    fi
+    zro_report_error "$rc"
+    return 0
+  fi
+
+  rc=0
+  card=$(zro_svc_card "$out") || rc=$?
+  if [ "$rc" -ne 0 ]; then
+    # The command answered something with no service line in it. Said as itself:
+    # a screen reporting every service as absent would be the most alarming one
+    # in the tool, and it would be invented.
+    zro_ui_msgbox "Okunamadi" \
+"Komut calisti, ancak yanitinda hicbir servis satiri yok; bu ekran durumu
+okuyamadi.
+
+Bu, servislerin durdugu anlamina GELMEZ. Arac gunlugune ve dogrudan
+zmcontrol status ciktisina bakin."
+    return 0
+  fi
+  zro_show_text "$title" "$card"
+}
+
 # THE COST CLASSES AN OPERATION MAY CLAIM, as "<class>:<the unit its work is
 # counted in>".
 #
@@ -1325,9 +1548,25 @@ yukseltip yeniden deneyin."
 # one: a class that can be declared is a class that will one day be claimed. The
 # suite refuses the digit itself, in this table and in the list below, so the
 # attempt fails the build rather than passing as an ordinary new entry.
+#
+# CLASS 5 ARRIVED WITH THE OPERATIONS THAT MAKE ONE, exactly as class 2 did, and
+# it is numbered 5 because the digit 4 is refused rather than free. Its unit is
+# the HOST: one invocation asks this server a question about ITSELF — which
+# services are running, what is waiting in the mail queue — and there is one
+# server to ask however large the directory on it grows. That is what makes it a
+# class of its own rather than an awkward reading of one of the three above: it
+# names no account, opens no mailbox, and reads no file this program chose.
+#
+# WHAT ITS WORK REALLY GROWS WITH IS THE SERVER'S OWN BUSINESS — the services
+# installed, the messages queued — and neither of those is a number an operator
+# can spend. The queue tool on a queue of thousands is one invocation and so is
+# the queue tool on an empty one; what a busy queue costs is the SCREEN, which is
+# why the screen behind this class answers with counts before it answers with a
+# list.
 ZRO_COST_CLASSES='1:entry
 2:mailbox
-3:file'
+3:file
+5:host'
 
 # The unit a declared class's work is counted in, or a refusal for a class this
 # tool does not declare. Every lookup goes through this, so a class nobody
@@ -1400,7 +1639,9 @@ domain-card:address:1:Alan adi karti
 trace-recipient:address:3:Teslim takibi: bu adrese gelenler
 trace-sender:address:3:Teslim takibi: bu adresten gidenler
 trace-msgid:server:3:Teslim takibi: ileti kimligine gore
-logview:server:3:Log dosyalari (son satirlar)'
+logview:server:3:Log dosyalari (son satirlar)
+mail-queue:server:5:Mail kuyrugu (bekleyen iletiler)
+service-status:server:5:Servis durumu'
 
 # The declared entry for an id, or a refusal. Every lookup below goes through
 # this, so an id that is not in the list has exactly one answer everywhere.
@@ -1494,6 +1735,12 @@ zro_menu_refusal() {
   ZRO_MENU_REASON=""
   case $id in
     trace-*) zro_cap_trace_available || { ZRO_MENU_REASON=nocap; return 0; } ;;
+    # The queue's two host facts, ranked in the capability module and read here
+    # as the one word the menu can draw. The refusal by the host's own
+    # access-control setting is learned by being refused once, so this entry is
+    # marked from the moment the operator has met it — and never before, because
+    # the only way to ask is to ask.
+    mail-queue) zro_cap_queue_available || { ZRO_MENU_REASON=nocap; return 0; } ;;
   esac
   case $(zro_menu_scope "$id" 2>/dev/null) in
     account)
@@ -1536,7 +1783,19 @@ zro_menu_mark() {
 # rather than papered over with a message about this server.
 zro_menu_unavailable() {
   case ${2-} in
-    nocap)      zro_delivery_unavailable ;;
+    # A HOST FACT IS ABOUT ONE OPERATION'S TOOL, so which screen explains it
+    # depends on which tool is missing. The delivery trace and the mail queue
+    # share the word 'nocap' and share nothing else: one names a tracing binary
+    # and a log file's ownership, the other names a package and a Postfix
+    # setting. Reading the same screen for both would send half its readers to
+    # repair something that is not broken.
+    nocap)
+      case ${1-} in
+        trace-*)    zro_delivery_unavailable ;;
+        mail-queue) zro_queue_unavailable ;;
+        *) zro_log error "menu defect, no unavailability screen for: ${1-} (${2-})"
+           zro_report_defect ;;
+      esac ;;
     # Both address reasons answer with the same screen, and that is the point of
     # it: what the operator needs is not "this is not a list" but what the address
     # turned out to be instead, which the session already knows and never re-reads.
@@ -1729,6 +1988,8 @@ EOF
       domain-card) zro_screen_domain "$choice" ;;
       trace-*)     zro_screen_trace "$choice" ;;
       logview)     zro_menu_logview ;;
+      mail-queue)  zro_menu_queue ;;
+      service-status) zro_screen_service ;;
       # Declared in the list above and dispatched nowhere: a defect in this file.
       # Silently redrawing the menu would reach the operator as the tool ignoring
       # them, which is how a missing branch survives a release.
