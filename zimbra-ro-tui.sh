@@ -850,6 +850,20 @@ Bu alanlarin dizine islenip islenmedigi sunucuya baglidir: laboratuvar
 sunucusunda bu iki olcut, zarfi tam olarak bu adres olan iletiler icin bile bos
 yanit verdi. Bos sonuc burada "yok" degil, "bu sunucuda aranamiyor" olabilir.'
 
+# THE OTHER DISCLOSURE, AND IT IS NOT THE SAME ONE. The envelope pair was measured
+# failing; these were never tried against a message that has an attachment, because
+# the laboratory mailbox held none. `attachment:none` WAS measured and answered for
+# every message there, so the criterion is real rather than a word the parser
+# tolerates and ignores — what is unmeasured is only whether a type name matches the
+# right MIME type when an attachment exists. The screen says exactly that much, and
+# docs/research/2026-08-03-message-search-and-conversations.md §9 says it is said.
+ZRO_TXT_SEARCH_ATTACHMENT='Ek olcutleri, eki olan bir ileti uzerinde denenemedi: laboratuvar mailboxunda
+ekli ileti yoktu. "Eki olmayan iletiler" degeri olculdu ve dogru calisiyor; tur
+adlarinin dogru MIME turlerine karsilik gelip gelmedigi OLCULMEDI.
+
+Bos sonuc burada "eki olan ileti yok" demek olabilecegi gibi "tur adi eslesmedi"
+de olabilir.'
+
 # THE VALUE FOR ONE CRITERION, asked in the form its kind decides.
 #
 # The two criteria whose values this program owns are MENUS, not prompts: what
@@ -983,10 +997,17 @@ EOF
           zro_log error "denied, not a declared search criterion: $choice"
           continue
         fi
-        # The envelope pair carries a screen of its own before it is used, because
-        # what an empty answer from them means is not what an operator expects.
+        # Two pairs carry a screen of their own before they are used, because what
+        # an empty answer from them means is not what an operator expects. They say
+        # DIFFERENT things and the difference is the point: the envelope pair was
+        # measured answering nothing where it should have answered, while the
+        # attachment pair was never run against a message carrying an attachment at
+        # all. One is a measured gap, the other an unmeasured one, and a screen that
+        # blurred them would be claiming a finding nobody made.
         case $choice in
           env-sender|env-recipient) zro_ui_msgbox "Zarf alanlari" "$ZRO_TXT_SEARCH_ENVELOPE" ;;
+          attachment-name|attachment-type)
+            zro_ui_msgbox "Ek olcutleri" "$ZRO_TXT_SEARCH_ATTACHMENT" ;;
         esac
         rc=0
         value=$(zro_menu_search_value "$choice") || rc=$?

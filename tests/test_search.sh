@@ -431,6 +431,26 @@ assert_status "$ZRO_E_INPUT" zro_search_conv_messages "$ACCT" 'abc'
 assert_status "$ZRO_E_INPUT" zro_search_fetch "$ACCT" '-t'
 assert_eq "$(ran)" ""
 
+it "and the output bound is judged before it can reach the vector either"
+# The bound travels in the argument vector too, and three readers spend it, so it
+# is held to the rule lib/logview.sh and lib/logsearch.sh state for their own:
+# judged before it is used, because it reaches a command line. Unjudged, '-t'
+# would sit where a count belongs in `zmmailbox s -t message -l <bound>` — a flag
+# this program did not choose, in the one command an operator cannot see. A bound
+# that is not a count is a defect in whatever set it, not a reason to fall back to
+# a default nobody chose.
+fresh
+ZRO_SEARCH_LIMIT='50; id' assert_status "$ZRO_E_INPUT" zro_search_fetch "$ACCT" 'in:"/Inbox"'
+ZRO_SEARCH_LIMIT='' assert_status "$ZRO_E_INPUT" zro_search_fetch "$ACCT" 'in:"/Inbox"'
+ZRO_SEARCH_LIMIT='-t' assert_status "$ZRO_E_INPUT" zro_search_fetch "$ACCT" 'in:"/Inbox"'
+ZRO_SEARCH_LIMIT='-5' assert_status "$ZRO_E_INPUT" zro_search_fetch "$ACCT" 'in:"/Inbox"'
+ZRO_SEARCH_LIMIT='0' assert_status "$ZRO_E_INPUT" zro_search_fetch "$ACCT" 'in:"/Inbox"'
+ZRO_SEARCH_LIMIT='-t' assert_status "$ZRO_E_INPUT" zro_search_conv_fetch "$ACCT" 'in:"/Inbox"'
+ZRO_SEARCH_LIMIT='-t' assert_status "$ZRO_E_INPUT" zro_search_conv_messages "$ACCT" '265'
+# Nothing ran: the bound is judged ahead of the gate, so a defect in whatever set
+# it never becomes an allowlist denial on a production server.
+assert_eq "$(ran)" ""
+
 it "and every read is refused until the gate has proven the mailbox exists"
 # EVERY OPERATION HERE RUNS ONLY BEHIND THE GATE. The oracle answers first, and an
 # account with no mailbox never reaches the searching binary at all.

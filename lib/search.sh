@@ -34,6 +34,9 @@ ZRO_LIB_SEARCH_LOADED=1
 # returns the newest page of what it found. So a capped answer is not a partial
 # scan — nothing went unread — and the screen says `daha var` from the server's own
 # `more:` flag instead of leaving the operator to guess whether the list ended.
+#
+# Overridable like every other bound here, and judged before it is used: this value
+# reaches a command line. See zro_search_limit_ok.
 ZRO_SEARCH_LIMIT="${ZRO_SEARCH_LIMIT:-50}"
 
 # THE QUERY A CONVERSATION LISTING IS MADE WITH, and it is this program's own text
@@ -728,6 +731,32 @@ zro_search_no_table() {
   return 0
 }
 
+# THE OUTPUT BOUND, JUDGED BEFORE IT IS USED, because it reaches a command line.
+#
+# The rule lib/logview.sh and lib/logsearch.sh state for their own bounds, and the
+# one this file already applies to a query three lines into the reader below: a
+# leading dash arriving in the data position is an allowlist denial, and an
+# allowlist denial is a DEFECT rather than an operator's mistake. Left unjudged,
+# `ZRO_SEARCH_LIMIT=-t` would reach `zmmailbox s -t message -l -t <query>` — a flag
+# this program did not choose, sitting where a count belongs, in the argument
+# vector of the one command an operator cannot see.
+#
+# A bound that is not a count is a defect in whatever set it, not a reason to fall
+# back to a default nobody chose. Judged in one place because three readers spend
+# it, and three copies of a rule are free to disagree.
+zro_search_limit_ok() {
+  local n=$ZRO_SEARCH_LIMIT
+  case $n in
+    ''|*[!0-9]*) zro_log error "denied, search result bound is not a count: $n"
+                 return "$ZRO_E_INPUT" ;;
+  esac
+  if [ "$n" -eq 0 ]; then
+    zro_log error "denied, search result bound is zero"
+    return "$ZRO_E_INPUT"
+  fi
+  return 0
+}
+
 # ONE SEARCH, ONE INVOCATION.
 #
 #   $1  the account          $2  the query this program built
@@ -743,6 +772,7 @@ zro_search_no_table() {
 # language's quoting the only quoting the value has to survive.
 zro_search_fetch() {
   local acct=${1-} query=${2-} err out rc=0
+  zro_search_limit_ok || return "$ZRO_E_INPUT"
   zro_validate_email "$acct" || return "$ZRO_E_INPUT"
   [ -n "$query" ] || return "$ZRO_E_INPUT"
   # A query is built from criteria and every criterion begins with its operator, so
@@ -775,6 +805,7 @@ zro_search_fetch() {
 # called.
 zro_search_conv_fetch() {
   local acct=${1-} query=${2-} err out rc=0
+  zro_search_limit_ok || return "$ZRO_E_INPUT"
   zro_validate_email "$acct" || return "$ZRO_E_INPUT"
   [ -n "$query" ] || return "$ZRO_E_INPUT"
   case $query in -*) return "$ZRO_E_INPUT" ;; esac
@@ -798,6 +829,7 @@ zro_search_conv_fetch() {
 # constant: `sc` requires one, and an operator never supplies it.
 zro_search_conv_messages() {
   local acct=${1-} conv=${2-} err out rc=0
+  zro_search_limit_ok || return "$ZRO_E_INPUT"
   zro_validate_email "$acct" || return "$ZRO_E_INPUT"
   zro_validate_item_id "$conv" || return "$ZRO_E_INPUT"
   zro_reset_mode

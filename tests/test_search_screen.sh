@@ -187,6 +187,28 @@ run
 assert_contains "$(transcript)" "Zarf alanlari"
 assert_contains "$(transcript)" "bu sunucuda aranamiyor"
 
+it "and warns about the attachment criteria too, in the other direction"
+# The research doc claims this screen says it, so the claim is held to a case. The
+# two warnings must not read alike: the envelope pair was MEASURED answering
+# nothing, while the attachment pair was never run against a message carrying an
+# attachment at all. An unmeasured gap presented as a measured one is a finding
+# nobody made.
+exists_server
+zro_sel_set "$ADDR"
+queue "mailbox-search" "attachment-type" "__CANCEL__" "__CANCEL__" "__CANCEL__"
+run
+out=$(transcript)
+assert_contains "$out" "Ek olcutleri"
+assert_contains "$out" "OLCULMEDI"
+assert_not_contains "$out" "bu sunucuda aranamiyor"
+
+it "and the attachment name carries the same warning as the type"
+exists_server
+zro_sel_set "$ADDR"
+queue "mailbox-search" "attachment-name" "__CANCEL__" "__CANCEL__" "__CANCEL__"
+run
+assert_contains "$(transcript)" "Ek olcutleri"
+
 it "offers the read state and the attachment type as menus rather than as prompts"
 # Nothing an operator types reaches `is:` or `attachment:`: what comes back is one
 # of the words in a table this program drew.

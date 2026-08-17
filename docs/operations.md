@@ -919,11 +919,12 @@ byte-identical either side of both, and the same four message ids answered
 listings. See
 [`docs/research/2026-08-03-message-search-and-conversations.md`](research/2026-08-03-message-search-and-conversations.md).
 
-Each was measured rather than assumed. On the lab server the account's row in the
-`mailbox` table was byte-identical either side of all four — change checkpoint,
-size checkpoint and last SOAP access included — while a deliberate grant write in
-the same session moved two of those columns at once, which is what makes the
-measurement worth anything. See
+**The four reads that arrived before the search were measured the same way**, and
+this paragraph is about those four rather than about all six. On the lab server
+the account's row in the `mailbox` table was byte-identical either side of all
+four — change checkpoint, size checkpoint and last SOAP access included — while a
+deliberate grant write in the same session moved two of those columns at once,
+which is what makes the measurement worth anything. See
 [`docs/research/2026-08-02-folders-size-and-quota.md`](research/2026-08-02-folders-size-and-quota.md).
 
 **`gms` is approved with `-v` and used no other way.** Without it the command
