@@ -386,4 +386,49 @@ assert_status "$ZRO_E_INPUT" zro_validate_item_id '0'
 assert_status "$ZRO_E_INPUT" zro_validate_item_id '00265'
 assert_status "$ZRO_E_INPUT" zro_validate_item_id '99999999999999999999'
 
+# ------------------------------------------------------- a list file path --
+#
+# The one path in this program an operator types. Every other file this tool opens
+# is one it chose out of a declared inventory, so this validator is what stands
+# between a bulk query and a general-purpose file reader.
+
+it "admits an absolute path made of what a path here may contain"
+assert_ok zro_validate_list_path '/root/hesaplar.txt'
+assert_ok zro_validate_list_path '/tmp/tmp.A1b2C3'
+assert_ok zro_validate_list_path '/home/zimbra/lists/audit-2026_07.csv'
+
+it "and refuses one that is not absolute, which would mean a directory nobody chose"
+assert_status "$ZRO_E_INPUT" zro_validate_list_path 'hesaplar.txt'
+assert_status "$ZRO_E_INPUT" zro_validate_list_path './hesaplar.txt'
+assert_status "$ZRO_E_INPUT" zro_validate_list_path ''
+assert_status "$ZRO_E_INPUT" zro_validate_list_path
+# Refused by the leading slash the same rule already requires, which is why there
+# is no separate test for a leading dash in this validator.
+assert_status "$ZRO_E_INPUT" zro_validate_list_path '-rf'
+
+it "and refuses a path that reaches out of itself"
+# Not about reaching a file the operator could not otherwise name — they may write
+# any absolute path — but about the path on the report being the file that was
+# read.
+assert_status "$ZRO_E_INPUT" zro_validate_list_path '/tmp/../etc/shadow'
+assert_status "$ZRO_E_INPUT" zro_validate_list_path '/tmp/..'
+assert_status "$ZRO_E_INPUT" zro_validate_list_path '/..'
+
+it "and refuses every character a filename has no business carrying here"
+assert_status "$ZRO_E_INPUT" zro_validate_list_path '/tmp/li ste.txt'
+assert_status "$ZRO_E_INPUT" zro_validate_list_path "/tmp/liste'.txt"
+# SC2016: not expanding it is the point. This is the literal text an operator
+# could type, and what is being asserted is that it never becomes anything else.
+# shellcheck disable=SC2016
+assert_status "$ZRO_E_INPUT" zro_validate_list_path '/tmp/liste$(id).txt'
+assert_status "$ZRO_E_INPUT" zro_validate_list_path '/tmp/liste;rm.txt'
+assert_status "$ZRO_E_INPUT" zro_validate_list_path '/tmp/liste*.txt'
+assert_status "$ZRO_E_INPUT" zro_validate_list_path "$(printf '/tmp/li\001ste.txt')"
+assert_status "$ZRO_E_INPUT" zro_validate_list_path "$(printf '/tmp/liste.txt\n/etc/shadow')"
+
+it "and refuses one longer than a path can be"
+long="/tmp/"
+while [ "${#long}" -le "$ZRO_LIST_PATH_MAX" ]; do long="${long}aaaaaaaaaaaaaaaa"; done
+assert_status "$ZRO_E_INPUT" zro_validate_list_path "$long"
+
 zro_t_report

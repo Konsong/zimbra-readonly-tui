@@ -3,4 +3,17 @@ set -uo pipefail
 # shellcheck source=../mock_common.sh
 . "${ZRO_MOCK_LIB:?ZRO_MOCK_LIB is required}/mock_common.sh"
 zro_mock_record zmprov "$@"
-zro_mock_respond zmprov "$(zro_mock_token "$@")"
+
+# WHICH ACCOUNT THIS READ IS ABOUT, as the argument carrying an '@'. Every read
+# this program makes of zmprov names its subject that way — an account, an alias,
+# a list — and no flag, subcommand or attribute name this tool passes contains
+# one. It is handed on as the reply's optional third key, so a case driving a run
+# over several addresses can answer for each of them separately.
+zro_mock_scope=""
+for zro_mock_arg in "$@"; do
+  case $zro_mock_arg in
+    *@*) zro_mock_scope=$zro_mock_arg; break ;;
+  esac
+done
+
+zro_mock_respond zmprov "$(zro_mock_token "$@")" "$zro_mock_scope"

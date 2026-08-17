@@ -50,11 +50,33 @@ zro_mock_token() {
   esac
 }
 
-zro_mock_respond() {
-  local name=$1 token=${2:-}
-  local key="ZRO_MOCK_${name}_${token}"
+zro_mock_key() {
+  local key="ZRO_MOCK_$1"
   key=${key//[^A-Za-z0-9_]/_}
-  key=${key^^}
+  printf '%s' "${key^^}"
+}
+
+# A THIRD PART TO THE KEY, FOR THE SCREENS THAT READ SEVERAL ACCOUNTS IN ONE RUN.
+# Keyed on the subcommand alone, every account in a bulk query reads one variable
+# and answers the same text — so a case could not tell a run of three accounts
+# from one account read three times, and could not stage the one thing those
+# screens exist to survive: an address in the list the directory does not hold.
+#
+# The scoped variable wins when it is set and the plain one answers when it is
+# not, so every case written before this is untouched by it.
+zro_mock_respond() {
+  local name=$1 token=${2:-} scope=${3:-}
+  local key
+  key=$(zro_mock_key "${name}_${token}")
+
+  if [ -n "$scope" ]; then
+    local skey s_out s_err s_rc
+    skey=$(zro_mock_key "${name}_${token}_${scope}")
+    s_out="${skey}_OUT"; s_err="${skey}_ERR"; s_rc="${skey}_RC"
+    if [ -n "${!s_out:-}" ] || [ -n "${!s_err:-}" ] || [ -n "${!s_rc:-}" ]; then
+      key=$skey
+    fi
+  fi
 
   local out_var="${key}_OUT" err_var="${key}_ERR" rc_var="${key}_RC"
   local out=${!out_var:-} err=${!err_var:-} rc=${!rc_var:-0}

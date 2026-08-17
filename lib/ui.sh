@@ -57,6 +57,7 @@ zro_ui_shorten() {
 zro_ui_reset() {
   [ -n "$ZRO_UI_QUEUE" ] || return 0
   printf '0' >"$ZRO_UI_QUEUE.pos"
+  printf '0' >"$ZRO_UI_QUEUE.stops"
 }
 
 # Pops the next scripted answer. An exhausted queue reads as cancel, so a
@@ -169,6 +170,76 @@ zro_ui_yesno() {
     return $?
   fi
   zro_ui_whiptail_yesno "$title" "$text"
+}
+
+# ------------------------------------------------------------ stopping a run --
+
+# WHETHER THE OPERATOR HAS ASKED FOR A LONG RUN TO STOP.
+#
+# The one place in this program that reads the keyboard while nothing is being
+# drawn. It is here rather than in the module that runs the loop for the reason
+# every other drawing is: this file is the only path between this program and the
+# terminal, so a screen written next month cannot reach the keyboard by a route
+# that has no stub behind it.
+#
+# ASKED, NEVER WAITED FOR. A bulk query spends seconds per account and has to
+# notice a keypress made at any point during one, so the poll reads whatever the
+# terminal has ALREADY buffered rather than waiting for something to be typed.
+# `read -n 1` is what makes that possible: bash puts the terminal into
+# character-at-a-time mode for the duration of the read, so a key pressed while
+# the line discipline was still collecting a line becomes readable at the next
+# poll instead of waiting for an Enter nobody is going to press.
+#
+# The wait is a fraction of a second and is overridable, because it is spent once
+# per account and a bulk query may run to two hundred of them.
+ZRO_UI_STOP_WAIT="${ZRO_UI_STOP_WAIT:-0.1}"
+# ESC, as the terminal delivers it. An arrow key sends this byte first and two
+# more behind it, so an operator who pressed one during a run stops it — which
+# costs them the run's remaining accounts and never its answer, since a stopped
+# run keeps what it found.
+ZRO_UI_STOP_KEY=$'\033'
+# How many polls the stub answers before it reports a stop. Empty means never,
+# which is what every case that is not about stopping wants.
+ZRO_UI_STOP_AFTER="${ZRO_UI_STOP_AFTER:-}"
+
+zro_ui_stop_requested() {
+  if [ "$ZRO_UI_BACKEND" = stub ]; then
+    zro_ui_stub_stop
+    return $?
+  fi
+  zro_ui_tty_stop
+}
+
+# The scripted answer. The count lives in a file for the reason the queue
+# position does: a run is driven inside command substitution, and a counter
+# incremented in that subshell would be lost, so every poll would be the first.
+zro_ui_stub_stop() {
+  # Read defensively rather than as a plain variable: a case that has finished
+  # with stopping unsets it, and an unset variable under `set -u` would take the
+  # whole run down instead of answering 'nobody asked to stop'.
+  local after=${ZRO_UI_STOP_AFTER:-}
+  case $after in
+    ''|*[!0-9]*|0) return 1 ;;
+  esac
+  [ -n "$ZRO_UI_QUEUE" ] || return 1
+  local f="$ZRO_UI_QUEUE.stops" n=0
+  if [ -f "$f" ]; then
+    n=$(cat -- "$f")
+    [ -n "$n" ] || n=0
+  fi
+  n=$((n + 1))
+  printf '%s' "$n" >"$f"
+  [ "$n" -ge "$after" ]
+}
+
+# What the terminal has waiting, if anything. A terminal that cannot be read is
+# not a stop: this answers whether the operator asked to stop, and "nobody could
+# ask" is not "somebody did".
+zro_ui_tty_stop() {
+  [ -r "$ZRO_UI_TTY" ] || return 1
+  local key=''
+  IFS= read -r -s -n 1 -t "$ZRO_UI_STOP_WAIT" key <"$ZRO_UI_TTY" || return 1
+  [ "$key" = "$ZRO_UI_STOP_KEY" ]
 }
 
 # ---------------------------------------------------------------- whiptail --

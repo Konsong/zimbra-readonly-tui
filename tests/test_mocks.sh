@@ -27,6 +27,22 @@ rm -f -- "$fixture"
 it "exits with the configured status"
 ZRO_MOCK_ZMPROV_GA_RC=1 assert_status 1 "$MOCKBIN/zmprov" ga x
 
+# What a run over several accounts needs from this mock: keyed on the subcommand
+# alone, every account in a bulk query would read one variable and answer the same
+# text, so a case could not tell a run of three accounts from one account read
+# three times.
+it "answers per account when a reply is scripted for one"
+one=$(mktemp); printf 'zimbraAccountStatus: closed\n' >"$one"
+two=$(mktemp); printf 'zimbraAccountStatus: active\n' >"$two"
+export ZRO_MOCK_ZMPROV_GA_OUT="$two"
+export ZRO_MOCK_ZMPROV_GA_KAPALI_EXAMPLE_COM_OUT="$one"
+assert_out_eq "zimbraAccountStatus: closed" "$MOCKBIN/zmprov" ga 'kapali@example.com'
+
+it "and falls back to the subcommand's own reply for every other account"
+assert_out_eq "zimbraAccountStatus: active" "$MOCKBIN/zmprov" ga 'baska@example.com'
+unset ZRO_MOCK_ZMPROV_GA_OUT ZRO_MOCK_ZMPROV_GA_KAPALI_EXAMPLE_COM_OUT
+rm -f -- "$one" "$two"
+
 it "runuser strips its own flags and execs the rest"
 : >"$ZRO_MOCK_LOG"
 "$MOCKBIN/runuser" -u zimbra -- "$MOCKBIN/zmprov" gmi 'a@b.com' >/dev/null 2>&1

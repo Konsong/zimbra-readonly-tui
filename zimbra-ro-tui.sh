@@ -28,6 +28,8 @@ ZRO_ROOT=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 . "$ZRO_ROOT/lib/account.sh"
 # shellcheck source=lib/mailset.sh
 . "$ZRO_ROOT/lib/mailset.sh"
+# shellcheck source=lib/bulk.sh
+. "$ZRO_ROOT/lib/bulk.sh"
 # shellcheck source=lib/mailbox.sh
 . "$ZRO_ROOT/lib/mailbox.sh"
 # shellcheck source=lib/store.sh
@@ -2580,6 +2582,263 @@ zmcontrol status ciktisina bakin."
   zro_show_text "$title" "$card"
 }
 
+# ---------------------------------------------------------- the bulk queries --
+
+ZRO_TXT_BULK_SOURCE='Sorgu, YAZDIGINIZ listedeki hesaplar icin calisir. Sunucudaki butun
+hesaplar taranmaz: boyle bir tarama bu araca hic konulmadi.
+
+Liste nereden gelsin?'
+
+ZRO_TXT_BULK_FILE='Liste dosyasinin TAM YOLU (ornek: /root/hesaplar.txt)
+
+Dosyada her satirda bir adres olabilir; virgul, noktali virgul ve bosluk da
+adresleri ayirir. Dosya yalnizca OKUNUR.
+
+Yol / ile baslamalidir ve yalnizca harf, rakam, nokta, alt tire, tire ve
+bolu isareti icerebilir.'
+
+ZRO_TXT_BULK_TEXT='Adresleri virgul ile ayirarak yazin ya da yapistirin
+(ornek: ali@example.com, veli@example.com)
+
+Noktali virgul, bosluk ve satir sonu da ayirac sayilir.'
+
+# What an operator is holding when a path is refused, and what to do about it.
+# Each cause its own screen, because a cause an operator would repair the same way
+# as another does not earn a message of its own — and one message naming every
+# cause would send most of its readers to the wrong place.
+#
+# THE FILE IS READ BY THIS PROGRAM ITSELF, not by a Zimbra command, so the
+# unreadable case names the account the TOOL runs as rather than the zimbra
+# account every query runs as. Those are not always the same user, and sending an
+# operator to zmfixperms over their own list file would be sending them to repair
+# something that is not broken.
+zro_screen_bulk_file_refused() {
+  local verdict=${1-} path=${2-}
+  case $verdict in
+    shape)
+      zro_ui_msgbox "Gecersiz dosya yolu" \
+"Bu yol acilmadi: aranan bicimde degil.
+
+Yol / ile baslamali, .. icermemeli ve yalnizca harf, rakam, nokta, alt tire,
+tire ve bolu isareti icermelidir. Bosluk, tirnak ve kabuk karakterleri
+kabul edilmez.
+
+Girilen: $path" ;;
+    missing)
+      zro_ui_msgbox "Dosya bulunamadi" \
+"Bu sunucuda boyle bir dosya yok:
+$path
+
+Yol dogru yazilmis mi, dosya bu sunucuda mi kontrol edin." ;;
+    notfile)
+      zro_ui_msgbox "Dosya degil" \
+"Bu yol bir dosyayi degil, baska bir seyi gosteriyor (dizin ya da aygit):
+$path
+
+Adres listesi duz metin bir DOSYA olmalidir." ;;
+    unreadable)
+      zro_ui_msgbox "Dosya okunamiyor" \
+"Bu dosya acilamadi:
+$path
+
+Dosya, bu araci calistiran kullanici tarafindan okunabilir olmalidir." ;;
+    empty)
+      zro_ui_msgbox "Dosya bos" \
+"Bu dosyada hicbir sey yok:
+$path
+
+Dosya okundu ve icinde tek bir adres bile bulunmadi. Bu bir hata degil:
+dosyanin kendisi bos." ;;
+    toobig)
+      zro_ui_msgbox "Dosya cok buyuk" \
+"Bu dosya bir adres listesi icin fazla buyuk, bu nedenle acilmadi:
+$path
+
+En fazla $(zro_human_bytes "$ZRO_BULK_FILE_BYTES") okunur. Bu boyut binlerce
+adrese yeter; daha buyuk bir dosya buyuk ihtimalle adres listesi degildir." ;;
+    *)
+      zro_log error "menu defect, no screen for list file verdict: $verdict"
+      zro_report_defect ;;
+  esac
+}
+
+# THE PATH THE OPERATOR NAMED, once it has been judged. Empty until then.
+#
+# A global rather than something printed, and not for tidiness: the caller needs
+# BOTH the path and the file's contents — one to head the report with and one to
+# read the list out of — and a function that printed the contents could not also
+# hand back the path. An assignment made inside the command substitution that
+# collected the contents would die with the subshell, which is the bug lib/core.sh
+# records having already been fixed twice. Named the way ZRO_MENU_REASON and
+# ZRO_UI_ARGV are: bash 4.2 has no namerefs, so this is how a value comes back
+# from a function that must run in its caller's shell.
+ZRO_BULK_PATH=""
+
+# Asks for a list file and admits it, or explains why not.
+#
+# The path is judged BEFORE anything opens it, which is the one thing this prompt
+# is for: every other file this tool reads is one the tool itself chose out of a
+# declared inventory, and this is the only place an operator names one.
+zro_prompt_bulk_file() {
+  local path rc=0 verdict
+  ZRO_BULK_PATH=""
+  path=$(zro_ui_input "Liste dosyasi" "$ZRO_TXT_BULK_FILE") || rc=$?
+  [ "$rc" -eq 0 ] || return "$ZRO_E_CANCEL"
+
+  verdict=$(zro_bulk_file_verdict "$path")
+  if [ "$verdict" != ok ]; then
+    zro_screen_bulk_file_refused "$verdict" "$path"
+    return "$ZRO_E_INPUT"
+  fi
+  ZRO_BULK_PATH=$path
+  return 0
+}
+
+# WHAT THE RUN WILL COST, SAID BEFORE IT SPENDS IT — and, unlike a log scan, said
+# in accounts and minutes rather than in files and bytes, because that is the unit
+# this screen's work grows with.
+#
+# THE CAP IS STATED WHETHER OR NOT IT APPLIED. An operator who handed over three
+# hundred addresses has to learn that a hundred of them will not be read HERE,
+# where they can still decide, rather than from a line at the bottom of a report
+# they have already read as an answer about three hundred accounts.
+zro_bulk_confirm_text() {
+  local plan=${1-} label=${2-} n bad dup cut
+  n=$(zro_bulk_plan_addresses "$plan" | grep -c .)
+  bad=$(zro_bulk_plan_count "$plan" bad)
+  dup=$(zro_bulk_plan_count "$plan" dup)
+  cut=$(zro_bulk_plan_count "$plan" cut)
+
+  printf 'Sorgu: %s\n\n' "$label"
+  printf 'Sorgulanacak: %s adres, her biri icin bir dizin sorgusu.\n' "$n"
+  printf 'Tahmini sure: %s\n\n' "$(zro_bulk_duration "$((n * ZRO_BULK_SECONDS))")"
+  [ "$bad" -gt 0 ] && printf 'Listede %s gecersiz girdi var; atlanacaklar.\n' "$bad"
+  [ "$dup" -gt 0 ] && printf 'Listede %s tekrar eden adres var; bir kez sorgulanacaklar.\n' "$dup"
+  [ "$cut" -gt 0 ] && printf 'Liste siniri asiyor; %s adres SORGULANMAYACAK.\n' "$cut"
+  printf 'Sinir: en fazla %s adres.\n\n' "$ZRO_BULK_MAX"
+  printf 'Sorgu sirasinda ESC ile durdurabilirsiniz; o ana kadar bulunanlar\n'
+  printf 'korunur ve sonuc EKSIK olarak isaretlenir.\n\n'
+  printf 'Devam edilsin mi?'
+  return 0
+}
+
+# ONE QUESTION, ASKED ABOUT A LIST THE OPERATOR SUPPLIED.
+#
+# The screen that exists instead of the server-wide sweep. Nothing here reads the
+# selected address: a bulk query is about the list, and the address on the frame is
+# what the session is about — which is why these two entries are server-scoped and
+# still cost class 1.
+zro_menu_bulk() {
+  local id=${1-} question title source raw plan rc=0 choice out
+  if ! title=$(zro_menu_label "$id"); then
+    zro_log error "menu defect, no label for bulk operation: $id"
+    zro_report_defect
+    return 0
+  fi
+  # The question is named literally, for the reason every other dispatch in this
+  # file names its own: an id built by cutting a prefix off a menu entry is an
+  # operation nobody can read out of this file.
+  case $id in
+    bulk-status) question=status ;;
+    bulk-mail)   question=mail ;;
+    *) zro_log error "menu defect, no bulk question for: $id"
+       zro_report_defect
+       return 0 ;;
+  esac
+
+  rc=0
+  choice=$(zro_ui_menu "Liste kaynagi" "$ZRO_TXT_BULK_SOURCE" \
+    file "Adres listesini bir dosyadan oku" \
+    text "Adresleri buraya yaz veya yapistir") || rc=$?
+  [ "$rc" -eq 0 ] || return 0
+
+  case $choice in
+    file)
+      # Cancel is navigation and a refused path has had its own screen already.
+      # The prompt runs HERE rather than inside a command substitution, so that
+      # the path it admitted survives to be read and to head the report.
+      zro_prompt_bulk_file || return 0
+      rc=0
+      raw=$(zro_bulk_read_file "$ZRO_BULK_PATH") || rc=$?
+      if [ "$rc" -ne 0 ]; then
+        # The file passed admission one line ago and would not open. Something
+        # changed underneath, which is a fact about the file rather than about
+        # what the operator typed.
+        zro_screen_bulk_file_refused unreadable "$ZRO_BULK_PATH"
+        return 0
+      fi
+      source="dosya: $ZRO_BULK_PATH" ;;
+    text)
+      rc=0
+      raw=$(zro_ui_input "Adres listesi" "$ZRO_TXT_BULK_TEXT") || rc=$?
+      [ "$rc" -eq 0 ] || return 0
+      source="yazilan liste" ;;
+    *) zro_log error "menu defect, no such list source: $choice"
+       zro_report_defect
+       return 0 ;;
+  esac
+
+  rc=0
+  plan=$(zro_bulk_plan "$raw") || rc=$?
+  if [ "$rc" -ne 0 ]; then
+    # The cap is a declaration this program owns, so a cap that is not a count is
+    # a defect in it rather than something the operator typed.
+    zro_report_defect
+    return 0
+  fi
+
+  if [ -z "$(zro_bulk_plan_addresses "$plan")" ]; then
+    # A RESULT ABOUT THE LIST, not a failure: whatever was there has been read and
+    # none of it was an address. Two screens rather than one, because the two
+    # cases are two different mistakes — a list that had nothing in it at all, and
+    # a list full of entries none of which is an address. Nothing else can reach
+    # here: a repeat and a capped entry both require an accepted one in front of
+    # them, so with no address accepted the only other tag possible is 'bad'.
+    if [ "$(zro_bulk_plan_count "$plan" bad)" -eq 0 ]; then
+      zro_ui_msgbox "Liste bos" \
+"Bu listede hicbir sey yok, bu nedenle hicbir sorgu calistirilmadi.
+
+Kaynak: $source
+
+Adresleri virgul, noktali virgul, bosluk ya da satir sonu ile ayirin."
+      return 0
+    fi
+    # A SCROLLING BOX RATHER THAN A MESSAGE, because what this one has to show is
+    # a line per refused entry and a list pasted from the wrong column is twenty
+    # of them. A message box does not scroll, so the explanation would be the part
+    # that fell off the bottom.
+    zro_show_text "Sorgulanacak adres yok" \
+"Bu listedeki girdilerin hicbiri gecerli bir e-posta adresi degil, bu nedenle
+hicbir sorgu calistirilmadi.
+
+$(zro_card_line 'Liste kaynagi' "$source")
+$(zro_card_line 'Gecersiz girdi' "$(zro_bulk_plan_count "$plan" bad)")
+
+Sorgulanmayan girdiler:
+$(zro_bulk_plan_rejects "$plan")"
+    return 0
+  fi
+
+  if ! zro_ui_yesno "Toplu sorgu maliyeti" "$(zro_bulk_confirm_text "$plan" "$title")"; then
+    return 0
+  fi
+
+  rc=0
+  out=$(zro_bulk_run "$question" "$source" "$plan") || rc=$?
+  # A PARTIAL ANSWER IS AN ANSWER, so it is shown rather than reported — and the
+  # disclosure travels in two places, the banner at the top of the text and this
+  # title, because whiptail keeps a title on the frame while a long report scrolls.
+  if [ "$rc" -eq "$ZRO_E_PARTIAL" ]; then
+    zro_show_text "$title - EKSIK SONUC" "$out"
+    return 0
+  fi
+  if [ "$rc" -ne 0 ]; then
+    zro_report_error "$rc"
+    return 0
+  fi
+  zro_show_text "$title" "$out"
+}
+
 # THE COST CLASSES AN OPERATION MAY CLAIM, as "<class>:<the unit its work is
 # counted in>".
 #
@@ -2720,7 +2979,9 @@ trace-msgid:server:3:Teslim takibi: ileti kimligine gore
 logview:server:3:Log dosyalari (son satirlar)
 log-search:server:3:Log arama (dosyalarin tamaminda)
 mail-queue:server:5:Mail kuyrugu (bekleyen iletiler)
-service-status:server:5:Servis durumu'
+service-status:server:5:Servis durumu
+bulk-status:server:1:Toplu sorgu: listedeki hesaplarin durumu
+bulk-mail:server:1:Toplu sorgu: listedeki filtre ve yonlendirmeler'
 
 # The declared entry for an id, or a refusal. Every lookup below goes through
 # this, so an id that is not in the list has exactly one answer everywhere.
@@ -3084,6 +3345,11 @@ EOF
       log-search)  zro_menu_logsearch ;;
       mail-queue)  zro_menu_queue ;;
       service-status) zro_screen_service ;;
+      # The two that are about a list rather than about the selected address. They
+      # come last for the reason the order of the whole list says: what needs no
+      # address comes after what does, and these need not even a server-wide
+      # question — they need what the operator hands them.
+      bulk-*)      zro_menu_bulk "$choice" ;;
       # Declared in the list above and dispatched nowhere: a defect in this file.
       # Silently redrawing the menu would reach the operator as the tool ignoring
       # them, which is how a missing branch survives a release.

@@ -509,6 +509,63 @@ assert_not_contains "$message" "zmprov"
 assert_not_contains "$message" "gm "
 assert_not_contains "$message" "gru "
 
+# ------------------------------------------------------------ bulk queries --
+
+it "a bulk query reaches the directory only through the reader every screen uses"
+# THE SCREEN THAT EXISTS INSTEAD OF A SERVER-WIDE SWEEP, held to what makes it
+# one. It runs the same read as the account card, once per address the operator
+# supplied, and it reaches it through zro_prov_read — so it inherits the declared
+# subcommand set, the degraded-read path and the allowlist without a second route
+# to any of them.
+bulk=$(zro_scan_file "$ZRO_SRC/lib/bulk.sh")
+assert_not_contains "$bulk" "zro_exec"
+assert_not_contains "$bulk" "zmmailbox"
+assert_not_contains "$bulk" "zro_mbox_run"
+
+it "and every read it makes names its subcommand literally, and it is a read"
+# One call site per question, each naming `ga`. A bulk query that could hand the
+# reader a variable would be a screen whose subcommand nobody can read out of this
+# file — which is the whole reason ZRO_PROV_READS exists for the one place that
+# does.
+# Read with the quoted spans already removed, which is what leaves the subcommand
+# standing where the missing-account code used to be: `zro_prov_read  ga`.
+assert_eq "$(printf '%s\n' "$bulk" | grep -cE 'zro_prov_read[[:space:]]+ga[[:space:]]')" "2"
+assert_eq "$(printf '%s\n' "$bulk" | grep -cE 'zro_prov_read')" "2"
+
+it "and no read whose work grows with the account count is expressible in it"
+# The refusal this whole screen is built around, asserted where somebody would
+# reach for the shortcut: the questions it answers are exactly the ones a
+# server-wide sweep would answer faster.
+#
+# `sa` is absent from this list and cannot be added to it: 'sa' is also how this
+# program abbreviates an hour on a Turkish screen, and a scan that reads
+# single-quoted text as code would report the estimate as a directory search. The
+# allowlist refuses the subcommand, and the tree-wide case above refuses it in an
+# executable position; this list is the module-local half.
+for sweep in gqu getQuotaUsage gaa getAllAccounts searchAccounts; do
+  assert_not_contains "$bulk" " $sweep "
+done
+
+it "and the batch mode that would run commands from a file is written nowhere"
+# `zmprov -f` reads command LINES from a file, which would put what runs outside
+# the allowlist's view — the same objection that forbids evaluating strings as
+# commands. A bulk query pays a JVM start per account instead, and this is what
+# keeps that decision from being quietly reversed by whoever next finds the screen
+# slow.
+assert_not_contains "$code" "zro_exec zmprov -f"
+assert_not_contains "$code" "zmprov --file"
+assert_not_contains "$code" "zro_exec zmprov -c"
+
+it "the one path an operator types is validated before anything opens it"
+# Every other file this tool reads comes from the declared log inventory. This one
+# is named by an operator, so the admission is a validator of its own and the
+# module may not open anything it did not judge.
+assert_contains "$bulk" "zro_validate_list_path"
+assert_eq "$(printf '%s\n' "$bulk" | grep -cE '(^|[^_])cat --')" "1"
+for prefix in /usr /bin /sbin /var /opt /etc; do
+  assert_not_contains "$bulk" "$prefix"
+done
+
 it "the mail queue is read in one form, at one call site"
 # THE WRITING FORMS LIVE IN THE SAME BINARY, which is what makes this worth
 # checking statically as well as at the gate: `-f` flushes the deferred queue,

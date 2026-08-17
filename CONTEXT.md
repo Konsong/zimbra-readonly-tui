@@ -760,3 +760,42 @@ for diagnosing a struggling mail server may not compete with it for the disk. A
 host that cannot do it is refused the operation rather than given an
 ordinary-priority scan.
 _Avoid_: nice (as a verb), throttling, rate limit
+
+## Asking about many accounts
+
+**Bulk query**:
+One directory read repeated over a [supplied list](#asking-about-many-accounts) —
+account status, or filters and forwarding. It is the screen that exists **instead
+of** a [server-wide sweep](#cost), and the whole design follows from that: the
+work grows with the operator's list and with nothing else, which is why it is
+[cost class](#cost) 1 counted in entries and not a class of its own. Never
+confused with a [server-wide question](#searching-logs), which asks about nobody
+in particular and is answered from the logs in one pass.
+_Avoid_: batch, mass query — batch is the mode of `zmprov` this tool refuses
+
+**Supplied list**:
+The addresses an operator hands over, from a file or as comma-separated text, and
+the only thing a [bulk query](#asking-about-many-accounts) runs against. Every
+entry is judged before anything runs: one that is not an address is reported with
+**its position among the entries** — not its line, because several addresses can
+share a line — and the run continues past it. A repeated address is read once,
+because a second read costs a JVM start to answer the same thing twice.
+_Avoid_: input file, account list — the second reads as a list Zimbra holds
+
+**List cap**:
+The bound on how many addresses one [bulk query](#asking-about-many-accounts) will
+read. It is what keeps "the operator's list" from quietly becoming "the
+directory", so it is **stated with the number it dropped**, on the confirmation
+screen before the run and again on the report. A capped list is never a shortened
+answer nobody mentioned.
+_Avoid_: limit, batch size
+
+**Stopped run**:
+A [bulk query](#asking-about-many-accounts) the operator ended with ESC. What it
+found is **kept and marked partial**, with the number of addresses never read on
+the banner, because a two-minute run that is all-or-nothing is a run nobody
+starts. The stop takes effect between accounts: a query already in flight
+finishes, since a half-read answer may not reach the report. It is one of the two
+things that make a bulk answer a [partial scan](#reduced-service); the other is an
+address the directory would not answer for.
+_Avoid_: cancelled, aborted — a cancelled prompt discards, and this keeps

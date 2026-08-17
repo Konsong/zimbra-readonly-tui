@@ -82,5 +82,45 @@ assert_contains "$(cat "$ZRO_UI_OUT")" "Sorgulaniyor"
 # The queue must be untouched: a notice asks the operator for nothing.
 assert_out_eq "1" zro_ui_menu "Ana Menu" "Secim" 1 "Hesap"
 
-rm -f -- "$ZRO_UI_QUEUE" "$ZRO_UI_OUT"
+# --------------------------------------------------------- stopping a run --
+#
+# The one place this program reads the keyboard while nothing is being drawn. It
+# is here for the reason every other drawing is: this module is the only path
+# between the program and the terminal, so a long run cannot reach the keyboard by
+# a route with no stub behind it.
+
+it "nothing is asking to stop unless a case says so"
+queue "1"
+assert_fail zro_ui_stop_requested
+assert_fail zro_ui_stop_requested
+
+it "and a poll asks the operator for nothing, so it consumes no queued answer"
+assert_out_eq "1" zro_ui_menu "Ana Menu" "Secim" 1 "Hesap"
+
+it "a scripted stop answers on the poll it was scripted for, and not before"
+queue "1"
+ZRO_UI_STOP_AFTER=3
+assert_fail zro_ui_stop_requested
+assert_fail zro_ui_stop_requested
+assert_ok zro_ui_stop_requested
+
+it "and the count is kept in a file, so a run driven in a subshell still advances it"
+# A bulk query runs inside command substitution: a counter incremented there would
+# die with the subshell and every poll would be the first, which is a run that can
+# never be stopped.
+queue "1"
+ZRO_UI_STOP_AFTER=2
+if ( zro_ui_stop_requested ); then
+  zro_t_fail "the first poll, made in a subshell, reported a stop"
+else
+  zro_t_pass
+fi
+assert_ok zro_ui_stop_requested
+ZRO_UI_STOP_AFTER=
+
+it "a stop nobody scripted is not a stop, whatever the queue holds"
+queue "__CANCEL__"
+assert_fail zro_ui_stop_requested
+
+rm -f -- "$ZRO_UI_QUEUE" "$ZRO_UI_OUT" "$ZRO_UI_QUEUE.pos" "$ZRO_UI_QUEUE.stops"
 zro_t_report
