@@ -1,0 +1,10 @@
+num: 5, more: true
+
+     Id  Type   From                  Subject                                             Date
+   ----  ----   --------------------  --------------------------------------------------  --------------
+1.  273  mess   Ali Veli              Toplu ileti 8                                       08/03/26 17:46
+2.  272  mess   Ali Veli              Toplu ileti 5                                       08/03/26 17:46
+3.  271  mess   Ali Veli              Toplu ileti 6                                       08/03/26 17:46
+4.  270  mess   Ali Veli              Toplu ileti 7                                       08/03/26 17:46
+5.  269  mess   Ali Veli              Toplu ileti 2                                       08/03/26 17:46
+

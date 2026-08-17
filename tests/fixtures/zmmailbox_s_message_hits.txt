@@ -1,0 +1,10 @@
+num: 5, more: false
+
+     Id  Type   From                  Subject                                             Date
+   ----  ----   --------------------  --------------------------------------------------  --------------
+1.  264  mess   Ali Veli              Ynt: Temmuz faturasi                                08/03/26 17:38
+2.  263  mess   Ali Veli              Bir "tirnakli" konu                                 08/03/26 17:38
+3.  262  mess   Ali Veli              Temmuz faturasi                                     08/03/26 17:38
+4.  259  mess   ali.veli              Toplanti notlari                                    07/31/26 00:29
+5.  258  mess   ali.veli              Hosgeldiniz                                         07/31/26 00:29
+

@@ -80,6 +80,7 @@ accommodated. They are not needed on a standard host.
 | `ZRO_NICE_BIN`, `ZRO_IONICE_BIN` | resolved by path | the two commands every log scan is wrapped in. Set them if this host keeps them somewhere unusual; **how far** the priority is reduced is not settable, because that is a promise this tool makes to the server rather than a preference |
 | `ZRO_POSTFIX_SBIN` | `/opt/zimbra/common/sbin` | where the mail queue tool lives. Zimbra ships its Postfix under `common`, not under `bin`; a host that keeps it elsewhere sets this, and the queue screen then reports the tool as absent rather than searching `$PATH` for it |
 | `ZRO_QUEUE_DETAIL_MAX` | `50` | how many queue entries the detail behind the counts may show |
+| `ZRO_SEARCH_LIMIT` | `50` | how many hits one message search or conversation listing may return. The bound is on the **answer**, never on how much of the mailbox is examined: the server searches all of it and says through its own `more:` flag whether it had more to give, which the screen passes on |
 | `ZRO_SYSLOG_FILE` | `/var/log/zimbra.log` | the primary mail log — Postfix, amavis and auth |
 | `ZRO_LOG_DIR` | `/opt/zimbra/log` | where Zimbra's own logs live |
 | `ZRO_TIMEOUT` | `60` | seconds before a command is killed |
@@ -304,6 +305,47 @@ report is the claim.
   **Every one of these five refuses before it opens anything** if the account has
   no mailbox. What you get then is the existence gate's own screen — the account
   is provisioned and has never been used — rather than a failure box.
+- **Ileti arama** — where a message is, asked of the mailbox itself: sender,
+  sender domain, recipient, envelope sender, envelope recipient, subject,
+  Message-ID, a day, a day range, attachment name, attachment type, read or
+  unread, one folder, and the whole mailbox. Criteria combine with **and**, and
+  however many you set, the search is **one** query.
+
+  **You do not type a query.** You pick a criterion from a list and give it a
+  value; the tool writes the query and shows it above the answer, so what was
+  asked can be checked against what came back.
+
+  **The `Kimden` column is not an address.** The server prints a display name
+  there and cuts it at twenty characters without saying so, so two people can
+  appear under one string and no address can be recovered from it. The subject is
+  cut at fifty the same way. Both cuts are Zimbra's, not this tool's.
+
+  **An empty result is a result**, and it is drawn as one rather than as a
+  failure. Two things make an empty answer mean less than it looks like: the
+  default scope **leaves out Trash and Junk** until you add the *Butun mailbox*
+  criterion, and the two envelope criteria answered nothing at all on the
+  laboratory server even for messages whose envelope was exactly the address
+  searched for — the screen says so before you use them.
+
+  **A value may not end in a backslash.** In Zimbra's query language a trailing
+  backslash closes the quoting the tool put around your value: measured, the
+  server then either searches for something else and says nothing about it, or
+  refuses the whole query. The tool refuses the value instead, which is the one
+  case escaping cannot fix.
+- **Konusma arama ve konusmadaki iletiler** — the same criteria, asked for
+  **conversations** rather than messages, and then one conversation opened to
+  list the messages in it. The listing is made with `is:anywhere`, so a message
+  moved to Trash or Junk still appears in the conversation it belongs to.
+
+  It costs one query for the search and **one more for each conversation you
+  open**; the screen says so before it runs.
+
+  **A conversation id beginning with a minus holds exactly one message.** Zimbra
+  names such a conversation with the negation of that message's id. This tool
+  will not put a value beginning with a minus on a command line — it would be
+  read as an option — so that row is answered from what is already on the screen,
+  without a query: the message is the one you just picked, and its id is the
+  value without its sign.
 - **Dagitim listesi karti** — who receives mail sent to this address, who owns the
   list, and who may send to it: the three facts a message rejected by a list is
   explained by. Members, owners and send permissions all live on the list's own
@@ -822,6 +864,11 @@ zmmailbox gaf    getAllFolders              behind the existence gate
 zmmailbox gf     getFolder                  behind the existence gate
 zmmailbox gfg    getFolderGrant             behind the existence gate
 zmmailbox gms -v getMailboxSize, raw bytes  behind the existence gate
+zmmailbox s      search                     behind the existence gate; -t message for
+                                            messages, no -t for conversations, -l bounds
+                                            how many hits come back
+zmmailbox sc     searchConv                 behind the existence gate; the messages of one
+                                            conversation, -l bounds them
 zmcontrol -v     version
 zmcontrol status service status — THE ONE ENTRY HERE THAT WRITES; see below
 zmmsgtrace --recipient                      delivery trace by recipient
@@ -854,20 +901,30 @@ letter away, change what a user sends as, and are absent from the list and
 therefore refused. See
 [`docs/research/2026-08-03-mail-settings-and-multiline-attributes.md`](research/2026-08-03-mail-settings-and-multiline-attributes.md).
 
-**`zmmailbox` is on this list as four reads, and every one of them is refused
+**`zmmailbox` is on this list as six reads, and every one of them is refused
 until the existence gate has answered.** That binary creates a mailbox for an
 account that has none during session setup, so a single function owns its whole
 argument prefix, the exec gate refuses the binary from any other caller, and a
 static test fails the build if another call site so much as names it. The gate
-shipped with nothing behind it and these four arrived afterwards, each with the
+shipped with nothing behind it and these six arrived afterwards, each with the
 ticket that exposes it — an operation is never approved because the binary it
 belongs to became reachable.
 
-Each was measured rather than assumed. On the lab server the account's row in the
-`mailbox` table was byte-identical either side of all four — change checkpoint,
-size checkpoint and last SOAP access included — while a deliberate grant write in
-the same session moved two of those columns at once, which is what makes the
-measurement worth anything. See
+**The search reads a mailbox and marks nothing read**, which is the question that
+decides whether it may be here at all. `zmmailbox gm` — message detail — clears
+the unread flag on the message it reports, and it is nowhere in this tool. `s` and
+`sc` were measured on 2026-08-03: the account's row in the `mailbox` table was
+byte-identical either side of both, and the same four message ids answered
+`is:unread` before and after roughly forty searches and five conversation
+listings. See
+[`docs/research/2026-08-03-message-search-and-conversations.md`](research/2026-08-03-message-search-and-conversations.md).
+
+**The four reads that arrived before the search were measured the same way**, and
+this paragraph is about those four rather than about all six. On the lab server
+the account's row in the `mailbox` table was byte-identical either side of all
+four — change checkpoint, size checkpoint and last SOAP access included — while a
+deliberate grant write in the same session moved two of those columns at once,
+which is what makes the measurement worth anything. See
 [`docs/research/2026-08-02-folders-size-and-quota.md`](research/2026-08-02-folders-size-and-quota.md).
 
 **`gms` is approved with `-v` and used no other way.** Without it the command

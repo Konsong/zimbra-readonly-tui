@@ -146,6 +146,50 @@ ZRO_LIB_EXEC_LOADED=1
 # be an operation nobody can reach, and the list has to stay the complete account
 # of what may be run.
 #
+# `zmmailbox s` (search) AND `sc` (searchConv) ARE THE FIFTH AND SIXTH, and they
+# arrived with the ticket that asks a mailbox where a message is — never because
+# the binary was already reachable. Both are reads in effect as well as in name,
+# measured rather than assumed: on TEST-C the account's row in the `mailbox` table
+# was byte-identical either side of a pass of both, and the sharper control held
+# too — the same four message ids answered `is:unread` before and after roughly
+# forty searches and five conversation listings, and the folder listing reported
+# the same unread count. See
+# docs/research/2026-08-03-message-search-and-conversations.md §1.
+#
+# THE COMMAND THIS PAIR IS DEFINED AGAINST IS `gm`, WHICH IS NOT HERE. Message
+# detail is the read that clears the unread flag it reports — `doGetMessage`
+# hard-codes `setMarkRead(true)` and no flag disables it — so a mailbox is asked
+# what it holds through a search, which never sets that attribute at all.
+#
+# `zmmailbox:s:-t` IS A FLAG IN THE DATA POSITION, and it decides which question is
+# asked rather than how the answer is dressed: the search type defaults to
+# CONVERSATION, so the ids in an answer without it name conversations. Both forms
+# are used and both are operations — one call site asks for messages with the flag,
+# one asks for conversations without it, which is the only way a conversation id
+# can be obtained at all.
+#
+# `zmmailbox:s:-l` and `zmmailbox:sc:-l` ARE THE OUTPUT BOUND. What follows is a
+# count this program declares, never operator text. The bound is on what comes
+# BACK: the server examines the whole mailbox either way and says through its own
+# `more:` flag whether it had more to give, which the screen passes on.
+#
+# `--dumpster` IS NOWHERE HERE and may not arrive: it searches deleted items in the
+# dumpster, which is a different question about a different store, and an operation
+# arrives with the ticket that exposes it. `-v` is absent too — it replaces the
+# table with JSON, which this tool has no parser for, and approving a second form
+# of a read nobody makes would be an operation nobody can reach. `-n`, `-p` and
+# `-c` page a search across an interactive session that a one-shot invocation does
+# not have: measured upstream, they print nothing and exit 0.
+#
+# The write-named siblings of these two live in the same binary and are absent from
+# this list. Read off that binary's own help on 2026-08-03 rather than guessed:
+# `mmr` marks a message read, `mcr` marks a whole CONVERSATION read — one keystroke
+# from the listing approved here — `mms` and `mcs` mark spam, `mm` and `mc` move,
+# `dm` and `dc` delete, `tm` and `tc` tag, `fm` and `fc` flag, and `am` adds a
+# message. `gc`, which reads one conversation and does not set `read`, is absent
+# too: the listing approved above answers the question this tool asks, and an
+# operation arrives with the ticket that exposes it.
+#
 # `zmcontrol status` IS THE ONE COMMAND IN THIS LIST THAT WRITES, and it is here
 # as a DECLARED ARTIFACT rather than as an exception anybody may repeat. It starts
 # and stops nothing — the guarantee is about Zimbra-managed domain state, and
@@ -366,6 +410,11 @@ zmmailbox:gf
 zmmailbox:gfg
 zmmailbox:gms
 zmmailbox:gms:-v
+zmmailbox:s
+zmmailbox:s:-t
+zmmailbox:s:-l
+zmmailbox:sc
+zmmailbox:sc:-l
 zmcontrol:-v
 zmcontrol:status
 zmmsgtrace:--recipient

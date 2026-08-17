@@ -1,0 +1,7 @@
+num: 2, more: false
+
+     Id  From                  Subject                                             Date
+   ----  --------------------  --------------------------------------------------  --------------
+1.  264  Ali Veli              Ynt: Temmuz faturasi                                08/03/26 17:38
+2.  262  Ali Veli              Temmuz faturasi                                     08/03/26 17:38
+

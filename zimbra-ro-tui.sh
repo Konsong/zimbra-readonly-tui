@@ -32,6 +32,8 @@ ZRO_ROOT=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 . "$ZRO_ROOT/lib/mailbox.sh"
 # shellcheck source=lib/store.sh
 . "$ZRO_ROOT/lib/store.sh"
+# shellcheck source=lib/search.sh
+. "$ZRO_ROOT/lib/search.sh"
 # shellcheck source=lib/identity.sh
 . "$ZRO_ROOT/lib/identity.sh"
 # shellcheck source=lib/directory.sh
@@ -303,16 +305,31 @@ Zimbra'da veya bu sunucuda bir sorun oldugunu GOSTERMEZ ve hicbir sey
 degistirilmedi. Ayrinti icin arac gunlugune bakin."
 }
 
+# WHAT THE UNDERLYING COMMAND SAID, as the block a screen hangs under its own
+# explanation — or nothing at all when it said nothing.
+#
+#   $1  the heading the block is introduced by
+#
+# ONE PLACE, because seven screens append it and each of them appended it by
+# copying the last one. The heading is the caller's, because what said it differs:
+# 'Zimbra ciktisi' is a Zimbra command's own words, and a log this program could
+# not open is the system's.
+zro_error_detail() {
+  local heading=${1-} detail
+  detail=$(zro_last_error)
+  [ -n "$detail" ] || return 0
+  printf '
+
+%s:
+%s' "$heading" "$detail"
+}
+
 zro_report_error() {
   # Whatever Zimbra actually said, when it said anything. Without this the
   # operator sees a bare code and has to reproduce the command by hand to learn
   # that, say, mailboxd is stopped.
   local detail
-  detail=$(zro_last_error)
-  [ -n "$detail" ] && detail="
-
-Zimbra ciktisi:
-$detail"
+  detail=$(zro_error_detail 'Zimbra ciktisi')
 
   case $1 in
     # An address a module refused. It reaches here rather than through the
@@ -621,6 +638,15 @@ zro_mailbox_cost_note() {
       printf 'devralinmissa bir sorgu daha. %s' "$ZRO_TXT_GATE_COST" ;;
     mailbox-size|mailbox-folders)
       printf 'Bu ekran mailboxun icini BIR KEZ okur. %s' "$ZRO_TXT_GATE_COST" ;;
+    # THE SEARCH IS ONE INVOCATION HOWEVER MANY CRITERIA IT CARRIES: the criteria
+    # are one query, and the query is one command. What grows with the number of
+    # criteria is the narrowness of the answer, not the cost of asking.
+    mailbox-search)
+      printf 'Bu ekran, olcutler kac tane olursa olsun, mailboxta BIR arama\n'
+      printf 'calistirir: bir sorgu. Her yeni arama bir sorgu daha. %s' "$ZRO_TXT_GATE_COST" ;;
+    mailbox-conversation)
+      printf 'Bu ekran once bir arama calistirir, sonra actiginiz her konusma icin\n'
+      printf 'bir sorgu daha yapar. %s' "$ZRO_TXT_GATE_COST" ;;
     # Reached only by an operation declared in the one list and not named here,
     # which is a defect in this file rather than a screen with no cost. Said as
     # the general sentence rather than silently: an operator is told a query is
@@ -749,11 +775,7 @@ Klasor: $path"
 # between the listing and the question.
 zro_screen_folder_gone() {
   local path=${1-} detail
-  detail=$(zro_last_error)
-  [ -n "$detail" ] && detail="
-
-Zimbra ciktisi:
-$detail"
+  detail=$(zro_error_detail 'Zimbra ciktisi')
 
   zro_ui_msgbox "Klasor bulunamadi" \
 "Bu klasor sunucuda bulunamadi:
@@ -766,6 +788,388 @@ Iki sebebi olabilir:
   - Klasor listelendikten sonra silinmis veya adi degistirilmis olabilir.
 
 Listeye donup baska bir klasor secebilirsiniz.$detail"
+}
+
+# ------------------------------------------------------- the message search --
+#
+# THE QUERY IS BUILT, NEVER TYPED. An operator chooses a criterion from the list
+# this program declares and supplies at most one value for it; the operator text
+# that reaches Zimbra is a VALUE inside a term this program wrote, never an
+# operator's own query. That is the same rule the canned log searches live by, and
+# it matters more here: the query language has boolean operators, a field separator
+# and a wildcard, so a query an operator typed could quietly mean something else
+# than it reads.
+#
+# WHAT IS CARRIED BETWEEN THE SCREENS is a list of criterion ids and values, in a
+# global, because bash 4.2 has no namerefs and the menu loop has to keep it across
+# a prompt read inside command substitution — the same reason ZRO_UI_ARGV and
+# ZRO_MENU_REASON are globals.
+ZRO_SEARCH_SEL=()
+
+zro_menu_search_reset() {
+  ZRO_SEARCH_SEL=()
+}
+
+# The value chosen for a criterion, or a refusal when it has none.
+zro_menu_search_get() {
+  local id=${1-} i=0
+  while [ "$i" -lt "${#ZRO_SEARCH_SEL[@]}" ]; do
+    if [ "${ZRO_SEARCH_SEL[i]}" = "$id" ]; then
+      printf '%s' "${ZRO_SEARCH_SEL[i + 1]}"
+      return 0
+    fi
+    i=$((i + 2))
+  done
+  return 1
+}
+
+# One criterion set to one value, REPLACING whatever it held. A criterion chosen
+# twice is an operator correcting themselves, and a query carrying `from:` twice
+# would ask for messages from two senders at once — which is a question nobody
+# asked and which answers with nothing.
+zro_menu_search_put() {
+  local id=${1-} value=${2-} i=0
+  while [ "$i" -lt "${#ZRO_SEARCH_SEL[@]}" ]; do
+    if [ "${ZRO_SEARCH_SEL[i]}" = "$id" ]; then
+      ZRO_SEARCH_SEL[i + 1]=$value
+      return 0
+    fi
+    i=$((i + 2))
+  done
+  ZRO_SEARCH_SEL+=("$id" "$value")
+}
+
+ZRO_TXT_SEARCH_BUILD='Olcut ekleyin, sonra aramayi calistirin. Secilen olcutler VE ile birlestirilir:
+hepsine birden uyan iletiler bulunur.
+
+Aramanin varsayilan kapsami cop kutusunu ve spam klasorunu DISARIDA BIRAKIR;
+"Butun mailbox" olcutu bunu kaldirir.'
+
+ZRO_TXT_SEARCH_ENVELOPE='Zarf alanlari, iletinin basliginda degil SMTP konusmasinda gecen adreslerdir.
+Bu alanlarin dizine islenip islenmedigi sunucuya baglidir: laboratuvar
+sunucusunda bu iki olcut, zarfi tam olarak bu adres olan iletiler icin bile bos
+yanit verdi. Bos sonuc burada "yok" degil, "bu sunucuda aranamiyor" olabilir.'
+
+# THE OTHER DISCLOSURE, AND IT IS NOT THE SAME ONE. The envelope pair was measured
+# failing; these were never tried against a message that has an attachment, because
+# the laboratory mailbox held none. `attachment:none` WAS measured and answered for
+# every message there, so the criterion is real rather than a word the parser
+# tolerates and ignores — what is unmeasured is only whether a type name matches the
+# right MIME type when an attachment exists. The screen says exactly that much, and
+# docs/research/2026-08-03-message-search-and-conversations.md §9 says it is said.
+ZRO_TXT_SEARCH_ATTACHMENT='Ek olcutleri, eki olan bir ileti uzerinde denenemedi: laboratuvar mailboxunda
+ekli ileti yoktu. "Eki olmayan iletiler" degeri olculdu ve dogru calisiyor; tur
+adlarinin dogru MIME turlerine karsilik gelip gelmedigi OLCULMEDI.
+
+Bos sonuc burada "eki olan ileti yok" demek olabilecegi gibi "tur adi eslesmedi"
+de olabilir.'
+
+# THE VALUE FOR ONE CRITERION, asked in the form its kind decides.
+#
+# The two criteria whose values this program owns are MENUS, not prompts: what
+# comes back is one of the words in a table this file did not write, so nothing an
+# operator typed can reach `is:` or `attachment:` at all. Everything else is a
+# prompt and a validator, and a rejected value is told apart from a cancel — the
+# first says what was wrong with what was typed, the second returns.
+zro_menu_search_value() {
+  local id=${1-} kind value rc=0 label
+  local -a items=()
+  kind=$(zro_search_kind "$id") || return "$ZRO_E_INPUT"
+  label=$(zro_search_label "$id") || label=$id
+
+  case $kind in
+    scope)
+      printf 'anywhere'
+      return 0 ;;
+    state|atype)
+      local table=$ZRO_SEARCH_STATES
+      [ "$kind" = atype ] && table=$ZRO_SEARCH_ATTACHMENTS
+      local entry
+      while IFS= read -r entry; do
+        [ -n "$entry" ] || continue
+        items+=("${entry%%:*}" "${entry#*:}")
+      done <<EOF
+$table
+EOF
+      value=$(zro_ui_menu "$label" "Deger secin:" "${items[@]}") || return "$ZRO_E_CANCEL"
+      # Judged against the table this program drew, exactly as a menu id is: a
+      # value that is not one of those words names nothing.
+      if ! zro_search_choice_label "$table" "$value" >/dev/null; then
+        zro_log error "denied, not a declared search value: $value"
+        return "$ZRO_E_INPUT"
+      fi
+      printf '%s' "$value"
+      return 0 ;;
+  esac
+
+  # What to ask for comes from the module that declares the kinds, so a criterion
+  # cannot arrive with no way to ask for its value. A kind with no prompt and no
+  # menu is a defect in that declaration rather than a screen with nothing to say.
+  local prompt
+  if ! prompt=$(zro_search_prompt "$kind"); then
+    zro_log error "search defect, no prompt for criterion kind: $kind"
+    return "$ZRO_E_INPUT"
+  fi
+
+  value=$(zro_ui_input "$label" "$prompt" "$(zro_menu_search_get "$id" || printf '')") || rc=$?
+  [ "$rc" -eq 0 ] || return "$ZRO_E_CANCEL"
+
+  # A message-id arrives wearing the angle brackets a header puts on it, and they
+  # come off here for the same reason the delivery trace takes them off: measured
+  # on the lab server, the bracketed form matches nothing.
+  if [ "$kind" = msgid ]; then
+    value=${value#<}
+    value=${value%>}
+  fi
+
+  # Validated by the one function that will have to build a term out of it. A
+  # second copy of the rules here is a second set to get wrong, and the term
+  # builder is where the value really has to survive.
+  if ! zro_search_term "$id" "$value" >/dev/null; then
+    zro_ui_msgbox "Gecersiz girdi" \
+"Bu deger '$label' olcutu icin kullanilamaz.
+
+  - Adres tam bir e-posta adresi olmali, alan adi ise yalnizca alan adi.
+  - Gun 2026-07-28 biciminde ve takvimde var olan bir gun olmali.
+  - Klasor yolu '/' ile baslamali.
+  - Metin bos olamaz, satir sonu veya kontrol karakteri iceremez, basinda ya da
+    sonunda bosluk olamaz ve TERS BOLU ILE BITEMEZ.
+
+Ters bolu ile biten bir deger, sorgu dilinde kendi tirnagini kapatir: sunucu ya
+baska bir degeri arar ya da sorgunun tamamini reddeder. Ikisi de sessizce yanlis
+sonuc verir, bu yuzden arac boyle bir degeri gondermez."
+    return "$ZRO_E_INPUT"
+  fi
+  printf '%s' "$value"
+}
+
+# THE CRITERIA SCREEN AND THE ANSWER BEHIND IT. Two operations arrive here — the
+# message search and the conversation search — because they are one query builder
+# asked for two kinds of hit, and a second copy of this loop would be a second set
+# of criteria to keep in step.
+zro_menu_search() {
+  local id=${1-} acct title choice rc=0 query raw value
+  if ! title=$(zro_menu_label "$id"); then
+    zro_log error "menu defect, no label for search operation: $id"
+    zro_report_defect
+    return 0
+  fi
+  acct=$(zro_identity_selected_account)
+  if [ -z "$acct" ]; then
+    zro_log error "menu defect, search operation with no selected address: $id"
+    zro_report_defect
+    return 0
+  fi
+
+  # The criteria are the operator's, and they are kept while this screen is open
+  # and dropped when it is left: an operator who comes back to the menu and starts
+  # again is starting again. Reset HERE rather than on the way out, so a screen
+  # left by cancelling cannot leave a criterion behind for the next one.
+  zro_menu_search_reset
+
+  local -a items=()
+  local crit_id crit_label
+  while :; do
+    items=()
+    while IFS= read -r crit_id; do
+      [ -n "$crit_id" ] || continue
+      crit_label=$(zro_search_label "$crit_id") || continue
+      if value=$(zro_menu_search_get "$crit_id"); then
+        crit_label="$crit_label = $(zro_search_value_label "$crit_id" "$value")"
+      fi
+      items+=("$crit_id" "$crit_label")
+    done <<EOF
+$(zro_search_ids)
+EOF
+    items+=(__run__ "ARAMAYI CALISTIR" __clear__ "Olcutleri temizle")
+
+    rc=0
+    choice=$(zro_ui_menu "$title" "$ZRO_TXT_SEARCH_BUILD" "${items[@]}") || rc=$?
+    [ "$rc" -eq 0 ] || return 0
+
+    case $choice in
+      __clear__) zro_menu_search_reset; continue ;;
+      __run__) ;;
+      *)
+        # Judged against the list this program itself drew, exactly as the main
+        # menu judges an operation id.
+        if ! zro_search_label "$choice" >/dev/null; then
+          zro_log error "denied, not a declared search criterion: $choice"
+          continue
+        fi
+        # Two pairs carry a screen of their own before they are used, because what
+        # an empty answer from them means is not what an operator expects. They say
+        # DIFFERENT things and the difference is the point: the envelope pair was
+        # measured answering nothing where it should have answered, while the
+        # attachment pair was never run against a message carrying an attachment at
+        # all. One is a measured gap, the other an unmeasured one, and a screen that
+        # blurred them would be claiming a finding nobody made.
+        case $choice in
+          env-sender|env-recipient) zro_ui_msgbox "Zarf alanlari" "$ZRO_TXT_SEARCH_ENVELOPE" ;;
+          attachment-name|attachment-type)
+            zro_ui_msgbox "Ek olcutleri" "$ZRO_TXT_SEARCH_ATTACHMENT" ;;
+        esac
+        rc=0
+        value=$(zro_menu_search_value "$choice") || rc=$?
+        [ "$rc" -eq 0 ] || continue
+        zro_menu_search_put "$choice" "$value"
+        continue ;;
+    esac
+
+    # ------------------------------------------------------------- the run --
+    rc=0
+    query=$(zro_search_query ${ZRO_SEARCH_SEL[@]+"${ZRO_SEARCH_SEL[@]}"}) || rc=$?
+    if [ "$rc" -ne 0 ]; then
+      zro_ui_msgbox "Olcut yok" \
+"Arama en az bir olcutle calisir.
+
+Olcutsuz bir sorguyu sunucu reddeder, ve butun mailboxu listelemek bu aracin
+yaptigi bir sey degildir. Listeden bir olcut secip deger verin."
+      continue
+    fi
+
+    zro_ui_notice "Calisiyor" "Mailbox araniyor, lutfen bekleyin.
+
+Hesap: $acct
+$(zro_mailbox_cost_note "$id")"
+
+    rc=0
+    case $id in
+      mailbox-search)       raw=$(zro_search_fetch "$acct" "$query") || rc=$? ;;
+      mailbox-conversation) raw=$(zro_search_conv_fetch "$acct" "$query") || rc=$? ;;
+      *) zro_log error "menu defect, no search operation for: $id"
+         zro_report_defect
+         return 0 ;;
+    esac
+
+    # Two endings of this read are not the shared failure. A folder criterion can
+    # name a folder that is not there, which is a fact about what was asked rather
+    # than about the server, and a query the server will not parse is a defect in
+    # this program that has to reach the log with the query in it.
+    case $rc in
+      "$ZRO_E_NO_FOLDER") zro_screen_search_no_folder; continue ;;
+      "$ZRO_E_INPUT")     zro_screen_search_refused "$query"; continue ;;
+    esac
+    zro_mailbox_report "$rc" "$acct" "$title" && continue
+
+    zro_show_text "$title" \
+      "$(zro_screen_alias_note "$(zro_search_body "$acct" "$query" "$raw" \
+         ${ZRO_SEARCH_SEL[@]+"${ZRO_SEARCH_SEL[@]}"})")"
+
+    # A message search ends with its answer: every row carries the id a later
+    # screen would be reached with, and there is no screen behind it yet. A
+    # conversation search does not — a conversation is a thing to open.
+    [ "$id" = mailbox-conversation ] || continue
+    zro_menu_conversation "$acct" "$title" "$raw"
+  done
+}
+
+ZRO_TXT_CONV_PICK='Konusma secin; icindeki iletiler listelenir.
+
+Parantezli sayi konusmadaki ileti sayisidir. Eksi ile baslayan id, tek iletilik
+bir konusmayi gosterir.'
+
+# ONE CONVERSATION, PICKED FROM THE SEARCH THAT FOUND IT.
+#
+# A POSITION IN THE LIST, NEVER AN ID FROM THE SCREEN, exactly as the folder menu
+# and the log viewer do it: what whiptail hands back is looked up in the array this
+# program built out of the server's own answer, so no value from the screen becomes
+# an argument.
+zro_menu_conversation() {
+  local acct=${1-} title=${2-} raw=${3-} choice rc=0 conv line i=0 out rows
+  local -a ids=() items=()
+
+  # The rows are taken apart by the module that decides what a row is, and read
+  # out of a variable rather than off a nested heredoc: one answer, one reader.
+  rows=$(zro_search_parse_rows <<EOF
+$raw
+EOF
+)
+  while IFS= read -r line; do
+    [ -n "$line" ] || continue
+    i=$((i + 1))
+    ids+=("$(zro_search_field_id "$line")")
+    items+=("$i" "$(zro_search_row_label "$line")")
+  done <<EOF
+$rows
+EOF
+
+  [ "${#ids[@]}" -gt 0 ] || return 0
+
+  while :; do
+    rc=0
+    choice=$(zro_ui_menu "$title" "$ZRO_TXT_CONV_PICK" "${items[@]}") || rc=$?
+    [ "$rc" -eq 0 ] || return 0
+
+    case $choice in
+      ''|*[!0-9]*)
+        zro_log error "denied, not a position in the conversation list: $choice"
+        continue ;;
+    esac
+    if [ "$choice" -lt 1 ] || [ "$choice" -gt "${#ids[@]}" ]; then
+      zro_log error "denied, position outside the conversation list: $choice"
+      continue
+    fi
+    conv=${ids[choice - 1]}
+
+    # ANSWERED WITHOUT ASKING ANYTHING when the conversation holds one message:
+    # its id is the negation of that message's, and a value beginning with a dash
+    # may not reach a command line. The operator loses nothing — the listing would
+    # have shown them the row they just picked.
+    if zro_search_conv_virtual "$conv"; then
+      zro_show_text "$title" "$(zro_search_virtual_body "$conv")"
+      continue
+    fi
+
+    zro_ui_notice "Calisiyor" "Konusma okunuyor, lutfen bekleyin.
+
+Hesap: $acct
+Konusma id: $conv"
+
+    rc=0
+    out=$(zro_search_conv_messages "$acct" "$conv") || rc=$?
+    # A conversation the server no longer has is an ANSWER, and the card says so
+    # from the same empty answer it would draw an empty listing from.
+    if [ "$rc" -eq "$ZRO_E_NO_RESULT" ]; then
+      zro_show_text "$title" "$(zro_search_conv_body "$acct" "$conv" '')"
+      continue
+    fi
+    zro_mailbox_report "$rc" "$acct" "$title" && continue
+    zro_show_text "$title" \
+      "$(zro_screen_alias_note "$(zro_search_conv_body "$acct" "$conv" "$out")")"
+  done
+}
+
+# A FOLDER CRITERION NAMING A FOLDER THAT IS NOT THERE. Its own screen rather than
+# the shared failure, because nothing failed: the search was asked about a folder
+# this mailbox does not have, and the repair is a path the operator can look up.
+zro_screen_search_no_folder() {
+  local detail
+  detail=$(zro_error_detail 'Zimbra ciktisi')
+
+  zro_ui_msgbox "Klasor bulunamadi" \
+"Aramada verilen klasor bu mailboxta yok.
+
+Klasor yollarini 'Klasorler' ekranindan gorebilirsiniz; yol '/' ile baslar ve
+buyuk-kucuk harf farkli olabilir. Sunucu, verilen yolun basina kendi '/'
+isaretini ekleyerek yanit verir, bu yuzden mesajda iki bolu isareti gorunur.$detail"
+}
+
+# A QUERY THE SERVER WOULD NOT PARSE. This program builds every query it sends, so
+# this is a defect in the builder rather than something the operator did — and the
+# screen shows the query, because that is the one thing that makes it reportable.
+zro_screen_search_refused() {
+  local query=${1-} detail
+  detail=$(zro_error_detail 'Zimbra ciktisi')
+
+  zro_log error "search defect, the server refused a query this tool built: $query"
+  zro_ui_msgbox "Sorgu reddedildi" \
+"Sunucu bu sorguyu kabul etmedi:
+
+$query
+
+Sorguyu bu arac olusturur, yani bu bir kullanim hatasi degil, aracta bir eksik.
+Yukaridaki satiri ve olcutleri not edip bildirin.$detail"
 }
 
 # THE SILENT GATE. The oracle talks SOAP to the mailbox service and has no other
@@ -781,11 +1185,7 @@ Listeye donup baska bir klasor secebilirsiniz.$detail"
 # during the incident the tool exists to diagnose.
 zro_mailbox_silent_gate() {
   local detail
-  detail=$(zro_last_error)
-  [ -n "$detail" ] && detail="
-
-Zimbra ciktisi:
-$detail"
+  detail=$(zro_error_detail 'Zimbra ciktisi')
 
   zro_ui_msgbox "Mailbox sorusu yanitlanamiyor" \
 "Bu hesabin mailboxu olup olmadigi su anda ogrenilemiyor. Bu soruyu yanitlayan
@@ -1271,11 +1671,7 @@ oldugunu gosterir. Ayni logun daha eski dosyalarini deneyin."
       # Named file by file rather than through the shared reporter, whose message
       # for this code is about the arrival window a trace selected — a window
       # nobody chose on this screen.
-      detail=$(zro_last_error)
-      [ -n "$detail" ] && detail="
-
-Sistemin bildirdigi:
-$detail"
+      detail=$(zro_error_detail 'Sistemin bildirdigi')
       zro_ui_msgbox "Log okunamadi" \
 "Bu dosya okunamadi:
 $path
@@ -1782,11 +2178,7 @@ Araligi daraltip yeniden deneyin, ya da ZRO_TIMEOUT degerini yukseltin."
 # selected — a window nobody chose on this screen.
 zro_screen_logsearch_no_log() {
   local detail
-  detail=$(zro_last_error)
-  [ -n "$detail" ] && detail="
-
-Sistemin bildirdigi:
-$detail"
+  detail=$(zro_error_detail 'Sistemin bildirdigi')
   zro_ui_msgbox "Log okunamadi" \
 "Bu logun secilen araliktaki dosyalarindan HICBIRI okunamadi:
 $(zro_inv_base_path "${1-}")
@@ -2144,6 +2536,8 @@ mailbox-size:account:2:Mailbox boyutu
 mailbox-folders:account:2:Klasorler
 mailbox-folder:account:2:Klasor detayi
 mailbox-folder-grants:account:2:Klasor paylasimlari
+mailbox-search:account:2:Ileti arama
+mailbox-conversation:account:2:Konusma arama ve konusmadaki iletiler
 dl-card:list:1:Dagitim listesi karti
 domain-card:address:1:Alan adi karti
 trace-recipient:address:3:Teslim takibi: bu adrese gelenler
@@ -2501,6 +2895,9 @@ EOF
       # family before the members would send them to a screen that has no folder
       # to work with.
       mailbox-folder|mailbox-folder-grants) zro_menu_folder "$choice" ;;
+      # The two that build a query before they ask anything, and for the same
+      # reason: what the operator chooses first is the question, not the screen.
+      mailbox-search|mailbox-conversation) zro_menu_search "$choice" ;;
       mailbox-*)   zro_screen_mailbox "$choice" ;;
       dl-card)     zro_screen_dl "$choice" ;;
       domain-card) zro_screen_domain "$choice" ;;

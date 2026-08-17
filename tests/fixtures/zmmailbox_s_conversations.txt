@@ -1,0 +1,9 @@
+num: 4, more: false
+
+     Id  Type   From                  Subject                                             Date
+   ----  ----   --------------------  --------------------------------------------------  --------------
+1.  265  conv   Ali Veli (2)          Ynt: Temmuz faturasi                                08/03/26 17:38
+2. -263  conv   Ali Veli              Bir "tirnakli" konu                                 08/03/26 17:38
+3. -259  conv   ali.veli              Toplanti notlari                                    07/31/26 00:29
+4. -258  conv   ali.veli              Hosgeldiniz                                         07/31/26 00:29
+

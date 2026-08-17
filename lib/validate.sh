@@ -200,6 +200,91 @@ zro_validate_folder_path() {
   return 0
 }
 
+# THE QUERY LANGUAGE'S QUOTING, and the debt the design spec recorded against the
+# message-search milestone. It is the THIRD escaping layer: the exec gate provides
+# shell safety by passing argument arrays and never building a string, the tracer's
+# filters need the pattern escaping above, and a search value has to survive
+# Zimbra's own query parser as well.
+#
+#   $1  the value
+#   out the value, escaped, wrapped in the query language's quotes
+#
+# ONE CHARACTER IS SPECIAL AND THE REST ARE NOT. Inside a `"…"` term Zimbra writes
+# a literal double quote as `\"` and treats a backslash as an ordinary character
+# everywhere else — its own escaper does exactly this, and its unescaper only ever
+# collapses that one two-character sequence. The design draft doubled backslashes,
+# which would have searched for 'C:\\rapor' when the operator typed 'C:\rapor'; the
+# rule here is Zimbra's, and it is measured rather than reasoned about in
+# docs/research/2026-08-03-message-search-and-conversations.md §6.
+#
+# A TRAILING BACKSLASH IS REFUSED, BECAUSE NO ESCAPING SAVES IT. It pairs with the
+# closing quote this function adds, and the value then terminates its own quoting.
+# Both outcomes were measured on the lab server and neither may be passed on: alone
+# at the end of a query the lexer backtracks and answers about a DIFFERENT value
+# than the one typed — a silent false negative on a screen whose empty answer is
+# read as proof — and with another quoted criterion behind it the closing quote is
+# swallowed, the criterion is eaten, and the whole query fails to parse. Refusing is
+# visible; both of those are not.
+#
+# A NEWLINE CANNOT APPEAR AT ALL — the grammar excludes it from a quoted term, so
+# the query would not even lex — and a control character would be a second line in
+# the report that says what was searched for. Both are refused here as well as by
+# the callers' own validators, because this is the function that hands a value to a
+# parser, and a value that reached it unvalidated would be a defect invisible from
+# the call site.
+zro_query_quote() {
+  local s=${1-} out='' i c
+  [ -n "$s" ] || return "$ZRO_E_INPUT"
+  case $s in *[[:cntrl:]]*) return "$ZRO_E_INPUT" ;; esac
+  # The last character, tested as itself. A count of trailing backslashes would be
+  # the wrong question: it is the LAST one that meets the closing quote, whether it
+  # is alone or the fourth in a row.
+  case $s in *\\) return "$ZRO_E_INPUT" ;; esac
+
+  for (( i = 0; i < ${#s}; i++ )); do
+    c=${s:i:1}
+    if [ "$c" = '"' ]; then
+      out="$out\\\""
+    else
+      out="$out$c"
+    fi
+  done
+  printf '"%s"' "$out"
+}
+
+# The longest item id this program will carry, counted in DIGITS rather than as a
+# number. An id is a 32-bit signed integer in Zimbra's own schema, so ten digits
+# covers every id there can be; the bound is on the length because what it is for
+# is keeping an unbounded string off a command line, and the server refuses an id
+# out of its own range in its own words — `invalid request: malformed item ID` —
+# which this program reports rather than second-guesses.
+ZRO_ITEM_ID_MAX_DIGITS=10
+
+# An item id — a message or a conversation — as the search table prints it.
+#
+# DIGITS AND NOTHING ELSE, which is what refuses the case this validator exists
+# for: a conversation holding ONE message is a virtual conversation, and Zimbra
+# names it with the NEGATION of that message's id. The CLI accepts `-263` happily;
+# this program cannot, because a token shaped like a flag standing in the data
+# position is not data to the exec gate — it is looked up in the allowlist under
+# the subcommand that approved it, and no allowlist can carry an entry per id. So
+# the negative case is refused here, before anything runs, and the screen says what
+# it means rather than reporting an allowlist denial, which in this program means a
+# defect.
+#
+# Zero is refused with it: no item carries id 0, and a leading zero is refused
+# because '0265' and '265' would be two spellings of one id.
+zro_validate_item_id() {
+  local id=${1-}
+  [ -n "$id" ] || return "$ZRO_E_INPUT"
+  [ "${#id}" -le "$ZRO_ITEM_ID_MAX_DIGITS" ] || return "$ZRO_E_INPUT"
+  case $id in
+    *[!0-9]*) return "$ZRO_E_INPUT" ;;
+    0|0*) return "$ZRO_E_INPUT" ;;
+  esac
+  return 0
+}
+
 zro_validate_email() {
   local e=${1-}
   [ -n "$e" ] || return "$ZRO_E_INPUT"
