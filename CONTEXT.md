@@ -225,6 +225,79 @@ id. So it is answered without running anything, in the words that make it a resu
 the conversation holds one message, and the operator is already looking at it.
 _Avoid_: single-message conversation (as an id), fake conversation
 
+## One message
+
+**Stored record**:
+What the mailbox database holds about one item: the folder it is filed in, the
+flags, the size, the date, the subject as the server indexed it, and the path of
+the file the message itself is in. It is read **without opening the message** —
+the command that would open one marks it read — and it is not the message: a
+record answers where a message is and what it weighs, never what it says.
+_Avoid_: message detail (that is the screen), metadata (that is one section of
+the dump)
+
+**Metadata dump**:
+The read the stored record comes from, and the only read in this tool that talks
+to the mailbox database **directly**. Every statement in it is a select, its
+connection is never committed, and it opens no mailbox session — which is why it
+is the one mailbox question that stands outside the [existence
+gate](#the-existence-gate) rather than behind it. It has no timeout of its own
+and retries forever when the database is unreachable, so the wall-clock timeout
+is what ends it and the screen names the database rather than reporting a server
+that answered nothing.
+_Avoid_: metadata read, dump (alone — a dump of what?)
+
+**Fragment**:
+The preview text Zimbra cuts out of a message's body and keeps in the dump's
+metadata section, under a one-letter key. It is **body text under another name**,
+and it is the reason that section is not rendered at all: a screen showing it
+would be displaying the body while claiming not to.
+_Avoid_: preview, snippet, summary
+
+**Blob**:
+The file one message is stored in, whole, exactly as it arrived — headers, MIME
+structure and body in one RFC 822 stream. It is Zimbra's own word. A blob is
+**CRLF** and its headers fold with a space or a tab, so it is read as the file it
+is rather than as an idealised one.
+_Avoid_: message file, EML, raw message
+
+**Blob path**:
+Where a blob is, as the [metadata dump](#one-message) computed it. It arrives in
+another program's **output** rather than from an operator, and that is exactly why
+it is validated before anything opens it: absolute, nothing outside
+`[A-Za-z0-9._/-]`, no parent-directory component, and under the declared
+[store root](#one-message). A path that fails is refused **with the path named on
+the screen** — refusing is visible, and opening a file nobody declared is not.
+_Avoid_: file path, blob name
+
+**Store root**:
+The declared root every blob this tool opens must sit under. A production default
+in a variable an operator can override, like every other root here, and
+**refused rather than searched for** when it is empty: there is no second place to
+look, and following whatever the dump printed is what the declaration exists to
+prevent.
+_Avoid_: store path, mail store, volume (a volume is Zimbra's record, this is a
+directory)
+
+**Blob head**:
+The beginning of a blob, read with the bound applied by the command that reads
+it, and bounded in **bytes** rather than in lines — the difference from a
+[bounded read](#delivery-tracing) of a log, and it is not cosmetic: a message's
+base64 part is routinely one line of megabytes, so a line bound is no bound at
+all. What it answers is the raw headers, the addresses and the MIME structure. The
+bound is stated, because past it an attachment nobody listed is an absence nobody
+claimed.
+_Avoid_: preview, excerpt, first lines
+
+**MIME part**:
+One section of a multipart message, reported by **what it says about itself** —
+its type, its disposition and its file name — and never by anything between its
+headers and the next boundary. A part with a file name, or one the message itself
+calls an attachment, is counted as an attachment; a plain-text signature is
+introduced by a line that looks exactly like a boundary and is not one, so a part
+that says nothing about itself is listed as nothing.
+_Avoid_: attachment (that is one thing a part can be), section
+
 ## Delivery tracing
 
 **Delivery trace**:
@@ -383,14 +456,18 @@ beside it. The mailbox and the entry are deliberately different units: a
 directory read answers for an account that has never been used, and a class 2
 read is the question of whether there is anything there to read.
 
-One invocation usually buys one unit, and two screens show why that is a habit
+One invocation usually buys one unit, and three screens show why that is a habit
 rather than the rule. [Provenance](#asking-about-an-address) reads ONE entry
 TWICE, because the difference between the expanding read and the entry-only one
 is the question it asks. It is class 1 all the same: what its work grows with is
 entries, and one account costs a fixed two reads however large the directory
 around it gets. The two screens that open one [folder](#inside-a-mailbox) do the
 same thing a class down: the listing they offer a folder from and the folder
-itself are two reads of one mailbox. **A screen that pays a multiple declares the
+itself are two reads of one mailbox. [Message detail](#one-message) pays THREE for
+one mailbox — the stored record, the two bytes that say whether the blob is
+compressed, and the blob head — and four when it is, and it is the one class 2
+screen that pays no gate at all, because it opens no mailbox session to be gated.
+**A screen that pays a multiple declares the
 multiple**, and the suite asserts reads-per-unit rather than a total — so a screen
 that reached for a second entry still fails against the unit it claimed. The
 [existence

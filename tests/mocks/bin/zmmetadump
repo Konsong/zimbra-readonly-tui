@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+set -uo pipefail
+# shellcheck source=../mock_common.sh
+. "${ZRO_MOCK_LIB:?ZRO_MOCK_LIB is required}/mock_common.sh"
+zro_mock_record zmmetadump "$@"
+# KEYED ON THE ITEM ID, which is the fourth argument: the vector is
+# `-m <account> -i <item id>`. Keyed the way every other mock is — on the token
+# after the binary — every dump in a test would read one variable, so one id could
+# not answer with a record while another answered `No such item`. That is the whole
+# of what the screen above does, so the id is what the reply is keyed on.
+#
+# The account is not part of the key. This binary is asked about one mailbox at a
+# time and the tests vary the id; an account-keyed reply would make every case name
+# an address it does not care about.
+zro_mock_respond zmmetadump "${4-}"

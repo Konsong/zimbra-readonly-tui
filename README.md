@@ -41,8 +41,19 @@ Bash + whiptail. No runtime dependencies beyond what a Zimbra host already has.
 > does not begin a **declared** attribute as a continuation — a continuation may
 > be blank, may begin with `#`, and may look exactly like an attribute line.
 >
-> Message search is next; see the
-> [design spec](docs/superpowers/specs/2026-07-29-zimbra-readonly-tui-design.md).
+> **Finding a message, and then reading one.** The search builds its query out of
+> criteria an operator picks — nothing typed becomes an operator, a field name or a
+> boolean — and shows the finished query above the answer. Reading one message is
+> the part that could not be done the obvious way: the single command that answers
+> it, `zmmailbox gm`, **clears the unread flag on the message it reports**, so the
+> record is read straight from the mailbox database with `zmmetadump` and the
+> headers, addresses and attachment list from a bounded read of the file the
+> message is stored in. The body is out of scope and is not read. That screen is
+> the one mailbox screen with no existence gate in front of it, because it opens no
+> mailbox session at all — and on the lab server the messages it displayed in full
+> were still unread afterwards, with the account's `mailbox` row byte-identical:
+> [the research note](docs/research/2026-08-17-message-detail.md),
+> [ADR-0008](docs/adr/0008-message-detail-is-the-dump-and-a-bounded-blob-head.md).
 
 ## Why "read-only" is a structural claim, not a promise
 

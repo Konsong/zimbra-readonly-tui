@@ -242,11 +242,33 @@ assert_fail zro_allowed head -n
 assert_fail zro_allowed cat '/var/log/zimbra.log'
 assert_fail zro_allowed less '/var/log/zimbra.log'
 
-it "the allowlist names one bounded read and one decompression, and nothing else"
+it "approves the bounded head of a message blob, in bytes"
+# THE THIRD SYSTEM READER, and it bounds by BYTES where the log viewer bounds by
+# lines. A message blob is a MIME stream whose base64 part is routinely one line of
+# megabytes, so a line bound is no bound at all there.
+assert_ok zro_allowed head -c
+assert_ok zro_allowed head -c 2 '/opt/zimbra/store/0/9/msg/0/274-778.msg'
+assert_ok zro_allowed head -c 65536 '/opt/zimbra/store/0/9/msg/0/274-778.msg'
+
+it "and refuses every other form of it, the line bound included"
+# `-n` is not approved because nothing here reads a blob by lines, and an approved
+# form nobody calls is an operation no reader of the list could reach. `-f` follows a
+# growing file and never returns, which on a screen is a tool that has hung.
+for form in -n --lines -f --follow -q --quiet -v --verbose -z --bytes; do
+  assert_fail zro_allowed head "$form"
+  assert_fail zro_allowed head "$form" '/opt/zimbra/store/0/9/msg/0/274-778.msg'
+done
+assert_fail zro_allowed head '/opt/zimbra/store/0/9/msg/0/274-778.msg'
+assert_fail zro_allowed head ''
+assert_fail zro_allowed head -c2
+assert_fail zro_allowed cat '/opt/zimbra/store/0/9/msg/0/274-778.msg'
+assert_fail zro_allowed dd 'if=/opt/zimbra/store/0/9/msg/0/274-778.msg'
+
+it "the allowlist names one bounded read, one bounded head and one decompression"
 # Read as the tracing filters are: a fourth system operation added without a
 # ticket behind it fails here, and so does a second spelling of one of these.
-assert_eq "$(zro_allow_entries | grep -E '^(tail|gzip):')" \
-  "$(printf '%s\n%s' 'tail:-n' 'gzip:-dc')"
+assert_eq "$(zro_allow_entries | grep -E '^(tail|head|gzip):')" \
+  "$(printf '%s\n%s\n%s' 'tail:-n' 'head:-c' 'gzip:-dc')"
 
 # ------------------------------------------------------------- the log search --
 #
@@ -646,6 +668,48 @@ it "and the binary it names is the one the gate refuses from a foreign caller"
 # name the gate compares against and the name these entries stand under.
 assert_eq "$ZRO_GATED_BIN" "zmmailbox"
 assert_eq "$(printf '%s\n' "${ZRO_GATED_PREFIX[@]}")" "$(printf -- '-z\n-m')"
+
+# --------------------------------------------------------- the metadata dump --
+#
+# THE READ MESSAGE DETAIL IS BUILT ON, and the reason it exists at all: `gm` answers
+# the same question in one call and clears the unread flag while doing it. This one
+# reads the database directly — every statement a select, the connection never
+# committed — and opens no mailbox session, so it is the one mailbox question in this
+# tool that stands outside the existence gate.
+
+it "approves the metadata dump of one item of one mailbox"
+assert_ok zro_allowed zmmetadump -m
+assert_ok zro_allowed zmmetadump -m 'ahmet.yilmaz@example.com' -i 274
+
+it "and refuses every other form of that binary"
+# `--dumpster` reads the deleted-item store, which is a different question about a
+# different table; `-f` and `-s` decode metadata this program never holds; `-i` alone
+# is a dump with no mailbox named. Each is refused for being absent from the list,
+# which is what keeps it an operation nobody has to judge.
+for form in --dumpster -f -s -h --help -i --mailboxId --itemId; do
+  assert_fail zro_allowed zmmetadump "$form"
+  assert_fail zro_allowed zmmetadump "$form" 'ahmet.yilmaz@example.com'
+done
+assert_fail zro_allowed zmmetadump 'ahmet.yilmaz@example.com'
+assert_fail zro_allowed zmmetadump ''
+
+it "and the flag that IS the operation carries its data, as the tracer's filters do"
+# What follows is the account and the item id, both computed or validated here: an
+# address the validator admitted and digits. A two-token flag entry approves one
+# operation entire, so the id rides behind it as data — which is why there is exactly
+# one call site for this operation and a static test holds it to that.
+assert_ok zro_allowed zmmetadump -m 'ahmet.yilmaz@example.com' -i 1
+assert_fail zro_allowed zmmetadump -i 274 -m 'ahmet.yilmaz@example.com'
+
+it "the allowlist names one dump operation and nothing else"
+assert_eq "$(zro_allow_entries | grep '^zmmetadump:')" 'zmmetadump:-m'
+
+it "and it resolves under the same root as the other Zimbra binaries"
+# Upstream installs it in bin beside zmprov, and the root is declared rather than
+# searched for: a binary found on $PATH would be a different program reading a
+# different database.
+ZRO_ZIMBRA_BIN=/opt/zimbra/bin
+assert_out_eq "/opt/zimbra/bin/zmmetadump" zro_bin_path zmmetadump
 
 it "denies a binary that is not on the list at all"
 assert_fail zro_allowed zmsoap ga

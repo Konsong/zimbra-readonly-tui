@@ -1,0 +1,9 @@
+invalid request: Account ahmet.yilmaz@example.com not found on this host
+
+
+com.zimbra.common.service.ServiceException: invalid request: Account ahmet.yilmaz@example.com not found on this host
+ExceptionId:main:1786971720077:a278a375f8567a47
+Code:service.INVALID_REQUEST
+	at com.zimbra.common.service.ServiceException.INVALID_REQUEST(ServiceException.java:304)
+	at com.zimbra.cs.mailbox.util.MetadataDump.lookupMailboxIdFromEmail(MetadataDump.java:193)
+	at com.zimbra.cs.mailbox.util.MetadataDump.main(MetadataDump.java:387)

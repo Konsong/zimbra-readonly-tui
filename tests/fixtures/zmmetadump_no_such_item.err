@@ -1,0 +1,10 @@
+invalid request: No such item: mbox=9, item=999999
+
+
+com.zimbra.common.service.ServiceException: invalid request: No such item: mbox=9, item=999999
+ExceptionId:main:1786971713735:b78bdae1639cf199
+Code:service.INVALID_REQUEST
+	at com.zimbra.common.service.ServiceException.INVALID_REQUEST(ServiceException.java:304)
+	at com.zimbra.cs.mailbox.util.MetadataDump.getItemRow(MetadataDump.java:211)
+	at com.zimbra.cs.mailbox.util.MetadataDump.doDump(MetadataDump.java:301)
+	at com.zimbra.cs.mailbox.util.MetadataDump.main(MetadataDump.java:398)

@@ -32,7 +32,13 @@ on every change.
 - Documentation and code in English; whiptail UI strings in Turkish.
 - LF line endings, enforced by `.gitattributes`. This repo is developed on
   Windows where `core.autocrlf=true`; CRLF in a `.sh` file breaks the shebang
-  on the server.
+  on the server. Fixtures are exempt (`-text`): they are captured byte for byte,
+  and a stored message blob really is CRLF.
+- **No lone `"` inside a single-quoted string in the program's own files.** The
+  static scanner tracks quote state across the whole tree as one stream, so one
+  unbalanced quote makes it read every file after it inside out — strings as code,
+  code as strings. Write the character as `$'\x22'` (see `ZRO_MSG_DQUOTE`). The
+  failure reads "the scan's own view of the tree closes every quote it opens".
 - **A screen test that answers the window menu reads the real clock**, so stamp
   its fixture tree RELATIVE to now (`NOW`/`TODAY` offsets, as
   `tests/test_delivery_screen.sh` does), never with calendar dates. Only the pure
