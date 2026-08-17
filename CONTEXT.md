@@ -187,6 +187,18 @@ day a criterion means something other than its label promised, the only thing th
 would show it.
 _Avoid_: search string, filter expression
 
+**Narrowed twice**:
+Two criteria writing terms against **one field** — the single day and a range start
+both write `after:`, the two sender criteria both write `from:`. The answer is then
+the intersection, which is well defined and easy to build without meaning to, so it
+is **disclosed rather than refused**: an empty intersection on a screen that draws
+an empty answer as a real result would read as a fact about the mailbox instead of
+one about the query. Decided from the operator each criterion already declares,
+never from a table of clashing pairs — and `is:` is the one operator it does not
+apply to, because two states are two questions rather than one field twice.
+_Avoid_: conflict, invalid combination — nothing here is invalid, and calling it
+that invites refusing it
+
 **Query quoting**:
 Wrapping a value so the query language reads it as the value it is: a literal
 double quote becomes `\"` and **nothing else is escaped**, because a backslash is

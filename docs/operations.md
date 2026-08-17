@@ -334,6 +334,16 @@ report is the claim.
   server then either searches for something else and says nothing about it, or
   refuses the whole query. The tool refuses the value instead, which is the one
   case escaping cannot fix.
+
+  **Two criteria can narrow the same field, and the screen says when they do.**
+  *Tarih (tek gun)* writes both ends of a day, so combining it with *Baslangic gunu*
+  puts `after:` in the query twice; the two sender criteria both write `from:`. The
+  combination is **not refused** — the terms are ANDed and the intersection is exactly
+  what Zimbra answers — but where the two do not overlap the answer is empty, and an
+  empty answer here is drawn as the real result it is. So the screen names the field
+  that was narrowed twice, next to the query it already prints. `is:` is the one
+  operator this does not apply to: *okunmamis* and *butun mailbox* narrow different
+  things, which is what an operator picking both meant.
 - **Konusma arama ve konusmadaki iletiler** — the same criteria, asked for
   **conversations** rather than messages, and then one conversation opened to
   list the messages in it. The listing is made with `is:anywhere`, so a message

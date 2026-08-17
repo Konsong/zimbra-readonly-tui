@@ -536,6 +536,48 @@ body2=$(zro_search_body "$ACCT" 'is:unread attachment:pdf' "$raw" state unread a
 assert_contains "$body2" 'Okunmamis'
 assert_contains "$body2" 'PDF'
 
+# ------------------------------------- two criteria narrowing one field (#57) --
+#
+# THE DECISION THAT TICKET ASKED FOR, held to a case. Two criteria can write terms
+# against the SAME field — the single day and a range start both write `after:`, and the
+# two sender criteria both write `from:` — and the answer is then the intersection. It is
+# not a wrong answer and it is not refused; what would be wrong is an empty intersection
+# read as a fact about the mailbox, so the screen says which field was narrowed twice.
+
+it "names the field two criteria narrowed, and stays quiet when none did"
+assert_out_eq "after" zro_search_narrowed_twice day 2026-08-03 day-from 2026-08-05
+assert_out_eq "before" zro_search_narrowed_twice day 2026-08-03 day-to 2026-08-05
+assert_out_eq "from" zro_search_narrowed_twice sender 'ali@example.com' sender-domain example.org
+assert_fail zro_search_narrowed_twice day-from 2026-08-03 day-to 2026-08-05
+assert_fail zro_search_narrowed_twice sender 'ali@example.com' recipient 'veli@example.com'
+assert_fail zro_search_narrowed_twice folder /Inbox
+assert_fail zro_search_narrowed_twice
+
+it "and the composing operator is not one of them, because two states are one question"
+# `is:unread is:anywhere` is unread AND anywhere — the query an operator who picked both
+# actually meant. A rule that read a repeated operator as a clash would warn about it.
+assert_fail zro_search_narrowed_twice state unread scope anywhere
+
+it "and the single day counts for both ends, because that is what it writes"
+# `day` becomes `after:<midnight> before:<next midnight>` on its own, so combined with a
+# range start it narrows one end twice and with a range end the other.
+assert_out_eq "after" zro_search_narrowed_twice day-from 2026-08-05 day 2026-08-03
+assert_eq "$(zro_search_narrowed_twice day 2026-08-03 day-from 2026-08-05 day-to 2026-08-09)" \
+          "$(printf 'after\nbefore')"
+
+it "and the result screen says so, next to the query it is about"
+fresh
+raw=$(proven search_msg "$HITS" 0 zro_search_fetch "$ACCT" 'in:"/Inbox"')
+overlap=$(zro_search_body "$ACCT" 'after:1785628800000 before:1785715200000 after:1786233600000' \
+  "$raw" day 2026-08-03 day-from 2026-08-08)
+assert_contains "$overlap" 'AYNI ALAN IKI OLCUTLE DARALTILDI'
+assert_contains "$overlap" 'KESISIMIDIR'
+assert_contains "$overlap" '  after:'
+
+it "and says nothing of the sort when the criteria narrow different fields"
+quiet=$(zro_search_body "$ACCT" 'is:unread in:"/Inbox"' "$raw" state unread folder /Inbox)
+assert_not_contains "$quiet" 'AYNI ALAN'
+
 it "and says that the sender column is truncated and cannot be turned into an address"
 # THE DISCLOSURE THE TICKET ASKS FOR. The server prints a display name there and
 # cuts it at twenty characters without saying so.
