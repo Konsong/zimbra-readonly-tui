@@ -223,6 +223,32 @@ assert_contains "$(ran)" 'is:unread attachment:pdf'
 
 # ----------------------------------------------------------- the answers --
 
+it "tells an operator when two criteria they picked narrow the same field"
+# ISSUE #57, AS AN OPERATOR MEETS IT. Picking the single day and then a range start is
+# something a screen this shape invites, and the query then carries `after:` twice. The
+# combination is not refused — the terms are ANDed and the intersection is well defined —
+# but an empty intersection may not read as a fact about the mailbox, so the screen says
+# which field was narrowed twice, next to the query it already prints.
+exists_server
+zro_sel_set "$ADDR"
+queue "mailbox-search" "day" "2026-08-03" "day-from" "2026-08-08" "__run__" "__CANCEL__" "__CANCEL__"
+run
+out=$(transcript)
+assert_contains "$out" "AYNI ALAN IKI OLCUTLE DARALTILDI"
+assert_contains "$out" "KESISIMIDIR"
+# And it still ran the search it built: this is a disclosure, not a refusal.
+assert_contains "$(ran)" "after:"
+assert_cost mailbox-search "$(opened)" 1
+
+it "and says nothing of the sort for criteria that narrow different fields"
+exists_server
+zro_sel_set "$ADDR"
+queue "mailbox-search" "state" "unread" "scope" "anywhere" "__run__" "__CANCEL__" "__CANCEL__"
+run
+out=$(transcript)
+assert_contains "$(ran)" 'is:unread is:anywhere'
+assert_not_contains "$out" "AYNI ALAN"
+
 it "renders a search with no hits as a result rather than as a failure"
 exists_server
 zro_sel_set "$ADDR"

@@ -332,6 +332,64 @@ zro_search_day_ms() {
 # becomes is as readable as the criteria whose operator the table names.
 ZRO_SEARCH_OP_DAY_END=before
 
+# THE ONE OPERATOR IN THIS LANGUAGE THAT COMPOSES, and the reason the rule below can
+# be derived rather than tabulated.
+#
+# `is:` names a STATE rather than a field, so two of them narrow different things:
+# `is:unread is:anywhere` is unread AND anywhere, which is exactly what an operator who
+# picked both meant. Every other operator here compares against ONE FIELD — a date, a
+# sender, a subject — so two of them narrow the same field, and the answer is the
+# intersection whether or not that is what anybody wanted.
+#
+# ONE DECLARED EXCEPTION RATHER THAN A TABLE OF CONFLICTING PAIRS. A list of which
+# criteria clash would be a second home for what the criteria table already says — the
+# thing this codebase has removed before — and it would have to be extended by hand
+# every time a criterion arrives. What decides instead is the operator each criterion
+# ALREADY declares, and the day a second composing operator appears it is written here.
+ZRO_SEARCH_OP_COMPOSES=is
+
+# WHICH FIELD THIS SET OF CRITERIA NARROWS TWICE, if any.
+#
+#   $@      id value id value … — the pairs the query was built from
+#   stdout  one operator per line, each one that two criteria wrote
+#
+# ASKED OF THE CRITERIA, NEVER OF THE QUERY TEXT. Reading the finished query for a
+# repeated `after:` would be reading operator text as well: a subject containing
+# 'after:' would answer yes, and a value carrying a quoted colon would answer whatever
+# the string happened to look like. The criteria are what this program chose, so they
+# are what the question is asked of.
+#
+# THE SINGLE DAY COUNTS FOR BOTH ENDS, because that is what it writes: `day` becomes
+# `after:<midnight> before:<next midnight>`, so it narrows both ends of the date field
+# on its own — and it is exactly the criterion an operator combines with `day-from`
+# without meaning to.
+zro_search_narrowed_twice() {
+  local out='' seen=' ' twice=' ' id kind op ops one
+  while [ $# -ge 2 ]; do
+    id=$1
+    shift 2
+    op=$(zro_search_operator "$id") || continue
+    kind=$(zro_search_kind "$id") || kind=''
+    ops=$op
+    [ "$kind" = dayspan ] && ops="$op $ZRO_SEARCH_OP_DAY_END"
+    for one in $ops; do
+      [ "$one" = "$ZRO_SEARCH_OP_COMPOSES" ] && continue
+      case $seen in
+        *" $one "*)
+          case $twice in
+            *" $one "*) ;;
+            *) twice="$twice$one "
+               out="$out$one
+" ;;
+          esac ;;
+        *) seen="$seen$one " ;;
+      esac
+    done
+  done
+  [ -n "$out" ] || return "$ZRO_E_NO_RESULT"
+  printf '%s' "$out"
+}
+
 zro_search_term() {
   local id=${1-} value=${2-} kind op quoted ms end
   kind=$(zro_search_kind "$id") || return "$ZRO_E_INPUT"
@@ -881,6 +939,34 @@ zro_search_criteria_body() {
   done
 }
 
+# WHAT TWO CRITERIA NARROWING ONE FIELD READS AS, or nothing at all when none do.
+#
+# It is a DISCLOSURE rather than a refusal, and that is the decision issue #57 asked
+# for. Refusing the combination when a criterion is picked would need a rule about which
+# criteria clash, which is a second place for what the criteria table already declares;
+# and nothing here is a wrong answer — the terms are ANDed, the intersection is well
+# defined, and the tool's job on this screen is to make sure an empty answer cannot be
+# mistaken for a fact about the mailbox. So the query stays as the operator built it and
+# the screen says what it means, next to the query it is about.
+zro_search_overlap_body() {
+  local ops op
+  ops=$(zro_search_narrowed_twice "$@") || return 0
+
+  printf '\n'
+  printf 'AYNI ALAN IKI OLCUTLE DARALTILDI. Asagidaki sorgu alanlari iki kez geciyor:\n'
+  while IFS= read -r op; do
+    [ -n "$op" ] || continue
+    printf '  %s:\n' "$op"
+  done <<EOF
+$ops
+EOF
+  printf '\n'
+  printf 'Olcutler VE ile birlesir, yani sonuc iki degerin KESISIMIDIR. Ikisi\n'
+  printf 'ortusmuyorsa yanit bos gelir, ve o bosluk mailbox hakkinda degil SORGU\n'
+  printf 'hakkinda bir seydir: yukaridaki sorgu satirini okuyup olcutlerden birini\n'
+  printf 'kaldirmak isteyebilirsiniz.\n'
+}
+
 # A value as the operator chose it rather than as the query carries it. The two
 # differ for exactly the criteria whose value this program owns — a word out of a
 # menu reads as the label that menu offered — and for a day, which travels as a
@@ -922,6 +1008,12 @@ EOF
   zro_card_line 'Sorgu' "$query"
   printf '\n'
   zro_search_criteria_body "$@"
+  # SAID WHERE THE QUERY IS ALREADY PRINTED, because that is the evidence it is about.
+  # Two criteria can narrow one field, and the answer is then the intersection — well
+  # defined, easy to build without meaning to, and empty whenever the two do not
+  # overlap. On a screen that draws an empty answer as the real result it is, that
+  # emptiness would read as a fact about the mailbox instead of one about the query.
+  zro_search_overlap_body "$@"
   printf '\n'
 
   local body=""
