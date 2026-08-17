@@ -1,0 +1,816 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Architecture review — zimbra-readonly-tui</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script type="module">
+      import mermaid from "https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs";
+      mermaid.initialize({ startOnLoad: true, theme: "neutral", securityLevel: "loose", flowchart: { curve: "basis" } });
+    </script>
+    <style>
+      .seam { stroke-dasharray: 5 4; }
+      .deepbox { background: linear-gradient(140deg, #0f172a, #1e293b); }
+      .hatch {
+        background-image: repeating-linear-gradient(45deg, #fecaca 0 6px, #fee2e2 6px 12px);
+      }
+      .hatch-ok {
+        background-image: repeating-linear-gradient(45deg, #a7f3d0 0 6px, #d1fae5 6px 12px);
+      }
+      .lbl { font-size: 10px; letter-spacing: .12em; text-transform: uppercase; }
+      pre.mermaid { display: flex; justify-content: center; }
+      code { font-variant-ligatures: none; }
+    </style>
+  </head>
+  <body class="bg-stone-50 text-slate-900 font-sans antialiased">
+    <main class="max-w-5xl mx-auto px-6 py-12 space-y-14">
+
+      <!-- ─────────────────────────────────────────── header ── -->
+      <header class="border-b border-slate-300 pb-8">
+        <p class="lbl text-slate-500 mb-2">Architecture review</p>
+        <h1 class="font-serif text-4xl tracking-tight">zimbra-readonly-tui</h1>
+        <p class="mt-3 text-slate-600 text-sm">
+          18 August 2026 · <code class="text-xs">main</code> at <code class="text-xs">c275695</code> ·
+          15,054 lines of program, 17,023 of tests
+        </p>
+
+        <div class="mt-6 grid grid-cols-2 md:grid-cols-4 gap-3 text-xs">
+          <div class="rounded border border-slate-200 bg-white p-3">
+            <div class="lbl text-slate-400">Hot spot</div>
+            <div class="font-mono mt-1">zimbra-ro-tui.sh</div>
+            <div class="text-slate-500 mt-1">22 of last 60 commits · 3,345 lines</div>
+          </div>
+          <div class="rounded border border-slate-200 bg-white p-3">
+            <div class="lbl text-slate-400">Hot spot</div>
+            <div class="font-mono mt-1">lib/exec.sh</div>
+            <div class="text-slate-500 mt-1">16 commits · 56 allowlist rows</div>
+          </div>
+          <div class="rounded border border-slate-200 bg-white p-3">
+            <div class="lbl text-slate-400">Hot spot</div>
+            <div class="font-mono mt-1">tests/test_readonly_scan.sh</div>
+            <div class="text-slate-500 mt-1">15 commits · 51 KB</div>
+          </div>
+          <div class="rounded border border-slate-200 bg-white p-3">
+            <div class="lbl text-slate-400">Hot spot</div>
+            <div class="font-mono mt-1">lib/account.sh</div>
+            <div class="text-slate-500 mt-1">10 commits · 963 lines</div>
+          </div>
+        </div>
+
+        <div class="mt-6 flex flex-wrap gap-x-6 gap-y-2 text-xs text-slate-600 items-center">
+          <span class="lbl text-slate-400">Legend</span>
+          <span class="flex items-center gap-2"><span class="inline-block w-5 h-3 border border-slate-800 bg-white"></span> module</span>
+          <span class="flex items-center gap-2"><svg width="26" height="8"><line class="seam" x1="0" y1="4" x2="26" y2="4" stroke="#475569" stroke-width="1.5"/></svg> seam</span>
+          <span class="flex items-center gap-2"><svg width="26" height="8"><line x1="0" y1="4" x2="26" y2="4" stroke="#dc2626" stroke-width="2"/></svg> leakage</span>
+          <span class="flex items-center gap-2"><span class="inline-block w-5 h-3 deepbox"></span> deep module</span>
+        </div>
+
+        <p class="mt-6 text-sm text-slate-700 leading-relaxed max-w-3xl">
+          This codebase is unusually well-reasoned: <code class="text-xs">lib/table.sh</code> and the exec gate's allowlist
+          are the two deepest modules in the tree, and <code class="text-xs">tests/lib/cost.sh</code> is the best-shaped
+          assertion in the suite. Everything below is friction that has already produced drift — in one case, a live
+          defect on screen.
+        </p>
+      </header>
+
+      <!-- ─────────────────────────────────────────── candidates ── -->
+      <section id="candidates" class="space-y-16">
+
+        <!-- ══════════════════════════════ C1 ══════════════════════════════ -->
+        <article id="c1" class="scroll-mt-8">
+          <div class="flex items-start justify-between gap-4 flex-wrap">
+            <h2 class="font-serif text-2xl tracking-tight">1 · One settler at the exec seam</h2>
+            <div class="flex gap-2 shrink-0">
+              <span class="text-xs font-medium px-2.5 py-1 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-200">Strong</span>
+              <span class="text-xs font-medium px-2.5 py-1 rounded-full bg-slate-100 text-slate-600 border border-slate-200">in-process</span>
+            </div>
+          </div>
+
+          <p class="mt-3 text-sm text-slate-700 max-w-3xl">
+            The one candidate with a consequence an operator can already see.
+          </p>
+
+          <div class="mt-4 font-mono text-xs text-slate-600 flex flex-wrap gap-x-4 gap-y-1">
+            <span>lib/exec.sh:852</span><span>lib/store.sh:245,268</span><span>lib/search.sh:703,737</span>
+            <span>lib/message.sh:332,379,536</span><span>lib/queue.sh:238</span><span>lib/service.sh:140</span>
+            <span>lib/logview.sh:186</span><span>lib/account.sh:204,233</span><span>lib/delivery.sh:46</span>
+          </div>
+
+          <div class="mt-6 grid md:grid-cols-2 gap-5">
+            <!-- before -->
+            <div class="rounded-lg border border-slate-200 bg-white p-4">
+              <div class="lbl text-slate-400 mb-3">Before — the rule re-decided per module</div>
+              <pre class="mermaid">
+flowchart TD
+  G["zro_exec<br/><span style='font-size:10px'>returns 90 / 91 / 92 / 21 / 22</span>"]
+  G --> S1["store_fail_code<br/>+ store_settle"]
+  G --> S2["search_fail_code<br/>+ search_settle"]
+  G --> S3["msg_fail_code<br/>+ msg_settle"]
+  G --> S4["queue / service<br/>4 codes"]
+  G --> S5["logview<br/>5 codes"]
+  S3 -. "90 laundered to 21" .-> X["Screen says<br/>'mailboxd is stopped'"]
+  classDef leak stroke:#dc2626,stroke-width:2.5px,fill:#fef2f2;
+  classDef gate stroke:#0f172a,stroke-width:2.5px,fill:#e2e8f0;
+  class S3,X leak
+  class G gate
+              </pre>
+            </div>
+            <!-- after -->
+            <div class="rounded-lg border border-slate-200 bg-white p-4">
+              <div class="lbl text-slate-400 mb-3">After — the gate owns its own codes</div>
+              <pre class="mermaid">
+flowchart TD
+  G["zro_exec"]
+  G --> ST["zro_settle<br/><span style='font-size:10px'>passthrough set · 500-byte bound<br/>set_error · tmpfile</span>"]
+  ST --> M1["store mapper"]
+  ST --> M2["search mapper"]
+  ST --> M3["message mapper"]
+  ST --> M4["queue mapper"]
+  ST --> M5["logview mapper"]
+  classDef deep stroke:#0f172a,stroke-width:3px,fill:#0f172a,color:#f8fafc;
+  classDef thin stroke:#94a3b8,stroke-width:1px,fill:#f8fafc,color:#64748b;
+  class ST,G deep
+  class M1,M2,M3,M4,M5 thin
+              </pre>
+            </div>
+          </div>
+
+          <div class="mt-5 grid md:grid-cols-2 gap-5 text-sm">
+            <div>
+              <div class="lbl text-slate-400 mb-1">Problem</div>
+              <p class="text-slate-700">
+                Which returned codes are the gate's own — and must pass through untouched — is re-derived at six sites in
+                <strong>three different memberships</strong>, and a seventh omits it altogether.
+              </p>
+              <div class="mt-3 rounded border border-red-200 bg-red-50 p-3 text-xs text-red-900 leading-relaxed">
+                <strong>Live defect.</strong> <code>zro_msg_fail_code</code> (<code>lib/message.sh:332-374</code>) has no
+                <code>ZRO_E_DENIED</code> arm and falls through to <code>ZRO_E_UNAVAILABLE</code>. An allowlist denial on
+                <code>zmmetadump</code> — exit 90, which this program defines as <em>a defect in itself</em> — reaches the
+                operator via <code>zimbra-ro-tui.sh:401</code> as <em>“mailboxd is stopped, check zmcertmgr.”</em>
+                Thirty lines below, <code>zro_msg_head_fetch</code> (<code>:536</code>) passes 90 through correctly.
+                Two halves of one module disagree.
+              </div>
+              <div class="mt-3 text-xs text-slate-600 font-mono leading-relaxed rounded border border-slate-200 bg-slate-50 p-3">
+                logview:196 &nbsp;DENIED BADUSER NOCAP TIMEOUT UNAVAILABLE<br/>
+                message:536 &nbsp;DENIED BADUSER NOCAP TIMEOUT UNAVAILABLE <span class="text-amber-700">INPUT</span><br/>
+                queue:254 &nbsp;&nbsp;&nbsp;DENIED BADUSER NOCAP TIMEOUT<br/>
+                service:150 &nbsp;DENIED BADUSER NOCAP TIMEOUT<br/>
+                message:332 &nbsp;<span class="text-red-700">— none —</span>
+              </div>
+            </div>
+            <div>
+              <div class="lbl text-slate-400 mb-1">Solution</div>
+              <p class="text-slate-700">
+                One <code class="text-xs">zro_settle "$errfile" "$rc" &lt;mapper-name&gt;</code> beside the gate, owning the
+                passthrough set, the 500-byte bound, <code class="text-xs">zro_set_error</code>/<code class="text-xs">zro_clear_error</code>
+                and the tmpfile. A module supplies only what is genuinely its own: the text→code mapper. The mapper travels
+                as a <strong>name</strong>, exactly as ADR-0009 established for tables.
+              </p>
+              <div class="lbl text-slate-400 mt-4 mb-1">Wins</div>
+              <ul class="space-y-1 text-slate-700 text-[13px] list-disc list-inside marker:text-emerald-600">
+                <li>leverage: gate codes learned once, six call sites</li>
+                <li>locality: a new binary cannot forget the set</li>
+                <li>the 90 → 21 laundering closes</li>
+                <li>12 copies of <code class="text-xs">head -c 500</code> become one</li>
+                <li>3 byte-identical settlers become one</li>
+                <li>interface is the test surface: one function</li>
+              </ul>
+            </div>
+          </div>
+
+          <div class="mt-4 rounded border border-slate-200 bg-slate-50 p-3">
+            <div class="lbl text-slate-400 mb-2">The three settlers today — identical apart from the name they call</div>
+            <pre class="text-[11px] leading-relaxed font-mono text-slate-700 overflow-x-auto">msg=$(head -c 500 -- "$errfile" 2>/dev/null)
+mapped=$(zro_<span class="text-red-600">store</span>_fail_code "$errfile" "$rc")   <span class="text-slate-400">lib/store.sh:276</span>
+mapped=$(zro_<span class="text-red-600">search</span>_fail_code "$errfile" "$rc")  <span class="text-slate-400">lib/search.sh:745</span>
+mapped=$(zro_<span class="text-red-600">msg</span>_fail_code "$errfile" "$rc")     <span class="text-slate-400">lib/message.sh:387</span>
+[ -n "$msg" ] && zro_set_error "$msg"</pre>
+          </div>
+        </article>
+
+        <!-- ══════════════════════════════ C2 ══════════════════════════════ -->
+        <article id="c2" class="scroll-mt-8 border-t border-slate-200 pt-14">
+          <div class="flex items-start justify-between gap-4 flex-wrap">
+            <h2 class="font-serif text-2xl tracking-tight">2 · The declared cost is checked but never spoken</h2>
+            <div class="flex gap-2 shrink-0">
+              <span class="text-xs font-medium px-2.5 py-1 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-200">Strong</span>
+              <span class="text-xs font-medium px-2.5 py-1 rounded-full bg-slate-100 text-slate-600 border border-slate-200">in-process</span>
+            </div>
+          </div>
+
+          <div class="mt-4 font-mono text-xs text-slate-600 flex flex-wrap gap-x-4 gap-y-1">
+            <span>zimbra-ro-tui.sh:2906</span><span>:2959</span><span>:3003</span><span>:424</span><span>:630</span>
+            <span>:1412</span><span>:1466</span><span>:1641</span><span>:1832</span><span>:2272</span><span>:2711</span>
+          </div>
+
+          <div class="mt-6 grid md:grid-cols-2 gap-5">
+            <div class="rounded-lg border border-slate-200 bg-white p-4">
+              <div class="lbl text-slate-400 mb-4">Before — declaration and disclosure never meet</div>
+              <svg viewBox="0 0 380 300" class="w-full" style="max-height:300px">
+                <rect x="10" y="10" width="160" height="52" fill="#e2e8f0" stroke="#0f172a" stroke-width="1.5"/>
+                <text x="90" y="32" text-anchor="middle" class="lbl" fill="#0f172a">ZRO_MENU_OPS</text>
+                <text x="90" y="48" text-anchor="middle" font-size="10" fill="#475569">class per operation</text>
+
+                <rect x="10" y="76" width="160" height="52" fill="#e2e8f0" stroke="#0f172a" stroke-width="1.5"/>
+                <text x="90" y="98" text-anchor="middle" class="lbl" fill="#0f172a">ZRO_COST_CLASSES</text>
+                <text x="90" y="114" text-anchor="middle" font-size="10" fill="#475569">unit per class</text>
+
+                <line x1="170" y1="36" x2="228" y2="66" stroke="#475569" stroke-width="1.5"/>
+                <line x1="170" y1="102" x2="228" y2="76" stroke="#475569" stroke-width="1.5"/>
+                <rect x="228" y="52" width="140" height="40" fill="#fff" stroke="#0f172a" stroke-width="1.5"/>
+                <text x="298" y="70" text-anchor="middle" font-size="11" fill="#0f172a" font-family="monospace">zro_menu_cost</text>
+                <text x="298" y="84" text-anchor="middle" font-size="9" fill="#dc2626">0 production callers</text>
+
+                <line x1="298" y1="92" x2="298" y2="124" stroke="#dc2626" stroke-width="2" stroke-dasharray="4 4"/>
+                <text x="298" y="140" text-anchor="middle" font-size="10" fill="#dc2626">tests/ only</text>
+
+                <line x1="20" y1="160" x2="360" y2="160" class="seam" stroke="#475569" stroke-width="1.5"/>
+                <text x="20" y="154" class="lbl" fill="#94a3b8">what the operator reads</text>
+
+                <rect x="10" y="176" width="106" height="34" class="hatch" stroke="#dc2626" stroke-width="1.5"/>
+                <text x="63" y="197" text-anchor="middle" font-size="10" fill="#7f1d1d">account_cost_note</text>
+                <rect x="124" y="176" width="106" height="34" class="hatch" stroke="#dc2626" stroke-width="1.5"/>
+                <text x="177" y="197" text-anchor="middle" font-size="10" fill="#7f1d1d">mailbox_cost_note</text>
+                <rect x="238" y="176" width="130" height="34" class="hatch" stroke="#dc2626" stroke-width="1.5"/>
+                <text x="303" y="197" text-anchor="middle" font-size="10" fill="#7f1d1d">10 inline literals</text>
+                <rect x="10" y="220" width="176" height="34" class="hatch" stroke="#dc2626" stroke-width="1.5"/>
+                <text x="98" y="241" text-anchor="middle" font-size="10" fill="#7f1d1d">2 ZRO_TXT_ constants</text>
+                <rect x="194" y="220" width="174" height="34" class="hatch" stroke="#dc2626" stroke-width="1.5"/>
+                <text x="281" y="241" text-anchor="middle" font-size="10" fill="#7f1d1d">2 yesno confirmations</text>
+                <text x="190" y="278" text-anchor="middle" font-size="10" fill="#64748b">five mechanisms, none reads the declaration</text>
+              </svg>
+            </div>
+
+            <div class="rounded-lg border border-slate-200 bg-white p-4">
+              <div class="lbl text-slate-400 mb-4">After — the declaration is load-bearing</div>
+              <svg viewBox="0 0 380 300" class="w-full" style="max-height:300px">
+                <rect x="10" y="10" width="160" height="52" fill="#e2e8f0" stroke="#0f172a" stroke-width="1.5"/>
+                <text x="90" y="32" text-anchor="middle" class="lbl" fill="#0f172a">ZRO_MENU_OPS</text>
+                <text x="90" y="48" text-anchor="middle" font-size="10" fill="#475569">class per operation</text>
+                <rect x="10" y="76" width="160" height="52" fill="#e2e8f0" stroke="#0f172a" stroke-width="1.5"/>
+                <text x="90" y="98" text-anchor="middle" class="lbl" fill="#0f172a">ZRO_COST_CLASSES</text>
+                <text x="90" y="114" text-anchor="middle" font-size="10" fill="#475569">unit per class</text>
+
+                <line x1="170" y1="36" x2="214" y2="76" stroke="#475569" stroke-width="1.5"/>
+                <line x1="170" y1="102" x2="214" y2="94" stroke="#475569" stroke-width="1.5"/>
+
+                <rect x="214" y="60" width="154" height="120" class="deepbox" stroke="#0f172a" stroke-width="2.5"/>
+                <text x="291" y="86" text-anchor="middle" class="lbl" fill="#f8fafc">cost note module</text>
+                <text x="291" y="108" text-anchor="middle" font-size="9.5" fill="#94a3b8">reads class + unit</text>
+                <text x="291" y="124" text-anchor="middle" font-size="9.5" fill="#94a3b8">per-operation sentence</text>
+                <text x="291" y="140" text-anchor="middle" font-size="9.5" fill="#94a3b8">missing note = refusal</text>
+                <text x="291" y="162" text-anchor="middle" font-size="9.5" fill="#6ee7b7">one interface</text>
+
+                <line x1="20" y1="208" x2="360" y2="208" class="seam" stroke="#475569" stroke-width="1.5"/>
+                <text x="20" y="202" class="lbl" fill="#94a3b8">what the operator reads</text>
+                <line x1="291" y1="180" x2="291" y2="222" stroke="#0f172a" stroke-width="2"/>
+                <rect x="120" y="222" width="180" height="36" fill="#d1fae5" stroke="#047857" stroke-width="1.5"/>
+                <text x="210" y="245" text-anchor="middle" font-size="11" fill="#065f46">one cost sentence</text>
+                <text x="190" y="284" text-anchor="middle" font-size="10" fill="#64748b">a screen cannot state a cost it did not declare</text>
+              </svg>
+            </div>
+          </div>
+
+          <div class="mt-5 grid md:grid-cols-2 gap-5 text-sm">
+            <div>
+              <div class="lbl text-slate-400 mb-1">Problem</div>
+              <p class="text-slate-700">
+                Every operation declares a cost class and every class declares a unit — and
+                <code class="text-xs">zro_menu_cost</code> has <strong>zero callers in the program</strong>. What an operator
+                reads before spending is hand-written five ways, and the two case lists disagree about failure:
+                <code class="text-xs">zro_mailbox_cost_note</code>'s default logs a defect (<code class="text-xs">:672</code>),
+                <code class="text-xs">zro_account_cost_note</code>'s silently prints a generic sentence (<code class="text-xs">:438</code>).
+                Add a <code class="text-xs">mailbox-*</code> operation without a note and the build shouts; add an
+                <code class="text-xs">account-*</code> one and nothing does.
+              </p>
+            </div>
+            <div>
+              <div class="lbl text-slate-400 mb-1">Solution</div>
+              <p class="text-slate-700">
+                A cost-note module keyed on the operation id that reads class and unit from the one list. Absence is a
+                refusal, in the shape <code class="text-xs">lib/table.sh</code> already established.
+              </p>
+              <div class="lbl text-slate-400 mt-4 mb-1">Wins</div>
+              <ul class="space-y-1 text-slate-700 text-[13px] list-disc list-inside marker:text-emerald-600">
+                <li>the declaration stops being decorative</li>
+                <li>locality: one place the class and the sentence must agree</li>
+                <li>a sixth mechanism cannot be invented</li>
+                <li>test surface joins <code class="text-xs">assert_cost</code>, which already reads the unit</li>
+              </ul>
+            </div>
+          </div>
+        </article>
+
+        <!-- ══════════════════════════════ C3 ══════════════════════════════ -->
+        <article id="c3" class="scroll-mt-8 border-t border-slate-200 pt-14">
+          <div class="flex items-start justify-between gap-4 flex-wrap">
+            <h2 class="font-serif text-2xl tracking-tight">3 · A partial answer is a value, not a code plus a habit</h2>
+            <div class="flex gap-2 shrink-0">
+              <span class="text-xs font-medium px-2.5 py-1 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-200">Strong</span>
+              <span class="text-xs font-medium px-2.5 py-1 rounded-full bg-slate-100 text-slate-600 border border-slate-200">in-process</span>
+            </div>
+          </div>
+
+          <div class="mt-4 font-mono text-xs text-slate-600 flex flex-wrap gap-x-4 gap-y-1">
+            <span>lib/delivery.sh:164,442</span><span>lib/logsearch.sh:440,461,706</span><span>lib/bulk.sh:650,663,804</span>
+            <span>zimbra-ro-tui.sh:388,1688,2325,2837</span>
+          </div>
+
+          <div class="mt-6 grid md:grid-cols-2 gap-5">
+            <div class="rounded-lg border border-slate-200 bg-white p-4">
+              <div class="lbl text-slate-400 mb-3">Before — six thin bands, one dropped answer</div>
+              <div class="space-y-1.5 text-[11px]">
+                <div class="border-l-4 border-slate-700 bg-slate-100 px-3 py-2">module computes its own counters <span class="font-mono text-slate-500">skipped_n · capped · stopped · missed</span></div>
+                <div class="border-l-4 border-slate-700 bg-slate-100 px-3 py-2">module builds its own banner <span class="font-mono text-slate-500">5 functions</span></div>
+                <div class="border-l-4 border-amber-600 bg-amber-50 px-3 py-2">delivery counts <span class="font-mono">read_n + skipped_n</span>; logsearch counts <span class="font-mono">selected_n</span> — the corrected version of the same arithmetic, uncorrected upstream</div>
+                <div class="border-l-4 border-slate-700 bg-slate-100 px-3 py-2">returns <span class="font-mono">ZRO_E_PARTIAL</span></div>
+                <div class="border-l-4 border-red-600 hatch px-3 py-2 text-red-900">screen hand-writes a title suffix — <span class="font-mono">"Teslim izi - EKSIK TARAMA"</span>, <span class="font-mono">"Log arama - EKSIK TARAMA"</span>, <span class="font-mono">"$title - EKSIK SONUC"</span></div>
+                <div class="border-l-4 border-red-600 hatch px-3 py-2 text-red-900">a screen that forgets the <span class="font-mono">if</span> falls to <span class="font-mono">:388</span> — a msgbox that never receives <span class="font-mono">$out</span>. Answer <em>and</em> banner discarded.</div>
+              </div>
+            </div>
+
+            <div class="rounded-lg border border-slate-200 bg-white p-4">
+              <div class="lbl text-slate-400 mb-3">After — one thick band</div>
+              <div class="space-y-1.5 text-[11px]">
+                <div class="border-l-4 border-slate-400 bg-slate-50 px-3 py-2 text-slate-500">module computes its own counters</div>
+                <div class="deepbox border-l-4 border-slate-900 px-3 py-6 text-slate-100">
+                  <div class="lbl text-emerald-300 mb-2">partial answer module</div>
+                  <div class="text-slate-300 leading-relaxed">
+                    takes <span class="font-mono text-slate-100">(body, reason, seen, total)</span> → returns the body with its
+                    banner and the title the declaration already carries.
+                  </div>
+                  <div class="text-slate-400 mt-2">selection arithmetic: one definition</div>
+                  <div class="text-slate-400">suffix word: one definition</div>
+                  <div class="text-slate-400">the answer travels with its disclosure</div>
+                </div>
+                <div class="border-l-4 border-emerald-600 hatch-ok px-3 py-2 text-emerald-900">a screen cannot show the answer without the banner, because they are one value</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="mt-5 grid md:grid-cols-2 gap-5 text-sm">
+            <div>
+              <div class="lbl text-slate-400 mb-1">Problem</div>
+              <p class="text-slate-700">
+                Three modules produce <code class="text-xs">ZRO_E_PARTIAL</code> and each builds its own banner; then three
+                screens each hand-write a title. Two hard-code a title instead of reading the one from
+                <code class="text-xs">ZRO_MENU_OPS</code>, and they use two different suffix words. The shared reporter's
+                arm shows a message box and is never handed <code class="text-xs">$out</code> — so the fourth screen to
+                return 30 discards both the answer and the banner the module worked to write.
+              </p>
+            </div>
+            <div>
+              <div class="lbl text-slate-400 mb-1">Solution</div>
+              <p class="text-slate-700">
+                Partiality travels as an answer rather than a status. One module carries body, banner and title together;
+                the exit code stays for callers that must branch.
+              </p>
+              <div class="lbl text-slate-400 mt-4 mb-1">Wins</div>
+              <ul class="space-y-1 text-slate-700 text-[13px] list-disc list-inside marker:text-emerald-600">
+                <li>the disclosure cannot be dropped by forgetting</li>
+                <li>locality: one definition of “how much was selected”</li>
+                <li>four renderings of one code collapse to one</li>
+                <li>leverage: a fifth partial producer costs nothing</li>
+              </ul>
+            </div>
+          </div>
+
+          <div class="mt-4 rounded border border-amber-300 bg-amber-50 p-3 text-xs text-amber-900">
+            <strong>Not an ADR conflict.</strong> CONTEXT.md §Reduced service <em>requires</em> both halves — “both are disclosed
+            and both report the partial code.” This candidate makes that requirement structural instead of remembered.
+          </div>
+        </article>
+
+        <!-- ══════════════════════════════ C4 ══════════════════════════════ -->
+        <article id="c4" class="scroll-mt-8 border-t border-slate-200 pt-14">
+          <div class="flex items-start justify-between gap-4 flex-wrap">
+            <h2 class="font-serif text-2xl tracking-tight">4 · The card vocabulary is not an account concept</h2>
+            <div class="flex gap-2 shrink-0">
+              <span class="text-xs font-medium px-2.5 py-1 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-200">Strong</span>
+              <span class="text-xs font-medium px-2.5 py-1 rounded-full bg-slate-100 text-slate-600 border border-slate-200">in-process</span>
+            </div>
+          </div>
+
+          <div class="mt-4 font-mono text-xs text-slate-600 flex flex-wrap gap-x-4 gap-y-1">
+            <span>lib/account.sh:370-418</span><span>→ 11 modules · 183 call sites</span><span>zimbra-ro-tui.sh:30</span>
+          </div>
+
+          <div class="mt-6 grid md:grid-cols-2 gap-5">
+            <div class="rounded-lg border border-slate-200 bg-white p-4">
+              <div class="lbl text-slate-400 mb-3">Before — ten modules depend on a domain module to render</div>
+              <pre class="mermaid">
+flowchart LR
+  A["lib/account.sh<br/><span style='font-size:10px'>account reads<br/>+ card vocabulary</span>"]
+  S["store"] --> A
+  M["message"] --> A
+  MS["mailset"] --> A
+  D["directory"] --> A
+  B["bulk"] --> A
+  Q["queue"] --> A
+  SR["search"] --> A
+  SV["service"] --> A
+  I["identity"] --> A
+  MB["mailbox"] --> A
+  classDef leak stroke:#dc2626,stroke-width:2.5px,fill:#fef2f2;
+  class A leak
+              </pre>
+            </div>
+            <div class="rounded-lg border border-slate-200 bg-white p-4">
+              <div class="lbl text-slate-400 mb-3">After — rendering sits beside the screen seam</div>
+              <pre class="mermaid">
+flowchart LR
+  C["lib/card.sh<br/><span style='font-size:10px'>card lines · label column<br/>unset / unreadable / none</span>"]
+  A["lib/account.sh<br/><span style='font-size:10px'>account reads</span>"] --> C
+  S["store"] --> C
+  M["message"] --> C
+  MS["mailset"] --> C
+  D["directory"] --> C
+  B["bulk"] --> C
+  Q["queue"] --> C
+  SR["search"] --> C
+  SV["service"] --> C
+  I["identity"] --> C
+  MB["mailbox"] --> C
+  classDef deep stroke:#0f172a,stroke-width:3px,fill:#0f172a,color:#f8fafc;
+  class C deep
+              </pre>
+            </div>
+          </div>
+
+          <div class="mt-5 grid md:grid-cols-2 gap-5 text-sm">
+            <div>
+              <div class="lbl text-slate-400 mb-1">Problem</div>
+              <p class="text-slate-700">
+                <code class="text-xs">zro_card_line/head/more/list</code>, <code class="text-xs">ZRO_CARD_LABEL_W</code> and the
+                three absence words <code class="text-xs">tanimsiz / bilinmiyor / yok</code> live inside the account domain
+                module. Every other module that renders anything must be sourced after it —
+                <code class="text-xs">zimbra-ro-tui.sh:30</code> encodes that. And reaching across already felt wrong once:
+                <code class="text-xs">lib/queue.sh:348</code> forked the unreadable-size fallback, printing the raw number
+                where <code class="text-xs">lib/store.sh:371</code> prints <code class="text-xs">bilinmiyor</code>.
+              </p>
+            </div>
+            <div>
+              <div class="lbl text-slate-400 mb-1">Solution</div>
+              <p class="text-slate-700">
+                Move the vocabulary to <code class="text-xs">lib/card.sh</code>, sourced beside <code class="text-xs">lib/ui.sh</code>.
+                A pure move — no call site changes.
+              </p>
+              <div class="lbl text-slate-400 mt-4 mb-1">Wins</div>
+              <ul class="space-y-1 text-slate-700 text-[13px] list-disc list-inside marker:text-emerald-600">
+                <li>load order stops encoding a domain dependency</li>
+                <li>locality: “unset vs unreadable” gets one home</li>
+                <li>cheapest candidate here — hours, not days</li>
+                <li>opens the way for candidate 2's cost note to live beside it</li>
+              </ul>
+            </div>
+          </div>
+        </article>
+
+        <!-- ══════════════════════════════ C5 ══════════════════════════════ -->
+        <article id="c5" class="scroll-mt-8 border-t border-slate-200 pt-14">
+          <div class="flex items-start justify-between gap-4 flex-wrap">
+            <h2 class="font-serif text-2xl tracking-tight">5 · An operation is declared once and re-matched five times</h2>
+            <div class="flex gap-2 shrink-0">
+              <span class="text-xs font-medium px-2.5 py-1 rounded-full bg-amber-100 text-amber-800 border border-amber-200">Worth exploring</span>
+              <span class="text-xs font-medium px-2.5 py-1 rounded-full bg-slate-100 text-slate-600 border border-slate-200">in-process</span>
+            </div>
+          </div>
+
+          <div class="mt-4 font-mono text-xs text-slate-600 flex flex-wrap gap-x-4 gap-y-1">
+            <span>zimbra-ro-tui.sh:2959</span><span>:3047</span><span>:3104</span><span>:3300</span>
+            <span>:424</span><span>:630</span><span>preamble at :451 :540 :700 :972 :1184</span>
+          </div>
+
+          <div class="mt-6 grid md:grid-cols-2 gap-5">
+            <div class="rounded-lg border border-slate-200 bg-white p-4">
+              <div class="lbl text-slate-400 mb-3">Before — one id, five case lists</div>
+              <svg viewBox="0 0 380 300" class="w-full" style="max-height:300px">
+                <rect x="120" y="126" width="140" height="46" fill="#e2e8f0" stroke="#0f172a" stroke-width="2"/>
+                <text x="190" y="146" text-anchor="middle" font-size="11" font-family="monospace" fill="#0f172a">account-card</text>
+                <text x="190" y="162" text-anchor="middle" font-size="9" fill="#475569">id : scope : class : label</text>
+
+                <g stroke="#dc2626" stroke-width="1.8" fill="none">
+                  <path d="M190 126 L190 74"/><path d="M120 140 L44 106"/><path d="M120 158 L44 194"/>
+                  <path d="M260 140 L336 106"/><path d="M260 158 L336 194"/>
+                </g>
+                <rect x="128" y="34" width="124" height="34" fill="#fef2f2" stroke="#dc2626"/>
+                <text x="190" y="55" text-anchor="middle" font-size="9.5" fill="#7f1d1d">dispatch case :3300</text>
+                <rect x="0" y="80" width="112" height="34" fill="#fef2f2" stroke="#dc2626"/>
+                <text x="56" y="101" text-anchor="middle" font-size="9.5" fill="#7f1d1d">refusal case :3047</text>
+                <rect x="0" y="188" width="112" height="34" fill="#fef2f2" stroke="#dc2626"/>
+                <text x="56" y="209" text-anchor="middle" font-size="9.5" fill="#7f1d1d">unavailable :3104</text>
+                <rect x="268" y="80" width="112" height="34" fill="#fef2f2" stroke="#dc2626"/>
+                <text x="324" y="101" text-anchor="middle" font-size="9.5" fill="#7f1d1d">cost note :424</text>
+                <rect x="268" y="188" width="112" height="34" fill="#fef2f2" stroke="#dc2626"/>
+                <text x="324" y="209" text-anchor="middle" font-size="9.5" fill="#7f1d1d">20-line preamble ×5</text>
+
+                <text x="190" y="262" text-anchor="middle" font-size="10" fill="#64748b">adding an operation touches five places</text>
+                <text x="190" y="280" text-anchor="middle" font-size="10" fill="#dc2626">zro_menu_entry (:2987) is dead — 0 callers repo-wide</text>
+              </svg>
+            </div>
+            <div class="rounded-lg border border-slate-200 bg-white p-4">
+              <div class="lbl text-slate-400 mb-3">After — the declaration answers all five</div>
+              <svg viewBox="0 0 380 300" class="w-full" style="max-height:300px">
+                <rect x="60" y="26" width="260" height="86" fill="#e2e8f0" stroke="#0f172a" stroke-width="2"/>
+                <text x="190" y="50" text-anchor="middle" class="lbl" fill="#0f172a">ZRO_MENU_OPS</text>
+                <text x="190" y="70" text-anchor="middle" font-size="9.5" font-family="monospace" fill="#475569">id : scope : class : screen</text>
+                <text x="190" y="86" text-anchor="middle" font-size="9.5" font-family="monospace" fill="#475569">: capability : note : label</text>
+                <text x="190" y="103" text-anchor="middle" font-size="9" fill="#64748b">one row per operation</text>
+
+                <line x1="190" y1="112" x2="190" y2="140" stroke="#0f172a" stroke-width="2"/>
+                <rect x="80" y="140" width="220" height="80" class="deepbox" stroke="#0f172a" stroke-width="2.5"/>
+                <text x="190" y="166" text-anchor="middle" class="lbl" fill="#f8fafc">operation dispatcher</text>
+                <text x="190" y="186" text-anchor="middle" font-size="9.5" fill="#94a3b8">preamble · refusal · cost · run</text>
+                <text x="190" y="202" text-anchor="middle" font-size="9.5" fill="#6ee7b7">read through lib/table.sh</text>
+
+                <line x1="190" y1="220" x2="190" y2="244" stroke="#0f172a" stroke-width="2"/>
+                <rect x="110" y="244" width="160" height="32" fill="#d1fae5" stroke="#047857" stroke-width="1.5"/>
+                <text x="190" y="264" text-anchor="middle" font-size="10.5" fill="#065f46">one screen function</text>
+                <text x="190" y="292" text-anchor="middle" font-size="10" fill="#64748b">an undispatched operation fails the build</text>
+              </svg>
+            </div>
+          </div>
+
+          <div class="mt-5 grid md:grid-cols-2 gap-5 text-sm">
+            <div>
+              <div class="lbl text-slate-400 mb-1">Problem</div>
+              <p class="text-slate-700">
+                <code class="text-xs">ZRO_MENU_OPS</code> declares four fields; four more per-id decisions live in scattered
+                <code class="text-xs">case</code> lists, each with its own defect branch. The account-scoped preamble is
+                copied five times, differing by one word. And
+                <code class="text-xs">zro_menu_entry</code> is dead: its comment claims <em>“every lookup below goes through
+                this”</em>, and its three siblings call <code class="text-xs">lib/table.sh</code> directly instead.
+              </p>
+            </div>
+            <div>
+              <div class="lbl text-slate-400 mb-1">Solution</div>
+              <p class="text-slate-700">
+                Widen the declaration; one dispatcher reads it. The refused-flag rule this project already trusts —
+                absence is a refusal — turns four runtime defect branches into build failures.
+              </p>
+              <div class="lbl text-slate-400 mt-4 mb-1">Wins</div>
+              <ul class="space-y-1 text-slate-700 text-[13px] list-disc list-inside marker:text-emerald-600">
+                <li>adding an operation is one row</li>
+                <li>locality: the tenth screen inherits the preamble</li>
+                <li>44 <code class="text-xs">zro_report_defect</code> sites shrink</li>
+                <li>subsumes candidate 2's cost note</li>
+              </ul>
+              <div class="mt-3 rounded border border-amber-300 bg-amber-50 p-2.5 text-xs text-amber-900">
+                <strong>Sequencing.</strong> Largest blast radius of the seven. Worth doing <em>after</em> 2 and 4, which
+                each remove one of its five sites.
+              </div>
+            </div>
+          </div>
+        </article>
+
+        <!-- ══════════════════════════════ C6 ══════════════════════════════ -->
+        <article id="c6" class="scroll-mt-8 border-t border-slate-200 pt-14">
+          <div class="flex items-start justify-between gap-4 flex-wrap">
+            <h2 class="font-serif text-2xl tracking-tight">6 · One record reader instead of eight</h2>
+            <div class="flex gap-2 shrink-0">
+              <span class="text-xs font-medium px-2.5 py-1 rounded-full bg-amber-100 text-amber-800 border border-amber-200">Worth exploring</span>
+              <span class="text-xs font-medium px-2.5 py-1 rounded-full bg-slate-100 text-slate-600 border border-slate-200">in-process</span>
+            </div>
+          </div>
+
+          <div class="mt-4 font-mono text-xs text-slate-600 flex flex-wrap gap-x-4 gap-y-1">
+            <span>lib/account.sh:49,58,111,173</span><span>lib/mailset.sh:252,311</span>
+            <span>lib/identity.sh:61</span><span>lib/directory.sh:191,235</span>
+          </div>
+
+          <div class="mt-6 grid md:grid-cols-2 gap-5">
+            <div class="rounded-lg border border-slate-200 bg-white p-4">
+              <div class="lbl text-slate-400 mb-4">Before — interface as tall as the implementation</div>
+              <svg viewBox="0 0 380 280" class="w-full" style="max-height:280px">
+                <text x="8" y="16" class="lbl" fill="#94a3b8">interface</text>
+                <text x="200" y="16" class="lbl" fill="#94a3b8">implementation</text>
+                <g font-size="9" fill="#475569">
+                  <rect x="8" y="26" width="150" height="22" class="hatch" stroke="#dc2626"/><text x="12" y="41">attr_get · attr_all · attr_block · attr_present</text>
+                  <rect x="200" y="26" width="86" height="22" fill="#e2e8f0" stroke="#64748b"/>
+                  <rect x="8" y="54" width="150" height="22" class="hatch" stroke="#dc2626"/><text x="12" y="69">signature_records (literal prefixes)</text>
+                  <rect x="200" y="54" width="70" height="22" fill="#e2e8f0" stroke="#64748b"/>
+                  <rect x="8" y="82" width="150" height="22" class="hatch" stroke="#dc2626"/><text x="12" y="97">sendas_rows (awk, RS="")</text>
+                  <rect x="200" y="82" width="78" height="22" fill="#e2e8f0" stroke="#64748b"/>
+                  <rect x="8" y="110" width="150" height="22" class="hatch" stroke="#dc2626"/><text x="12" y="125">identity_canonical (# header)</text>
+                  <rect x="200" y="110" width="48" height="22" fill="#e2e8f0" stroke="#64748b"/>
+                  <rect x="8" y="138" width="150" height="22" class="hatch" stroke="#dc2626"/><text x="12" y="153">dl_member_count (same # line)</text>
+                  <rect x="200" y="138" width="52" height="22" fill="#e2e8f0" stroke="#64748b"/>
+                </g>
+                <text x="8" y="188" font-size="10" fill="#7f1d1d">“a declared attribute ends a value” — 3 implementations,</text>
+                <text x="8" y="204" font-size="10" fill="#7f1d1d">each commented with a pointer to the other two</text>
+                <text x="8" y="228" font-size="10" fill="#64748b">directory.sh:94 parses the same text twice —</text>
+                <text x="8" y="244" font-size="10" fill="#64748b">identity's # reader, then its own</text>
+                <text x="8" y="268" font-size="10" fill="#94a3b8">eight readers of one line format</text>
+              </svg>
+            </div>
+            <div class="rounded-lg border border-slate-200 bg-white p-4">
+              <div class="lbl text-slate-400 mb-4">After — short interface, tall implementation</div>
+              <svg viewBox="0 0 380 280" class="w-full" style="max-height:280px">
+                <text x="8" y="16" class="lbl" fill="#94a3b8">interface</text>
+                <text x="200" y="16" class="lbl" fill="#94a3b8">implementation</text>
+                <rect x="8" y="26" width="150" height="26" class="hatch-ok" stroke="#047857"/>
+                <text x="12" y="43" font-size="9" fill="#065f46">records · fields · header</text>
+                <rect x="200" y="26" width="170" height="176" class="deepbox" stroke="#0f172a" stroke-width="2.5"/>
+                <text x="285" y="58" text-anchor="middle" class="lbl" fill="#f8fafc">record reader</text>
+                <g font-size="9.5" fill="#94a3b8" text-anchor="middle">
+                  <text x="285" y="84">record separation</text>
+                  <text x="285" y="102">the continuation rule</text>
+                  <text x="285" y="120">blank lines inside values</text>
+                  <text x="285" y="138"># comments inside values</text>
+                  <text x="285" y="156">the # header line</text>
+                  <text x="285" y="174">declared-attribute boundary</text>
+                </g>
+                <text x="8" y="230" font-size="10" fill="#065f46">one rule, one home, one test surface</text>
+                <text x="8" y="252" font-size="10" fill="#64748b">the four account readers stay — they are</text>
+                <text x="8" y="268" font-size="10" fill="#64748b">three genuinely different questions</text>
+              </svg>
+            </div>
+          </div>
+
+          <div class="mt-5 grid md:grid-cols-2 gap-5 text-sm">
+            <div>
+              <div class="lbl text-slate-400 mb-1">Problem</div>
+              <p class="text-slate-700">
+                <code class="text-xs">key: value</code> is one output shape with eight readers. Two of them reimplement
+                <code class="text-xs">zro_attr_get</code>'s rule — once in awk, once in parameter expansion with the attribute
+                names hard-coded — because what they actually need is a <em>record</em> boundary, and the record reader does
+                not exist. The continuation rule has three implementations whose comments each name the other two.
+              </p>
+            </div>
+            <div>
+              <div class="lbl text-slate-400 mb-1">Solution</div>
+              <p class="text-slate-700">
+                A record reader: split records, then read fields. The continuation rule gets one home;
+                <code class="text-xs">lib/identity.sh</code>'s synthetic records already prove the shape travels.
+              </p>
+              <div class="lbl text-slate-400 mt-4 mb-1">Wins</div>
+              <ul class="space-y-1 text-slate-700 text-[13px] list-disc list-inside marker:text-emerald-600">
+                <li>locality: the truncated-rule-set failure gets one guard</li>
+                <li>the <code class="text-xs">#</code> header is parsed once, not twice</li>
+                <li>leverage: a fourth child-entry read is free</li>
+              </ul>
+              <div class="mt-3 rounded border border-amber-300 bg-amber-50 p-2.5 text-xs text-amber-900">
+                <strong>Keep out:</strong> <code>ZRO_SEARCH_PROMPTS</code>. ADR-0009 explains why that shape stays separate —
+                folding it in buys a parameter meaning <em>which of two readers am I</em>.
+              </div>
+            </div>
+          </div>
+        </article>
+
+        <!-- ══════════════════════════════ C7 ══════════════════════════════ -->
+        <article id="c7" class="scroll-mt-8 border-t border-slate-200 pt-14">
+          <div class="flex items-start justify-between gap-4 flex-wrap">
+            <h2 class="font-serif text-2xl tracking-tight">7 · The suite's preamble is an interface nobody wrote down</h2>
+            <div class="flex gap-2 shrink-0">
+              <span class="text-xs font-medium px-2.5 py-1 rounded-full bg-amber-100 text-amber-800 border border-amber-200">Worth exploring</span>
+              <span class="text-xs font-medium px-2.5 py-1 rounded-full bg-slate-100 text-slate-600 border border-slate-200">mock</span>
+            </div>
+          </div>
+
+          <div class="mt-4 font-mono text-xs text-slate-600 flex flex-wrap gap-x-4 gap-y-1">
+            <span>tests/lib/ (153 lines)</span><span>51 test files</span><span>16 mocks</span><span>tests/mocks/mock_common.sh</span>
+          </div>
+
+          <div class="mt-6 grid md:grid-cols-2 gap-5">
+            <div class="rounded-lg border border-slate-200 bg-white p-4">
+              <div class="lbl text-slate-400 mb-3">Before — preamble mass vs assertion mass</div>
+              <svg viewBox="0 0 380 260" class="w-full" style="max-height:260px">
+                <g font-size="9" fill="#475569">
+                  <text x="4" y="14" class="lbl" fill="#94a3b8">setup</text>
+                  <text x="250" y="14" class="lbl" fill="#94a3b8">assertions</text>
+
+                  <text x="4" y="36">exec_allowlist</text>
+                  <rect x="96" y="26" width="6" height="14" class="hatch-ok" stroke="#047857"/>
+                  <rect x="250" y="26" width="119" height="14" fill="#0f172a"/>
+                  <text x="106" y="37" font-size="8" fill="#047857">5</text><text x="230" y="37" font-size="8" fill="#475569" text-anchor="end">238</text>
+
+                  <text x="4" y="66">store_screen</text>
+                  <rect x="96" y="56" width="54" height="14" class="hatch" stroke="#dc2626"/>
+                  <rect x="250" y="56" width="30" height="14" fill="#64748b"/>
+                  <text x="154" y="67" font-size="8" fill="#7f1d1d">54</text><text x="230" y="67" font-size="8" fill="#475569" text-anchor="end">60</text>
+
+                  <text x="4" y="96">logsearch</text>
+                  <rect x="96" y="86" width="54" height="14" class="hatch" stroke="#dc2626"/>
+                  <rect x="250" y="86" width="97" height="14" fill="#64748b"/>
+                  <text x="154" y="97" font-size="8" fill="#7f1d1d">54</text><text x="230" y="97" font-size="8" fill="#475569" text-anchor="end">194</text>
+
+                  <text x="4" y="126">delivery_screen</text>
+                  <rect x="96" y="116" width="44" height="14" class="hatch" stroke="#dc2626"/>
+                  <rect x="250" y="116" width="63" height="14" fill="#64748b"/>
+                  <text x="144" y="127" font-size="8" fill="#7f1d1d">44</text><text x="230" y="127" font-size="8" fill="#475569" text-anchor="end">126</text>
+                </g>
+                <line x1="4" y1="146" x2="370" y2="146" class="seam" stroke="#cbd5e1"/>
+                <g font-size="10" fill="#7f1d1d">
+                  <text x="4" y="168">15-line env block — byte-identical in 8 files, drifted in 4 more</text>
+                  <text x="4" y="186">queue() — 13 copies · transcript() — 10 · entries() — 8</text>
+                  <text x="4" y="204">ran() — 17 definitions in 5 spellings</text>
+                  <text x="4" y="222">the existence gate restated in 7 files, in 2 incompatible dialects</text>
+                </g>
+                <text x="4" y="248" font-size="10" fill="#64748b">tests/lib/ is 153 lines. The other 20 facts live in 51 preambles.</text>
+              </svg>
+            </div>
+            <div class="rounded-lg border border-slate-200 bg-white p-4">
+              <div class="lbl text-slate-400 mb-3">After — the seam is the setup</div>
+              <svg viewBox="0 0 380 260" class="w-full" style="max-height:260px">
+                <rect x="30" y="20" width="320" height="104" class="deepbox" stroke="#0f172a" stroke-width="2.5"/>
+                <text x="190" y="46" text-anchor="middle" class="lbl" fill="#f8fafc">tests/lib/ harness</text>
+                <g font-size="9.5" fill="#94a3b8" text-anchor="middle">
+                  <text x="190" y="68">the exec seam · the UI seam · the mock protocol</text>
+                  <text x="190" y="86">session resets composed as one</text>
+                  <text x="190" y="104">the existence gate staged in one dialect</text>
+                </g>
+                <line x1="190" y1="124" x2="190" y2="146" stroke="#0f172a" stroke-width="2"/>
+                <g font-size="9" fill="#065f46">
+                  <rect x="18" y="146" width="104" height="26" class="hatch-ok" stroke="#047857"/>
+                  <text x="70" y="163" text-anchor="middle">3-line preamble</text>
+                  <rect x="138" y="146" width="104" height="26" class="hatch-ok" stroke="#047857"/>
+                  <text x="190" y="163" text-anchor="middle">3-line preamble</text>
+                  <rect x="258" y="146" width="104" height="26" class="hatch-ok" stroke="#047857"/>
+                  <text x="310" y="163" text-anchor="middle">3-line preamble</text>
+                </g>
+                <text x="190" y="200" text-anchor="middle" font-size="10" fill="#64748b">a new test file starts at its first assertion</text>
+                <text x="190" y="222" text-anchor="middle" font-size="10" fill="#64748b">changing the stub's line format edits one file, not eight</text>
+                <text x="190" y="246" text-anchor="middle" font-size="10" fill="#065f46">the interface is written down, because it is executable</text>
+              </svg>
+            </div>
+          </div>
+
+          <div class="mt-5 grid md:grid-cols-2 gap-5 text-sm">
+            <div>
+              <div class="lbl text-slate-400 mb-1">Problem</div>
+              <p class="text-slate-700">
+                Twenty facts are needed to stand a module up — four root variables that must differ, three full-path variables,
+                two priority wrappers needed only for some modules, a mock log whose absence makes assertions pass vacuously,
+                five session resets in five modules that nothing composes. None is enumerated anywhere. The 69-line median
+                preamble <em>is</em> that enumeration, re-derived 51 times.
+              </p>
+              <p class="text-slate-700 mt-2">
+                The suite also asserts 371 times against a transcript string and 59 against a return value — and eight of
+                <code class="text-xs">test_store_screen.sh</code>'s card assertions are verbatim duplicates of
+                <code class="text-xs">test_store.sh</code>'s, one indirection later.
+              </p>
+            </div>
+            <div>
+              <div class="lbl text-slate-400 mb-1">Solution</div>
+              <p class="text-slate-700">
+                Grow <code class="text-xs">tests/lib/</code> to carry the seams: one env setup, one UI driver, one gate stager,
+                one composed reset. Model it on <code class="text-xs">tests/lib/cost.sh</code>, which already reads the
+                declaration rather than restating it.
+              </p>
+              <div class="lbl text-slate-400 mt-4 mb-1">Wins</div>
+              <ul class="space-y-1 text-slate-700 text-[13px] list-disc list-inside marker:text-emerald-600">
+                <li>leverage: 51 files, one setup</li>
+                <li>the stub's line format stops having 8 consumers</li>
+                <li>the existence gate gets one dialect, not two</li>
+                <li>a screen test can spend its lines on ordering and cost</li>
+              </ul>
+            </div>
+          </div>
+
+          <div class="mt-4 rounded border border-slate-200 bg-slate-50 p-3 text-xs text-slate-700">
+            <strong>Coverage gradient, for context.</strong> 188 of 461 functions are never named in a test. The four modules at
+            <strong>0% untested</strong> — <code>selection</code>, <code>table</code>, <code>validate</code>, <code>window</code> —
+            are exactly the four that take values and return values. <code>zimbra-ro-tui.sh</code> sits at 76% untested. The
+            gradient tracks depth precisely, which is the argument for candidates 1–5 restated as a measurement.
+          </div>
+        </article>
+
+      </section>
+
+      <!-- ─────────────────────────────────────────── top rec ── -->
+      <section id="top-recommendation" class="border-t-2 border-slate-800 pt-10">
+        <p class="lbl text-slate-500 mb-3">Top recommendation</p>
+        <div class="rounded-lg border-2 border-slate-800 bg-white p-7">
+          <h2 class="font-serif text-2xl tracking-tight">
+            <a href="#c1" class="hover:underline decoration-emerald-500 decoration-2">1 · One settler at the exec seam</a>
+          </h2>
+          <p class="mt-4 text-slate-700 leading-relaxed max-w-3xl">
+            It is the only candidate whose friction has already reached the operator: an allowlist denial on
+            <code class="text-xs">zmmetadump</code> — the exit code this project defines as a defect in itself — is currently
+            rendered as <em>“mailboxd is stopped.”</em> The rule that would prevent it is written six times in three versions,
+            and the module that gets it wrong gets it right thirty lines further down.
+          </p>
+          <p class="mt-3 text-slate-700 leading-relaxed max-w-3xl">
+            It is also the cheapest deep module in the list. The three settlers are already byte-identical; what is missing is
+            a name for them. The mapper travels as a name, which is the convention ADR-0009 settled — so the seam is one this
+            codebase has already argued for and can reuse rather than relitigate.
+          </p>
+          <p class="mt-4 text-sm text-slate-500">
+            Then <a href="#c4" class="underline decoration-slate-300">4</a> (hours, pure move),
+            <a href="#c2" class="underline decoration-slate-300">2</a> and
+            <a href="#c3" class="underline decoration-slate-300">3</a> (each removes a site from
+            <a href="#c5" class="underline decoration-slate-300">5</a>), and
+            <a href="#c5" class="underline decoration-slate-300">5</a> last, when its blast radius is smallest.
+          </p>
+        </div>
+      </section>
+
+      <footer class="text-xs text-slate-400 pt-6 border-t border-slate-200">
+        Vocabulary: module · interface · implementation · depth · seam · adapter · leverage · locality.
+        Domain terms from CONTEXT.md. ADR-0009 consulted for candidates 1 and 6.
+      </footer>
+
+    </main>
+  </body>
+</html>
