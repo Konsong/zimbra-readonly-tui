@@ -242,9 +242,11 @@ to the mailbox database **directly**. Every statement in it is a select, its
 connection is never committed, and it opens no mailbox session — which is why it
 is the one mailbox question that stands outside the [existence
 gate](#the-existence-gate) rather than behind it. It has no timeout of its own
-and retries forever when the database is unreachable, so the wall-clock timeout
-is what ends it and the screen names the database rather than reporting a server
-that answered nothing.
+and retries **every five seconds, forever**, when the database is unreachable, so
+the wall-clock timeout is what ends it and the screen names the database rather
+than reporting a server that answered nothing. Its retries arrive on **stdout**
+with stderr empty — the opposite way round from every other failure it has — which
+is why the screen still has the command's own sentence to show.
 _Avoid_: metadata read, dump (alone — a dump of what?)
 
 **Fragment**:
@@ -275,7 +277,8 @@ The declared root every blob this tool opens must sit under. A production defaul
 in a variable an operator can override, like every other root here, and
 **refused rather than searched for** when it is empty: there is no second place to
 look, and following whatever the dump printed is what the declaration exists to
-prevent.
+prevent. It reaches the operator as `blob koku`, on the one screen that has to name
+it — the screen that refused a path for sitting outside it.
 _Avoid_: store path, mail store, volume (a volume is Zimbra's record, this is a
 directory)
 

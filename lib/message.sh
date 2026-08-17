@@ -149,19 +149,39 @@ EOF
   return "$ZRO_E_NO_RESULT"
 }
 
-# One column as a field on the screen: the value, or the word for the absence it
-# is.
-zro_msg_field() {
+# THE THREE ANSWERS A COLUMN CAN GIVE, decided in ONE place — because four fields
+# need them and the first version of this file got the fourth one wrong.
+#
+#   $1  the column name      $2  the dump
+#   0   a value follows on stdout, and it is the record's own
+#   1   what follows is the WORD an operator reads for the absence it is
+#
+# A column the schema does not carry is [unreadable], a fact about this program; a
+# column holding <null> is [unset], a fact about the record. The two are deliberately
+# different words. A field that has to FORMAT what it got — a size, a timestamp —
+# cannot go through zro_msg_field, which answers with a word in both cases, so the
+# split is made here rather than copied into each of them: the copy that drifted
+# reported a null size as a value this program could not read.
+zro_msg_raw_or_word() {
   local value
   if ! value=$(zro_msg_column "${1-}" "${2-}"); then
     printf '%s' "$ZRO_TXT_UNKNOWN"
-    return 0
+    return 1
   fi
   if [ "$value" = "$ZRO_MSG_NULL" ]; then
     printf '%s' "$ZRO_TXT_UNSET"
-    return 0
+    return 1
   fi
   printf '%s' "$value"
+  return 0
+}
+
+# One column as a field on the screen: the value, or the word for the absence it is.
+# Both are already printed by the reader above; this only normalises the status, for
+# a caller that draws the answer either way.
+zro_msg_field() {
+  zro_msg_raw_or_word "${1-}" "${2-}" || return 0
+  return 0
 }
 
 # THE EPOCH SECONDS OUT OF A TIMESTAMP COLUMN, and nothing that merely looks like
@@ -186,8 +206,7 @@ zro_msg_epoch() {
 # line.
 zro_msg_when() {
   local raw when secs
-  raw=$(zro_msg_column "${1-}" "${2-}") || { printf '%s' "$ZRO_TXT_UNKNOWN"; return 0; }
-  [ "$raw" = "$ZRO_MSG_NULL" ] && { printf '%s' "$ZRO_TXT_UNSET"; return 0; }
+  raw=$(zro_msg_raw_or_word "${1-}" "${2-}") || { printf '%s' "$raw"; return 0; }
   secs=$(zro_msg_epoch "$raw") || { printf '%s' "$ZRO_TXT_UNKNOWN"; return 0; }
   when=$(zro_clock_fmt '%Y-%m-%d %H:%M:%S' "$secs") || { printf '%s' "$ZRO_TXT_UNKNOWN"; return 0; }
   printf '%s (%s)' "$when" "$secs"
@@ -237,9 +256,17 @@ EOF
 # expected — is refused rather than followed: the operator is told which path was
 # refused, which is visible, where opening it would not be.
 zro_msg_blob_ok() {
-  local p=${1-}
+  local p=${1-} root=$ZRO_STORE_ROOT
   [ -n "$p" ] || return 1
-  [ -n "$ZRO_STORE_ROOT" ] || return 1
+  [ -n "$root" ] || return 1
+  # A TRAILING SLASH IN THE OVERRIDE IS NOT A DIFFERENT ROOT. `/opt/zimbra/store/` is
+  # what a human writes half the time, and comparing it literally would refuse every
+  # blob on the host — a refusal in the safe direction and an incomprehensible one.
+  # Stripped here rather than at the declaration, because the declaration is a default
+  # an operator overrides after this file has been read.
+  while [ "${#root}" -gt 1 ] && [ "${root%/}" != "$root" ]; do
+    root=${root%/}
+  done
   [ "${#p}" -le 4096 ] || return 1
   case $p in
     /*) ;;
@@ -256,7 +283,7 @@ zro_msg_blob_ok() {
   # Quoted, so the root is compared as the literal text it is: a root carrying a
   # glob character cannot widen into one that admits its neighbours.
   case $p in
-    "$ZRO_STORE_ROOT"/?*) ;;
+    "$root"/?*) ;;
     *) return 1 ;;
   esac
   return 0
@@ -303,7 +330,17 @@ ZRO_MSG_TXT_USAGE='Usage: zmmetadump'
 # difference: the code is the no-mailbox one and the screen says in as many words
 # that either cause produces it.
 zro_msg_fail_code() {
-  local errfile=${1-} rc=${2-1} mapped
+  local errfile=${1-} rc=${2-1}
+  # AN EXPIRED CLOCK IS REPORTED AS ITSELF, BEFORE ANY TEXT IS READ. The timeout is
+  # this program's own fact — the gate stopped the command — and it is the one failure
+  # this screen must never re-describe from whatever the streams happened to carry.
+  # It is asked first rather than last because that is the difference between the
+  # screen that names the database and the shared box that names mailboxd, which this
+  # command does not talk to at all.
+  if [ "$rc" -eq "$ZRO_E_TIMEOUT" ]; then
+    printf '%s' "$ZRO_E_TIMEOUT"
+    return 0
+  fi
   if grep -qF -- "$ZRO_MSG_TXT_NO_ITEM" "$errfile" 2>/dev/null; then
     printf '%s' "$ZRO_E_NO_RESULT"
     return 0
@@ -321,12 +358,19 @@ zro_msg_fail_code() {
     printf '%s' "$ZRO_E_INPUT"
     return 0
   fi
-  mapped=$(zro_zimbra_error_code "$errfile")
-  if [ "$mapped" != "0" ]; then
-    printf '%s' "$mapped"
-    return 0
-  fi
-  printf '%s' "$rc"
+  # THE SHARED ZIMBRA-ERROR READER IS DELIBERATELY NOT CONSULTED HERE, and that is a
+  # decision rather than an omission. Every pattern it matches belongs to the SOAP
+  # path — `zclient.IO_ERROR`, `SERVICE_UNAVAILABLE`, an expired admin certificate —
+  # and this command takes no such path: measured, its failure text is a `DbPool`
+  # exception carrying a JDBC URL. Reading it through that mapper would answer a
+  # database problem with the screen that names mailboxd and `zmcertmgr`, sending the
+  # operator to repair something that is not broken.
+  #
+  # So anything this function does not recognise is reported as the service this
+  # command really needs being unreachable, and the screen for it names the database.
+  # The command's own words travel with it: the caller keeps them where the screen can
+  # find them.
+  printf '%s' "$ZRO_E_UNAVAILABLE"
 }
 
 # What a finished read costs the caller: the code to return, with the underlying
@@ -369,6 +413,21 @@ zro_msg_dump_fetch() {
   err=$(zro_tmpfile) || return "$ZRO_E_UNAVAILABLE"
 
   out=$(zro_exec zmmetadump -m "$acct" -i "$id" 2>"$err") || rc=$?
+
+  # THE EXPLANATION IS ON THE STREAM THAT NORMALLY CARRIES THE ANSWER, and that was
+  # measured rather than assumed. With the database stopped, this binary writes
+  # `Could not establish a connection to the database.  Retrying in 5 seconds.` and a
+  # `DbPool` stack trace to STDOUT — 7828 bytes of it in the 22 seconds it was given,
+  # one retry every five — and leaves STDERR completely EMPTY. Every other failure it
+  # has is the other way round.
+  #
+  # So a failure that said nothing on stderr borrows the head of stdout. Without this
+  # the one screen that has something useful to show — the timeout, on the one command
+  # in this tool that would otherwise hang forever — would have nothing to show.
+  if [ "$rc" -ne 0 ] && [ ! -s "$err" ] && [ -n "$out" ]; then
+    printf '%.500s\n' "$out" >"$err"
+  fi
+
   rc=$(zro_msg_settle "$err" "$rc")
   [ "$rc" -eq 0 ] || return "$rc"
 
@@ -452,10 +511,23 @@ zro_msg_head_fetch() {
   said=$(head -c 500 -- "$err" 2>/dev/null)
   rm -f -- "$err"
 
+  # A GATE REFUSAL IS PASSED THROUGH RATHER THAN FLATTENED, and everything else
+  # becomes the one documented code for a stored file that could not be read — the
+  # shape lib/logview.sh gives its own failures. A binary this host does not have, an
+  # unsupported user, an expired clock: none of those is a blob that cannot be read,
+  # and an operator sent to check the store over a missing `head` would repair
+  # nothing. What must not happen either is `gzip`'s own exit status leaving this
+  # module: a file that is not a gzip stream answers 1, which is not a code this
+  # program defines, and a caller switching on it would be reading a number nobody
+  # documented.
   if [ "$rc" -ne 0 ]; then
     [ -z "$said" ] || zro_set_error "$said"
+    case $rc in
+      "$ZRO_E_DENIED"|"$ZRO_E_BADUSER"|"$ZRO_E_NOCAP"|"$ZRO_E_TIMEOUT"|"$ZRO_E_UNAVAILABLE"|"$ZRO_E_INPUT")
+        return "$rc" ;;
+    esac
     zro_log warn "blob unreadable: $path (${said:-no message on stderr})"
-    return "$rc"
+    return "$ZRO_E_NO_BLOB"
   fi
   zro_clear_error
   # An empty blob is not a message. It is reported as no result rather than drawn as
@@ -575,6 +647,12 @@ zro_msg_header_field() {
 # itself, and the bytes between the header block and the next boundary are skipped
 # without being looked at — which is the body rule, applied where it would be easiest
 # to break.
+#
+# THE ONE WAY THIS OVER-LISTS is stated rather than left to be discovered: a body that
+# quotes a message — a forwarded mail pasted inline, after a line of dashes — carries
+# lines that really are MIME headers, and a row appears for them. It errs towards
+# listing something that is there rather than towards claiming an attachment is
+# absent, which is the direction this screen has to fail in.
 zro_msg_part_rows() {
   local line state=top block=''
   while IFS= read -r line; do
@@ -702,6 +780,16 @@ birer kayittir ve blob dosyalari yoktur. Yukaridaki Tur (ham) alani Zimbranin ke
 oge turudur; bu arac onu cozmez.'
 ZRO_TXT_MSG_NO_PARTS='Bu ileti tek parcali: MIME parcasi yok, dolayisiyla ek listesi de yok.'
 
+# SAID INSTEAD OF THE LINE ABOVE when the bound cut the header block short. The two
+# may never be confused: one is an answer about the message, the other is the absence
+# of an answer — and the first one, said about a head that stopped inside the
+# headers, would be this screen claiming a message has no attachment on the strength
+# of bytes it never read.
+ZRO_TXT_MSG_PARTS_UNKNOWN='PARCA LISTESI CIKARILAMADI: okunan bolum baslik icinde bitti, yani MIME yapisina
+hic ulasilamadi. Bu, iletinin eki YOKTUR demek DEGILDIR — ek olup olmadigi bu
+sinirin icinden anlasilamaz. ZRO_MSG_HEAD_BYTES degerini yukseltip yeniden
+deneyebilirsiniz.'
+
 # Said wherever this screen mentions what it did not do. One constant, because three
 # paragraphs would be three chances to promise something slightly different.
 ZRO_TXT_MSG_NO_BODY='ILETI GOVDESI GOSTERILMEZ. Bu ekran veritabani kaydini ve blob dosyasinin
@@ -728,7 +816,11 @@ zro_msg_record_body() {
   zro_card_line 'Ileti id' "$id"
   zro_card_line 'Mailbox id' "$(zro_msg_field mailbox_id "$dump")"
   zro_card_line 'Tur (ham)' "$(zro_msg_field type "$dump")"
-  zro_card_line 'Klasor id' "$(zro_msg_field folder_id "$dump")"
+  # AN ID RATHER THAN A PATH, because that is what the database holds: resolving the
+  # name would mean a folder listing, which is a mailbox read behind the existence
+  # gate — and this screen opens no session. The listing prints the same id in its own
+  # first column, so the operator is pointed at where the two sit side by side.
+  zro_card_line 'Klasor id' "$(zro_msg_field folder_id "$dump") (yol: Klasorler ekrani)"
   # WHAT THIS COLUMN IS DEPENDS ON WHAT THE ITEM IS: a message's parent is its
   # conversation and a folder's is the folder above it. The label says both rather
   # than decoding the type column to choose one, because the type numbers are not
@@ -752,7 +844,10 @@ zro_msg_record_body() {
 # read says so rather than becoming a zero.
 zro_msg_size_field() {
   local raw
-  raw=$(zro_msg_column size "${1-}") || { printf '%s' "$ZRO_TXT_UNKNOWN"; return 0; }
+  raw=$(zro_msg_raw_or_word size "${1-}") || { printf '%s' "$raw"; return 0; }
+  # A size that is not a count is refused rather than read, for the reason the
+  # mailbox size lives by one module over: the digits out of a locale-formatted
+  # string would be a number wrong by a factor nobody can see.
   case $raw in
     ''|*[!0-9]*) printf '%s' "$ZRO_TXT_UNKNOWN"; return 0 ;;
   esac
@@ -769,11 +864,10 @@ zro_msg_size_field() {
 # could not read a value it read perfectly well.
 zro_msg_unread_field() {
   local raw
-  raw=$(zro_msg_column unread "${1-}") || { printf '%s' "$ZRO_TXT_UNKNOWN"; return 0; }
+  raw=$(zro_msg_raw_or_word unread "${1-}") || { printf '%s' "$raw"; return 0; }
   case $raw in
     0) printf 'hayir (okunmus)' ;;
     1) printf 'evet' ;;
-    "$ZRO_MSG_NULL") printf '%s' "$ZRO_TXT_UNSET" ;;
     ''|*[!0-9]*) printf '%s' "$ZRO_TXT_UNKNOWN" ;;
     *) printf '%s (ileti degil: bu kayitta okunmamis oge sayisi)' "$raw" ;;
   esac
@@ -781,10 +875,17 @@ zro_msg_unread_field() {
 
 # WHAT THE BLOB SAID ABOUT ITSELF: the addresses, the parts, and the raw headers.
 #
-#   $1  the head as it was read      $2  whether the head reached the end of the
-#                                        header block
+#   $1  the head as it was read
+#   $2  0 when the head reached the end of the header block, anything else when the
+#       bound cut it short
+#
+# THE ONE POSITIVE CLAIM ON THIS SCREEN IS MADE ONLY WHEN IT CAN BE. 'This message
+# has no parts, so it has no attachments' is an answer; said about a head the bound
+# cut off inside the headers it is a guess, and the screen would then contradict
+# itself ten lines later where the bound is disclosed. Nothing was read past the
+# bound, so nothing is claimed about it.
 zro_msg_blob_body() {
-  local head=${1-} block rows count=0 attachments=0 line body=''
+  local head=${1-} complete=${2-0} block rows count=0 attachments=0 line body=''
 
   block=$(zro_msg_header_block <<EOF
 $head
@@ -819,7 +920,9 @@ EOF
   zro_card_line 'Ek sayisi' "$attachments"
 
   printf '\n'
-  if [ "$count" -eq 0 ]; then
+  if [ "$count" -eq 0 ] && [ "$complete" -ne 0 ]; then
+    printf '%s\n' "$ZRO_TXT_MSG_PARTS_UNKNOWN"
+  elif [ "$count" -eq 0 ]; then
     printf '%s\n' "$ZRO_TXT_MSG_NO_PARTS"
   else
     printf '%-28s  %-11s %s\n' 'Tur' 'Yerlesim' 'Dosya adi'
@@ -856,8 +959,7 @@ zro_msg_card() {
   if ! path=$(zro_msg_blob_path "$dump"); then
     zro_card_line 'Blob yolu' "$ZRO_TXT_NONE"
     printf '\n%s\n' "$ZRO_TXT_MSG_NO_BLOB"
-    printf '\n%s\n' "$ZRO_TXT_MSG_NO_BODY"
-    printf '\n%s\n' "$ZRO_TXT_MSG_READONLY"
+    zro_msg_footer
     return 0
   fi
   zro_card_line 'Blob yolu' "$path"
@@ -872,8 +974,7 @@ zro_msg_card() {
     printf '\n'
     printf 'Kayit yukarida oldugu gibi gecerlidir; eksik olan yalnizca baslik\n'
     printf 'bolumudur. Kontrol edin: ZRO_STORE_ROOT ayari ve sunucudaki volume yolu.\n'
-    printf '\n%s\n' "$ZRO_TXT_MSG_NO_BODY"
-    printf '\n%s\n' "$ZRO_TXT_MSG_READONLY"
+    zro_msg_footer
     return 0
   fi
 
@@ -882,8 +983,7 @@ zro_msg_card() {
   if [ "$rc" -ne 0 ]; then
     printf '\n'
     printf '%s\n' "$(zro_msg_unreadable_text "$rc")"
-    printf '\n%s\n' "$ZRO_TXT_MSG_NO_BODY"
-    printf '\n%s\n' "$ZRO_TXT_MSG_READONLY"
+    zro_msg_footer
     return 0
   fi
 
@@ -892,24 +992,33 @@ $head
 EOF
   complete=$?
 
-  zro_msg_blob_body "$head"
+  zro_msg_blob_body "$head" "$complete"
 
   printf '\n'
   printf 'Blob dosyasinin ilk %s bayti okundu (dosyanin TAMAMI DEGILDIR).\n' "$ZRO_MSG_HEAD_BYTES"
   if [ "$complete" -ne 0 ]; then
-    printf 'BASLIK BOLUMU BU SINIRIN ICINDE BITMEDI: yukaridaki basliklar eksik\n'
-    printf 'olabilir ve parca listesi de eksiktir.\n'
+    printf 'BASLIK BOLUMU BU SINIRIN ICINDE BITMEDI: yukarida gorunen basliklar\n'
+    printf 'iletinin basliklarinin TAMAMI DEGILDIR.\n'
   else
-    printf 'Parca listesi yalnizca bu siniri kapsar: daha derindeki bir ek\n'
-    printf 'listelenmemis olabilir.\n'
+    printf 'Baslik bolumu bu sinirin icinde bitti. Parca listesi yine yalnizca bu\n'
+    printf 'siniri kapsar: daha derindeki bir ek listelenmemis olabilir.\n'
   fi
   # SAID WHETHER OR NOT THIS FILE WAS COMPRESSED, and that is a decision rather than
-  # sloppiness: asking the file a second time would be a third invocation spent on a
+  # sloppiness: asking the file a second time would be an invocation spent on a
   # sentence, and what an operator needs to know is how this screen reads a blob at
   # all. Double-quoted on purpose, so the static scanner reads it as the data it is.
   printf "\nSikistirilmis bir blob gzip -dc ile STDOUTa acilir: dosya yerinde\n"
   printf "degistirilmez, silinmez ve yeni bir dosya yazilmaz. Sikistirilmamis bir\n"
   printf "blob dogrudan ve yalnizca bastan okunur.\n"
+  zro_msg_footer
+}
+
+# THE TWO THINGS EVERY ENDING OF THIS SCREEN HAS TO SAY, written once. Four endings
+# reach it — the record with no blob path, the path this tool would not open, the blob
+# it could not read, and the whole answer — and each of them appended these two
+# paragraphs by copying the last one, which is four chances for the promise about the
+# body to go missing from the screen that most needs it.
+zro_msg_footer() {
   printf '\n%s\n' "$ZRO_TXT_MSG_NO_BODY"
   printf '\n%s\n' "$ZRO_TXT_MSG_READONLY"
 }
@@ -941,10 +1050,18 @@ zro_msg_unreadable_text() {
       printf 'BLOB DOSYASI BOS. Kayit bir blob yolu bildiriyor, ama dosyada hic bayt\n'
       printf 'yok: bu, iletinin basliksiz oldugunu degil, dosyanin bos oldugunu\n'
       printf 'gosterir.\n' ;;
+    "$ZRO_E_NO_BLOB")
+      printf 'BLOB DOSYASI OKUNAMADI. Kayit bir yol bildiriyor, ama o dosya bu\n'
+      printf 'sunucuda acilamadi: dosya artik orada olmayabilir, ya da zimbra\n'
+      printf 'kullanicisi tarafindan okunamiyor olabilir.\n'
+      printf '\n'
+      printf 'Sahiplik veya izinler bozulmussa onarim: zmfixperms\n' ;;
+    # Reached only by a code this list has fallen behind, which is a defect in this
+    # file rather than a fact about the file on disk. Said as the general sentence
+    # rather than silently, and the record above is still the screen's answer.
     *)
-      printf 'BLOB DOSYASI OKUNAMADI. Dosya bu sunucuda olmayabilir ya da zimbra\n'
-      printf 'kullanicisi tarafindan okunamiyor olabilir. Kayit yukarida oldugu gibi\n'
-      printf 'gecerlidir.\n' ;;
+      printf 'BLOB DOSYASI OKUNAMADI (kod %s). Kayit yukarida oldugu gibi\n' "$rc"
+      printf 'gecerlidir; eksik olan yalnizca baslik bolumudur.\n' ;;
   esac
   [ -n "$detail" ] || return 0
   printf '\nSistemin bildirdigi:\n%s\n' "$detail"

@@ -46,10 +46,20 @@ that decides whether the mailbox is on this host, and a wrong-host id then falls
 table that does not exist — answering `No such item`, which this tool would report as a message that is not
 there.
 
-**The wall-clock timeout is not optional here.** With the database unreachable, `DbPool.startup` loops in
-`waitForDatabase` with **no bound at all**. Every command in this tool already runs under `ZRO_TIMEOUT`; on
-this screen that clock is the difference between a tool that says so and a tool that hangs, and the expiry
-gets a screen naming the database rather than the shared failure box.
+**The wall-clock timeout is not optional here, and the expiry is reported as itself before any text is
+read.** With the database unreachable, `DbPool.startup` loops in `waitForDatabase` with **no bound at all** —
+measured with `mysqld` stopped: four retries in 22 seconds, one every five, until the clock killed it. Every
+command in this tool already runs under `ZRO_TIMEOUT`; on this screen that clock is the difference between a
+tool that says so and a tool that hangs.
+
+**That measurement also decided where the failure text comes from and which reader may touch it.** The retries
+arrive on **stdout** and stderr stays **empty** — the reverse of every other failure this binary has — so a
+failure that said nothing on stderr borrows the head of stdout, or the one screen with something useful to say
+would show nothing. And the shared Zimbra-error reader is **not consulted for this command**: every pattern it
+matches belongs to the SOAP path, while this text is a `DbPool` exception carrying a JDBC URL, so reading it
+through that mapper would answer a stopped database with the screen that names `mailboxd` and `zmcertmgr`.
+Anything this module does not recognise is reported as the service it really needs — the database — and the
+screen says in as many words that mailboxd is not part of this read.
 
 **Everything the database does not hold comes from a bounded read of the head of the blob**, and the bound is
 in BYTES. A log file is lines and a message is a MIME stream whose base64 part is routinely one line of
@@ -96,6 +106,12 @@ nobody — stated rather than left, and held by a static test to exactly one cal
 and `-s` written nowhere in the tree. `head:-c` is the fourth non-Zimbra binary here and is listed for the
 reason `tail`, `gzip` and `grep` are: it reads the content an operator asked for. `head:-n` is deliberately
 absent.
+
+**One new exit code, and no undocumented status leaves the module.** `24` is a stored message file that could
+not be read. `head` answers 1 for a file that is not there and `gzip` answers 1 for a stream it cannot
+decompress; neither is a code `lib/core.sh` defines, and a caller switching on one would be reading a number
+nobody documented — so the gate's own codes pass through and everything else becomes 24, the shape
+`lib/logview.sh` already gives its own failures.
 
 **A compressed blob is read at reduced priority, and a host without `nice` and `ionice` cannot read one.**
 `gzip` is declared low-priority in `lib/exec.sh`, so the promise that whole-file reads yield to the mail

@@ -133,7 +133,15 @@ assert_out_eq "1.0 KB (1117 bayt)" zro_msg_size_field "$dump"
 # size lives by one module over: the digits out of '1,4 KB' would report a message
 # fourteen times too large on every server whose decimal separator is a comma.
 assert_out_eq "$ZRO_TXT_UNKNOWN" zro_msg_size_field "$(printf '%s\n  size: 1,4 KB\n' "$ZRO_MSG_HDR_COLUMNS")"
-assert_out_eq "$ZRO_TXT_UNKNOWN" zro_msg_size_field "$(printf '%s\n  size: <null>\n' "$ZRO_MSG_HDR_COLUMNS")"
+
+it "and a size the record does not carry is UNSET, not unreadable"
+# THE TWO WORDS ARE NOT INTERCHANGEABLE and every typed field has to get it right, not
+# only the plain ones: <null> is the record saying it holds no size, which is a fact
+# about the message, while 'bilinmiyor' is this program saying it could not read one.
+assert_out_eq "$ZRO_TXT_UNSET" zro_msg_size_field "$(printf '%s\n  size: <null>\n' "$ZRO_MSG_HDR_COLUMNS")"
+assert_out_eq "$ZRO_TXT_UNKNOWN" zro_msg_size_field "$ZRO_MSG_HDR_COLUMNS"
+assert_out_eq "$ZRO_TXT_UNSET" zro_msg_when "date" "$(printf '%s\n  date: <null>\n' "$ZRO_MSG_HDR_COLUMNS")"
+assert_out_eq "$ZRO_TXT_UNSET" zro_msg_unread_field "$(printf '%s\n  unread: <null>\n' "$ZRO_MSG_HDR_COLUMNS")"
 
 it "names the one state the record can be read for, and decodes no bitmask"
 # `unread` is a column of its own. `flags` and `type` are numbers whose meanings
@@ -178,6 +186,13 @@ assert_fail zro_msg_blob_ok "$ZRO_STORE_ROOT/0/9/msg/0/it's.msg"
 assert_fail zro_msg_blob_ok "$ZRO_STORE_ROOT/0/9/msg/0/two words.msg"
 assert_fail zro_msg_blob_ok "$ZRO_STORE_ROOT/0/9/msg/0/\$(id).msg"
 assert_fail zro_msg_blob_ok "$ZRO_STORE_ROOT/0/9/../../etc/shadow"
+
+it "and a trailing slash on the declared root is the same root"
+# What a human writes half the time. Compared literally it would refuse every blob on
+# the host — a refusal in the safe direction and an incomprehensible one.
+ZRO_STORE_ROOT="$STORE/" assert_ok zro_msg_blob_ok "$BLOB"
+ZRO_STORE_ROOT="$STORE//" assert_ok zro_msg_blob_ok "$BLOB"
+ZRO_STORE_ROOT="$STORE/" assert_fail zro_msg_blob_ok "/etc/shadow"
 
 it "and refuses every path when no store root is declared"
 # Refused rather than searched for: there is no second place to look, and following
@@ -329,6 +344,38 @@ it "reports the clock running out as a timeout, not as a message that is not the
 fresh; answers
 ZRO_MOCK_TIMEOUT_FIRE=1 assert_status "$ZRO_E_TIMEOUT" zro_msg_dump_fetch "$ACCT" "$ITEM"
 
+it "and an expired clock stays a timeout whatever the streams carry"
+# THE ONE FAILURE THIS SCREEN MAY NEVER RE-DESCRIBE FROM TEXT. The clock is this
+# program's own fact, and the shared Zimbra-error reader would have turned a stopped
+# database into the screen that names mailboxd and an admin certificate — a service
+# this read does not talk to. The stderr here is another binary's captured refusal,
+# used deliberately: it is exactly the text that would have been mapped.
+fresh
+ZRO_MOCK_ZMMETADUMP_274_OUT="" ZRO_MOCK_ZMMETADUMP_274_ERR="$FIX/zmprov_io_error_refused.err" \
+  ZRO_MOCK_ZMMETADUMP_274_RC=124 \
+  assert_status "$ZRO_E_TIMEOUT" zro_msg_dump_fetch "$ACCT" "$ITEM"
+
+it "and the explanation comes off STDOUT, which is where this binary writes it"
+# MEASURED on the lab server with mysqld stopped: the dump writes
+# `Could not establish a connection to the database.  Retrying in 5 seconds.` and a
+# DbPool stack trace to STDOUT — one retry every five seconds — and leaves STDERR
+# empty. Without borrowing that, the timeout screen would have nothing to show.
+fresh
+ZRO_MOCK_ZMMETADUMP_274_OUT="$FIX/zmmetadump_db_down.txt" \
+  ZRO_MOCK_ZMMETADUMP_274_ERR="" ZRO_MOCK_ZMMETADUMP_274_RC=124 \
+  assert_status "$ZRO_E_TIMEOUT" zro_msg_dump_fetch "$ACCT" "$ITEM"
+assert_contains "$(zro_last_error)" "Could not establish a connection to the database"
+
+it "and a failure this program does not recognise names the service the dump needs"
+# Not the raw exit status, which is a code lib/core.sh does not define, and not the
+# shared reader's SOAP verdict either: the dump ran and failed, so what is reported is
+# that the service it really needs — the mailbox database — could not be read.
+fresh
+ZRO_MOCK_ZMMETADUMP_274_OUT="$FIX/zmmetadump_db_down.txt" \
+  ZRO_MOCK_ZMMETADUMP_274_ERR="" ZRO_MOCK_ZMMETADUMP_274_RC=1 \
+  assert_status "$ZRO_E_UNAVAILABLE" zro_msg_dump_fetch "$ACCT" "$ITEM"
+assert_contains "$(zro_last_error)" "getting database connection"
+
 it "refuses output that is not a dump at all rather than drawing an empty record"
 fresh
 ZRO_MOCK_ZMMETADUMP_274_OUT="$FIX/zmcontrol_v.txt" \
@@ -392,7 +439,22 @@ it "and a file that is not a gzip stream is a failure rather than an empty head"
 fresh
 BAD="$BLOB_DIR/277-781.msg"
 printf '\037\213not really gzip at all\n' >"$BAD"
-assert_fail zro_msg_head_fetch "$BAD"
+assert_status "$ZRO_E_NO_BLOB" zro_msg_head_fetch "$BAD"
+
+it "and no status this program does not define ever leaves the read"
+# `head` answers 1 for a file that is not there and `gzip` answers 1 for a stream it
+# cannot decompress; neither is a code lib/core.sh declares, and a caller switching on
+# one would be reading a number nobody documented. Both become the one code for a
+# stored file that could not be read.
+fresh
+assert_status "$ZRO_E_NO_BLOB" zro_msg_head_fetch "$BLOB_DIR/999-999.msg"
+
+it "but a refusal by the gate travels out as itself"
+# A binary this host does not have, an unsupported user, an expired clock: none of
+# those is a blob that cannot be read, and an operator sent to check the store over a
+# missing `head` would repair nothing.
+fresh
+ZRO_MOCK_TIMEOUT_FIRE=1 assert_status "$ZRO_E_TIMEOUT" zro_msg_head_fetch "$BLOB"
 
 it "refuses a path outside the declared store root without opening anything"
 fresh
@@ -448,6 +510,27 @@ it "and says the bound cut the header block when it did"
 fresh; answers
 cut=$(ZRO_MSG_HEAD_BYTES=200 zro_msg_card "$ACCT" "$ITEM")
 assert_contains "$cut" "BASLIK BOLUMU BU SINIRIN ICINDE BITMEDI"
+
+it "and then claims NOTHING about the parts, rather than contradicting itself"
+# A HEAD THAT STOPPED INSIDE THE HEADERS NEVER REACHED THE MIME STRUCTURE. Saying
+# 'this message is single-part, so it has no attachment' about those bytes is a guess,
+# and the screen would deny an attachment ten lines above admitting it read too little
+# to know. So the positive claim is suppressed and the absence of an answer is said.
+assert_contains "$cut" "PARCA LISTESI CIKARILAMADI"
+assert_contains "$cut" "eki YOKTUR demek DEGILDIR"
+assert_not_contains "$cut" "$ZRO_TXT_MSG_NO_PARTS"
+
+it "and a head that really ended the headers still makes that claim, because it is one"
+# The single-part message, read whole: here 'no parts, so no attachments' is an answer
+# about the message rather than a guess about bytes nobody read.
+fresh
+sed "s|^/opt/zimbra/store/.*|$SIMPLE|" "$DUMP_SRC" >"$STORE/dump-262.txt"
+export ZRO_MOCK_ZMMETADUMP_262_OUT="$STORE/dump-262.txt"
+whole=$(zro_msg_card "$ACCT" 262)
+assert_contains "$whole" "$ZRO_TXT_MSG_NO_PARTS"
+assert_not_contains "$whole" "PARCA LISTESI CIKARILAMADI"
+# And the signature separator in that blob is still not a part.
+assert_contains "$whole" "MIME parcasi         : 0"
 
 it "and says it marks nothing read, naming the command it does not use"
 assert_contains "$card" "okundu isaretlemez"

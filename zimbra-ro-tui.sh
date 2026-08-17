@@ -1215,6 +1215,10 @@ $(zro_mailbox_cost_note "$id")"
       "$ZRO_E_NO_RESULT")  zro_screen_message_no_item "$acct" "$item" ;;
       "$ZRO_E_NO_MAILBOX") zro_screen_message_not_here "$acct" ;;
       "$ZRO_E_TIMEOUT")    zro_screen_message_timeout ;;
+      # THE SHARED REPORTER WOULD NAME THE WRONG SERVICE HERE. Its message for this
+      # code is about mailboxd and an admin certificate, and this screen's read talks
+      # to neither: it connects to the mailbox database directly.
+      "$ZRO_E_UNAVAILABLE") zro_screen_message_database ;;
       *) zro_report_error "$rc" ;;
     esac
   done
@@ -1265,22 +1269,48 @@ ayri ayri yanitlar.$detail"
 }
 
 # THE HANG THIS SCREEN WOULD OTHERWISE HAVE. The dump has no timeout of its own: with
-# the database unreachable it retries forever, in a loop with no bound. What ends it
-# is the wall-clock timeout every command in this tool runs under, and the difference
-# between a tool that hangs and a tool that says this is that clock.
+# the database unreachable it retries forever, in a loop with no bound — measured, one
+# retry every five seconds until it is killed. What ends it is the wall-clock timeout
+# every command in this tool runs under, and the difference between a tool that hangs
+# and a tool that says this is that clock.
+#
+# THE DETAIL IS THE SERVER'S OWN SENTENCE, and getting it here took a measurement: this
+# binary writes its retries to STDOUT and leaves stderr empty, so the module borrows
+# the head of stdout when a failure said nothing on the usual stream.
 zro_screen_message_timeout() {
   local detail
-  detail=$(zro_error_detail 'Zimbra ciktisi')
+  detail=$(zro_error_detail 'Komutun kendi cikti satirlari')
 
   zro_ui_msgbox "Zaman asimi" \
 "Ileti kaydi ayrilan surede okunamadi ve islem kesildi.
 
 Bu ekranin okudugu dokum, mailbox veritabanina DOGRUDAN baglanir ve veritabani
-yanit vermezse kendiliginden vazgecmez: sonsuza kadar yeniden dener. Bu yuzden
-sureyi bu arac koyar ve suresi dolunca komutu keser.
+yanit vermezse kendiliginden vazgecmez: bes saniyede bir, sonsuza kadar yeniden
+dener. Bu yuzden sureyi bu arac koyar ve suresi dolunca komutu keser.
 
 Kontrol edin: mysql (mailbox veritabani) servisi calisiyor mu — zmcontrol status.
 Gerekirse ZRO_TIMEOUT degerini yukseltip yeniden deneyin.$detail"
+}
+
+# A FAILURE OF THE DUMP THIS PROGRAM DOES NOT RECOGNISE, and the service it really
+# needs. The shared reporter's message for this code names mailboxd and the admin
+# certificate, which are the SOAP path's two usual causes — and this read takes no
+# SOAP path at all: it opens a JDBC connection to the mailbox database. An operator
+# sent to check mailboxd would be looking at a service that is very likely running.
+zro_screen_message_database() {
+  local detail
+  detail=$(zro_error_detail 'Komutun kendi cikti satirlari')
+
+  zro_ui_msgbox "Mailbox veritabani okunamadi" \
+"Ileti kaydi okunamadi: dokum calisti ve bu aracin tanimadigi bir hata verdi.
+
+Bu ekran mailbox VERITABANINA dogrudan baglanir (jdbc, yerel mysql). mailboxd
+servisi ve admin sertifikasi bu okumaya dahil DEGILDIR, dolayisiyla sorun orada
+degil olabilir.
+
+Kontrol edin:
+  - mysql (mailbox veritabani) servisi calisiyor mu — zmcontrol status
+  - diskte yer var mi, ve mysql gunlugunde hata var mi$detail"
 }
 
 # A FOLDER CRITERION NAMING A FOLDER THAT IS NOT THERE. Its own screen rather than

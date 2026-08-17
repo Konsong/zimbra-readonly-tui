@@ -382,9 +382,22 @@ report is the claim.
   directory.
 
   **A timeout here is about the database, not about a slow mailbox.** The dump
-  connects to MySQL directly and, if the database does not answer, retries forever
-  with no bound of its own — so the tool's own clock is what ends it, and the screen
-  names that rather than reporting a server that said nothing.
+  connects to MySQL directly and, if the database does not answer, retries **every
+  five seconds, forever**, with no bound of its own — measured with `mysqld` stopped
+  on the lab server — so the tool's own clock is what ends it. The screen says so and
+  shows the command's own line, `Could not establish a connection to the database`,
+  which that measurement also settled the location of: this binary writes those
+  retries to **stdout** and leaves stderr empty, the opposite way round from every
+  other failure it has.
+
+  A failure the tool cannot classify gets the same treatment for the same reason: the
+  screen names the **database** and says mailboxd and the admin certificate are not
+  part of this read. The shared "Zimbra service unreachable" box would have sent you
+  to check a service this screen never talks to.
+
+  **A blob the tool cannot open leaves the record on screen.** Exit code 24 is that
+  case, and the screen says which half is missing rather than presenting a message
+  with no headers as a message that has none.
 
   The **flags** column is shown as the number the server holds. It is a bitmask
   whose bits this tool has not measured, so it is not decoded; `unread` is a column
@@ -1188,9 +1201,10 @@ comes from `zmmailbox gms -v`, behind the existence gate.
 | 13 | folder not found |
 | 14 | no results |
 | 20 | permission denied |
-| 21 | Zimbra service unreachable |
+| 21 | a service the operation needs is unreachable — `mailboxd` for a directory read, the mailbox **database** for the metadata dump behind message detail |
 | 22 | command timed out |
 | 23 | log unreadable |
+| 24 | a stored message file (blob) could not be read |
 | 30 | partial result — some of the sources could not be read |
 | 40 | operator cancelled — navigation, never a process exit status |
 | 90 | **allowlist denial** |
@@ -1328,6 +1342,7 @@ either.
 | 2026-08-02 | lab (Zimbra 9.0.0 FOSS) | The same three of those screens against an account that is provisioned and has never been used | All three refused with code 12 before opening anything, and afterwards that account **still had no mailbox**: `zmprov gis` answered `mailbox not found` and the `mailbox` table held no row for its id. **The gate held.** An address in no directory returned code 11. |
 | 2026-08-02 | lab (Zimbra 9.0.0 FOSS) | Nested folders, created on the fixture account to settle how the listing prints them | The path column starts at the same offset for a nested folder as for a top-level one — **no indentation, hierarchy only in the path** — and `zmmailbox gf` took the full path back unchanged, spaces and all. Had it been indented, every mailbox with subfolders would have answered `unknown folder`. |
 | 2026-08-17 | lab (Zimbra 9.0.0 FOSS) | The message detail screen against the real binaries: a message with an attachment, one without, the Inbox folder's own record, an id the mailbox does not hold, an account with no mailbox row, a compressed blob, and a path outside the store root | Every case answered as designed — the attachment listed as `application/pdf … fatura.pdf`, the single-part message reported as having no parts, the folder's record drawn with no blob path, code 14 for the absent id, code 12 with Zimbra's own `not found on this host` text, and code 90 for `/etc/shadow`. **The unread set was identical before and after** — the two messages the screen displayed in full are still in it — and the account's `mailbox` row was byte-identical, `last_soap_access` included. The blob's modification time and checksum did not move, and the compressed copy read through `gzip -dc` was unchanged and still there. |
+| 2026-08-17 | lab (Zimbra 9.0.0 FOSS), **`mysqld` stopped** | The same screen with the mailbox database deliberately stopped, under a 20-second `ZRO_TIMEOUT` | Ended on **code 22** rather than hanging, and the detail the operator is shown is the command's own line: `Could not establish a connection to the database.  Retrying in 5 seconds.` Left alone it retries every five seconds forever — four retries in 22 seconds, measured — so the tool's clock is the only thing that ends it. `mysqld` was started again and the screen answered normally afterwards. |
 
 ## 6. Production acceptance
 

@@ -166,7 +166,47 @@ failure**, and the case that is one stays distinguishable at 1 — which is also
 without it, a file that could not be decompressed arrives as an empty head, and an empty head is the one
 answer that reader may not invent.
 
-## 7. The screen itself, run against the real binaries — MEASURED
+## 7. The database stopped: it retries every five seconds, forever, on STDOUT — MEASURED
+
+`mysql.server stop`, then the dump under a 22-second clock:
+
+```
+[exit 124]
+stdout bytes: 7828   stderr bytes: 0
+retry lines: 4
+```
+
+```
+2026-08-17 17:14:43,498 [main] WARN : Could not establish a connection to the database.  Retrying in 5 seconds.
+com.zimbra.common.service.ServiceException: system failure: getting database connection
+	at com.zimbra.cs.db.DbPool.waitForDatabase(DbPool.java:243) [zimbrastore.jar:9.0.0_GA_4200046]
+	at com.zimbra.cs.db.DbPool.startup(DbPool.java:234) [zimbrastore.jar:9.0.0_GA_4200046]
+	at com.zimbra.cs.mailbox.util.MetadataDump.main(MetadataDump.java:366) [zimbrastore.jar:9.0.0_GA_4200046]
+Caused by: java.sql.SQLException: invalid database address: jdbc:mysql://127.0.0.1:7306/zimbra
+```
+
+Three things this settles, and all three changed the code:
+
+- **The hang is real and the clock is what ends it.** `DbPool.waitForDatabase` retried
+  four times in 22 seconds and would have gone on; the `timeout` wrapper reported 124,
+  which the gate turns into this tool's own timeout code.
+- **The explanation is on STDOUT and stderr is EMPTY** — the reverse of every other
+  failure this binary has (§1). A reader that only kept stderr would leave the one
+  screen with something useful to say showing nothing at all, so a failure with an
+  empty stderr borrows the head of stdout.
+- **Nothing in that text is what the shared Zimbra-error reader looks for.** Its
+  patterns are the SOAP path's — `zclient.IO_ERROR`, `SERVICE_UNAVAILABLE`, an expired
+  certificate — and this is a `DbPool` exception carrying a JDBC URL. So that reader is
+  not consulted for this command at all: an unrecognised dump failure is reported as
+  the *database* being unreachable, and the timeout is reported as itself before any
+  text is read. Reading it through the shared mapper would have answered a stopped
+  database with the screen that names `mailboxd` and `zmcertmgr`.
+
+`mysql.server start` afterwards, and the box was verified back: `mysqladmin status`
+answered, the dump of 274 printed its columns, and `zmprov gis` answered for the
+account.
+
+## 8. The screen itself, run against the real binaries — MEASURED
 
 The finished module was shipped to that server and driven directly
 (`ZRO_SOURCED_ONLY=1 ZRO_UI_BACKEND=stub`, as the `zimbra` account), reading one
@@ -195,7 +235,7 @@ The store was untouched: the blob's modification time stayed at its delivery ins
 `gzip -dc` was byte-identical afterwards and still there, and `/etc/shadow`, offered
 as a blob path, was refused with code 90 and a logged line naming it.
 
-## 8. What this leaves open
+## 9. What this leaves open
 
 | Question | What would settle it |
 |---|---|

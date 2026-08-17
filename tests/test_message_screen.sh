@@ -201,7 +201,32 @@ queue "mailbox-message" "274" "__CANCEL__" "__CANCEL__"
 ZRO_MOCK_TIMEOUT_FIRE=1 run
 out=$(transcript)
 assert_contains "$out" "Zaman asimi"
-assert_contains "$out" "sonsuza kadar yeniden dener"
+# The measured cadence, which is what makes the sentence more than a guess: one retry
+# every five seconds, for as long as it is left alone.
+assert_contains "$out" "bes saniyede bir"
+assert_contains "$out" "mysql (mailbox veritabani) servisi"
+
+it "and a database outage reaches that screen with the server's own words in it"
+# THE SHAPE MEASURED ON THE LAB SERVER with mysqld stopped: the retries go to STDOUT,
+# stderr stays empty, and the clock ends it. What the operator must NOT be given is
+# the shared box about mailboxd and an admin certificate — this read talks to neither.
+zro_sel_set "$ADDR"
+queue "mailbox-message" "274" "__CANCEL__" "__CANCEL__"
+ZRO_MOCK_ZMMETADUMP_274_OUT="$FIX/zmmetadump_db_down.txt" ZRO_MOCK_ZMMETADUMP_274_RC=124 run
+out=$(transcript)
+assert_contains "$out" "Zaman asimi"
+assert_contains "$out" "Could not establish a connection to the database"
+assert_not_contains "$out" "zmcertmgr"
+
+it "and a failure it does not recognise names the database rather than mailboxd"
+zro_sel_set "$ADDR"
+queue "mailbox-message" "274" "__CANCEL__" "__CANCEL__"
+ZRO_MOCK_ZMMETADUMP_274_OUT="$FIX/zmmetadump_db_down.txt" ZRO_MOCK_ZMMETADUMP_274_RC=1 run
+out=$(transcript)
+assert_contains "$out" "Mailbox veritabani okunamadi"
+assert_contains "$out" "getting database connection"
+assert_not_contains "$out" "zmcertmgr"
+assert_not_contains "$out" "admin sertifikasi gecersiz"
 
 it "draws the record of an item with no blob, and says the path is absent"
 zro_sel_set "$ADDR"
