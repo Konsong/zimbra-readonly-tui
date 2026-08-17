@@ -190,6 +190,59 @@ ZRO_LIB_EXEC_LOADED=1
 # too: the listing approved above answers the question this tool asks, and an
 # operation arrives with the ticket that exposes it.
 #
+# `zmmetadump -m` IS MESSAGE DETAIL, AND IT IS HERE BECAUSE `gm` NEVER CAN BE. The
+# read that answers "what is this message" in one command clears the unread flag on
+# it, unconditionally: `doGetMessage` hard-codes `setMarkRead(true)` and no flag
+# disables it. So the question is asked of the DATABASE instead, by the one Zimbra
+# program that reads it directly.
+#
+# IT IS A READ IN EFFECT, READ FROM SOURCE RATHER THAN GUESSED AT: every statement
+# in `MetadataDump` is a `SELECT` — there is no `executeUpdate`, `INSERT`, `UPDATE`
+# or `DELETE` in the class — the connection is opened with `autoCommit(false)` and
+# is never committed, so the pool rolls it back. It opens no mailbox session, talks
+# neither SOAP nor LMTP, and needs mailboxd neither running nor stopped. `-f` is an
+# INPUT option (decode metadata from a file), not an output one, and the blob path
+# it prints is a computed string: the class never opens the blob. See
+# docs/research/2026-07-29-zimbra-cli-read-only-reference.md §A.5 and
+# docs/research/2026-08-17-message-detail.md §1.
+#
+# THE FLAG IS THE WHOLE OPERATION, as the tracer's filters are, and the item id
+# rides behind it as DATA — which is stated rather than left, because this entry
+# approves that operation entire and nothing reads the flags behind it. `-i` is what
+# the item id arrives under and the binary refuses to run without it. `--dumpster`
+# would read the deleted-item store, which is a different question about a different
+# table, and `-f`/`-s` decode metadata this program never holds: none of the three is
+# written anywhere in the tree, and tests/test_readonly_scan.sh fails the build for a
+# second call site or for any of those words appearing at one.
+#
+# ITS ONLY HAZARD IS THAT IT WAITS FOREVER. With MySQL unreachable, `DbPool.startup`
+# loops in `waitForDatabase` with no bound at all — so the wall-clock timeout every
+# command in this file runs under is not a convenience here, it is the whole reason
+# the screen can be offered. The expiry reaches the operator as itself, naming the
+# database, rather than as a server that answered nothing.
+#
+# `head -c` IS THE BOUNDED READ OF A MESSAGE BLOB, and the fourth entry here that is
+# not Zimbra's. It is listed for the reason `tail`, `gzip` and `grep` are: it reads
+# the content an operator asked for. Two invocations of it make one blob head — the
+# first asks the file what it IS, reading the two bytes a gzip stream begins with,
+# and the second reads the head itself — because the store's volume decides whether
+# blobs are compressed and a plain `gzip -dc` of an uncompressed blob answers
+# `not in gzip format`.
+#
+# BOUNDED BY BYTES RATHER THAN BY LINES, which is the difference between this entry
+# and `tail:-n`. A log file is lines; a message blob is a MIME stream whose base64
+# part can be one enormous line, so a line bound is no bound at all there. What
+# follows `-c` is a count this program declares and judges before it is used, then
+# the path — which comes out of the dump's own output and is admitted against a
+# strict character set and the declared store root before anything opens it.
+#
+# `head:-n` IS DELIBERATELY ABSENT although the binary carries it: nothing here
+# reads a blob by lines, and an approved form nobody calls is an operation no reader
+# of this list could reach. The bare `head` this program runs over its OWN
+# temporary files — the stderr it just captured — is not on this list and does not
+# belong on it, for the reason the note about `grep` gives: what decides is whose
+# content it is.
+#
 # `zmcontrol status` IS THE ONE COMMAND IN THIS LIST THAT WRITES, and it is here
 # as a DECLARED ARTIFACT rather than as an exception anybody may repeat. It starts
 # and stops nothing — the guarantee is about Zimbra-managed domain state, and
@@ -415,6 +468,7 @@ zmmailbox:s:-t
 zmmailbox:s:-l
 zmmailbox:sc
 zmmailbox:sc:-l
+zmmetadump:-m
 zmcontrol:-v
 zmcontrol:status
 zmmsgtrace:--recipient
@@ -422,6 +476,7 @@ zmmsgtrace:--sender
 zmmsgtrace:--id
 postqueue:-p
 tail:-n
+head:-c
 gzip:-dc
 grep:-a:-F
 grep:-a:-E
@@ -693,10 +748,12 @@ zro_identity_mode() {
 ZRO_BIN_ROOTS='
 zmprov:ZRO_ZIMBRA_BIN
 zmmailbox:ZRO_ZIMBRA_BIN
+zmmetadump:ZRO_ZIMBRA_BIN
 zmcontrol:ZRO_ZIMBRA_BIN
 zmmsgtrace:ZRO_ZIMBRA_LIBEXEC
 postqueue:ZRO_POSTFIX_SBIN
 tail:ZRO_SYSTEM_BIN
+head:ZRO_SYSTEM_BIN
 gzip:ZRO_SYSTEM_BIN
 grep:ZRO_SYSTEM_BIN
 '

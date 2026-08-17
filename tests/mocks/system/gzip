@@ -16,4 +16,19 @@ if [ -n "${ZRO_MOCK_GZIP_ERR:-}" ]; then
   printf '%s\n' "$ZRO_MOCK_GZIP_ERR" >&2
   exit "${ZRO_MOCK_GZIP_RC:-1}"
 fi
+
+# A HOST WHOSE gzip CATCHES THE CLOSED PIPE INSTEAD OF DYING OF IT. When a bounded
+# reader downstream has had its fill, some builds are killed by SIGPIPE — the shell
+# reports 141 — and others print `gzip: stdout: Broken pipe` and exit non-zero on their
+# own. Both were measured, on the lab server and on the CI runner respectively, and the
+# difference reached a screen: normalising 141 alone left every compressed message blob
+# larger than the bound reading as unreadable on the second kind of host.
+#
+# So the second kind is scriptable here. It really runs the binary — what it had is
+# written before the complaint, which is the whole point — and only the exit differs.
+if [ -n "${ZRO_MOCK_GZIP_PIPE_RC:-}" ]; then
+  gzip "$@"
+  printf 'gzip: stdout: Broken pipe\n' >&2
+  exit "$ZRO_MOCK_GZIP_PIPE_RC"
+fi
 exec gzip "$@"

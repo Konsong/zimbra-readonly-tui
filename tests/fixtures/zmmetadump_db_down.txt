@@ -1,0 +1,17 @@
+2026-08-17 17:14:43,498 [main] WARN : Could not establish a connection to the database.  Retrying in 5 seconds.
+com.zimbra.common.service.ServiceException: system failure: getting database connection
+	at com.zimbra.common.service.ServiceException.FAILURE(ServiceException.java:292) ~[zimbracommon.jar:9.0.0_GA_4200046]
+	at com.zimbra.cs.db.DbPool.getConnection(DbPool.java:360) ~[zimbrastore.jar:9.0.0_GA_4200046]
+	at com.zimbra.cs.db.DbPool.getConnection(DbPool.java:322) ~[zimbrastore.jar:9.0.0_GA_4200046]
+	at com.zimbra.cs.db.DbPool.waitForDatabase(DbPool.java:243) [zimbrastore.jar:9.0.0_GA_4200046]
+	at com.zimbra.cs.db.DbPool.startup(DbPool.java:234) [zimbrastore.jar:9.0.0_GA_4200046]
+	at com.zimbra.cs.mailbox.util.MetadataDump.main(MetadataDump.java:366) [zimbrastore.jar:9.0.0_GA_4200046]
+Caused by: java.sql.SQLException: invalid database address: jdbc:mysql://127.0.0.1:7306/zimbra
+	at org.sqlite.JDBC.createConnection(JDBC.java:110) ~[sqlite-jdbc-3.7.15-M1.jar:?]
+	at org.sqlite.JDBC.connect(JDBC.java:87) ~[sqlite-jdbc-3.7.15-M1.jar:?]
+	at java.sql.DriverManager.getConnection(DriverManager.java:681) ~[java.sql:?]
+	at java.sql.DriverManager.getConnection(DriverManager.java:190) ~[java.sql:?]
+	at org.apache.commons.dbcp.DriverManagerConnectionFactory.createConnection(DriverManagerConnectionFactory.java:78) ~[commons-dbcp-1.4.jar:1.4]
+2026-08-17 17:14:48,515 [main] WARN : Could not establish a connection to the database.  Retrying in 5 seconds.
+2026-08-17 17:14:53,517 [main] WARN : Could not establish a connection to the database.  Retrying in 5 seconds.
+2026-08-17 17:14:58,519 [main] WARN : Could not establish a connection to the database.  Retrying in 5 seconds.

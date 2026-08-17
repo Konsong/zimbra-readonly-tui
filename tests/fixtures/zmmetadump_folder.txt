@@ -1,0 +1,36 @@
+[Database Columns]
+  mailbox_id: 9
+  id: 2
+  type: 1
+  parent_id: 1
+  folder_id: 1
+  prev_folders: <null>
+  index_id: <null>
+  imap_id: <null>
+  date: 1785446983 (Fri 2026/07/31 00:29:43 TRT)
+  size: 14
+  locator: <null>
+  blob_digest: <null>
+  unread: 14
+  flags: 4194304
+  tags: 0
+  tag_names: <null>
+  sender: <null>
+  recipients: <null>
+  subject: Inbox
+  name: Inbox
+  mod_metadata: 306
+  change_date: 1785692994 (Sun 2026/08/02 20:49:54 TRT)
+  mod_content: 1
+  uuid: 4d5e61c3-55f1-4dd6-986c-81efc98bd043
+
+[Metadata]
+{
+  a = 1
+  das = false
+  mdver = 9
+  mseq = 779
+  sz = 11508
+  unxt = 276
+  vt = 5
+}

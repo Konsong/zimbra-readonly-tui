@@ -27,6 +27,13 @@ ZRO_E_PERM=20
 ZRO_E_UNAVAILABLE=21
 ZRO_E_TIMEOUT=22
 ZRO_E_NO_LOG=23
+# A stored message file this tool was pointed at and could not read. Beside the log
+# that cannot be read, and for the same reason it is not folded into it: the two name
+# different files with different repairs, and neither is a query that found nothing.
+# It is the code a blob read ends on when the failure is not one of the gate's own —
+# a file the store no longer has, or one the account every command runs as cannot
+# open — so no undocumented status from `head` or `gzip` reaches a caller.
+ZRO_E_NO_BLOB=24
 # Partial. The operation ran and answered, but not from everything it was meant to
 # read: a delivery trace whose arrival window selected a log file it could not open,
 # or a bulk read that could not reach every account. Never returned without saying

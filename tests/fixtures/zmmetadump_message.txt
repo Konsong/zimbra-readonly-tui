@@ -1,0 +1,35 @@
+[Database Columns]
+  mailbox_id: 9
+  id: 274
+  type: 5
+  parent_id: <null>
+  folder_id: 2
+  prev_folders: <null>
+  index_id: 274
+  imap_id: 274
+  date: 1786971466 (Mon 2026/08/17 15:57:46 TRT)
+  size: 1117
+  locator: 1
+  blob_digest: 5iDsvR0c7xLln34hBVGfHiF0eT6s6,qrqk6FJf,Kt+E=
+  unread: 1
+  flags: 2
+  tags: 0
+  tag_names: <null>
+  sender: Ali Veli
+  recipients: ahmet.yilmaz@example.com
+  subject: Ekli ileti: temmuz faturasi
+  name: <null>
+  mod_metadata: 778
+  change_date: 1786971466 (Mon 2026/08/17 15:57:46 TRT)
+  mod_content: 778
+  uuid: <null>
+
+[Blob Path]
+/opt/zimbra/store/0/9/msg/0/274-778.msg
+
+[Metadata]
+{
+  f = Govde metni: bu satir ekranda gorunmemelidir.
+  s = Ali Veli <ali.veli@example.org>
+  t = ahmet.yilmaz@example.com
+}

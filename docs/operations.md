@@ -74,7 +74,9 @@ accommodated. They are not needed on a standard host.
 |---|---|---|
 | `ZRO_ZIMBRA_BIN` | `/opt/zimbra/bin` | where the Zimbra binaries live |
 | `ZRO_ZIMBRA_LIBEXEC` | `/opt/zimbra/libexec` | where `zmmsgtrace` lives |
-| `ZRO_SYSTEM_BIN` | `/usr/bin` | where `tail`, `gzip` and `grep` live. A host that keeps one of them elsewhere — Ubuntu before the merged `/usr` ships `gzip` in `/bin` — sets this; the log screens then report the binary as unavailable rather than searching `$PATH` for it |
+| `ZRO_SYSTEM_BIN` | `/usr/bin` | where `tail`, `head`, `gzip` and `grep` live. A host that keeps one of them elsewhere — Ubuntu before the merged `/usr` ships `gzip` in `/bin` — sets this; the log screens then report the binary as unavailable rather than searching `$PATH` for it |
+| `ZRO_STORE_ROOT` | `/opt/zimbra/store` | where the message blobs live. Message detail opens a file **only** if the path the record reports sits under this root; a host whose primary volume is elsewhere sets this, and an empty value refuses every blob rather than searching for one |
+| `ZRO_MSG_HEAD_BYTES` | `65536` | how many bytes of a message blob the detail screen reads. The bound is in **bytes**, not lines, and it is what decides how deep into the MIME structure the attachment list can see; the screen says so |
 | `ZRO_LOGVIEW_LINES` | `500` | how many lines the log viewer's bounded read is |
 | `ZRO_LOGSEARCH_MATCHES` | `200` | how many matching lines one log search may print. The cap is on **matches**, never on how much of a file is read |
 | `ZRO_NICE_BIN`, `ZRO_IONICE_BIN` | resolved by path | the two commands every log scan is wrapped in. Set them if this host keeps them somewhere unusual; **how far** the priority is reduced is not settable, because that is a promise this tool makes to the server rather than a preference |
@@ -346,6 +348,60 @@ report is the claim.
   read as an option — so that row is answered from what is already on the screen,
   without a query: the message is the one you just picked, and its id is the
   value without its sign.
+- **Ileti detayi (kayit ve basliklar)** — one message, asked for by the **id** the
+  search screen prints: the folder it is filed in, its size, its date, its subject,
+  whether it is unread, the path of the file it is stored in, and then — from the
+  beginning of that file — the raw headers, the From, To and Cc addresses, and the
+  list of MIME parts with their file names.
+
+  **The message body is not shown**, and this screen does not read it. Nor does it
+  show the dump's `[Metadata]` section: that section carries the *fragment*, which is
+  preview text Zimbra cuts out of the body, so showing it would be displaying the
+  body under another name.
+
+  **It marks nothing read, which is the whole reason it is built this way.** The one
+  Zimbra command that answers this question in a single call — `zmmailbox gm` — clears
+  the unread flag on the message it reports, unconditionally, with no flag to prevent
+  it. So the record is read straight from the mailbox database and the headers from
+  the file on disk, and neither of those touches the message.
+
+  **It is the one mailbox screen that costs no existence gate.** It opens no mailbox
+  session at all, so there is nothing for the gate to protect: it costs the record
+  read plus two reads of the file — three in all, four if the file is compressed —
+  and the screen says so before it runs.
+
+  **An id belongs to one mailbox.** Ids are unique per mailbox, so an id taken from
+  one account's search results names nothing, or names something else, in another
+  account's. The screen says that when the id is not there, because it is the
+  likeliest cause and it is not a typing mistake.
+
+  **`Mailbox bu sunucuda yok` means two things and says so.** The dump reads the
+  mailbox table and nothing else, so the same sentence covers an address the
+  directory has never heard of *and* an account whose mailbox has never been created.
+  Which of the two it is comes from the **Mailbox var mi** screen, which asks the
+  directory.
+
+  **A timeout here is about the database, not about a slow mailbox.** The dump
+  connects to MySQL directly and, if the database does not answer, retries **every
+  five seconds, forever**, with no bound of its own — measured with `mysqld` stopped
+  on the lab server — so the tool's own clock is what ends it. The screen says so and
+  shows the command's own line, `Could not establish a connection to the database`,
+  which that measurement also settled the location of: this binary writes those
+  retries to **stdout** and leaves stderr empty, the opposite way round from every
+  other failure it has.
+
+  A failure the tool cannot classify gets the same treatment for the same reason: the
+  screen names the **database** and says mailboxd and the admin certificate are not
+  part of this read. The shared "Zimbra service unreachable" box would have sent you
+  to check a service this screen never talks to.
+
+  **A blob the tool cannot open leaves the record on screen.** Exit code 24 is that
+  case, and the screen says which half is missing rather than presenting a message
+  with no headers as a message that has none.
+
+  The **flags** column is shown as the number the server holds. It is a bitmask
+  whose bits this tool has not measured, so it is not decoded; `unread` is a column
+  of its own and is reported in words.
 - **Dagitim listesi karti** — who receives mail sent to this address, who owns the
   list, and who may send to it: the three facts a message rejected by a list is
   explained by. Members, owners and send permissions all live on the list's own
@@ -869,6 +925,8 @@ zmmailbox s      search                     behind the existence gate; -t messag
                                             how many hits come back
 zmmailbox sc     searchConv                 behind the existence gate; the messages of one
                                             conversation, -l bounds them
+zmmetadump -m    the stored record of one item, read straight from the mailbox
+                 database; NOT behind the existence gate, because it opens no session
 zmcontrol -v     version
 zmcontrol status service status — THE ONE ENTRY HERE THAT WRITES; see below
 zmmsgtrace --recipient                      delivery trace by recipient
@@ -876,7 +934,9 @@ zmmsgtrace --sender                         delivery trace by sender
 zmmsgtrace --id                             delivery trace by message-id
 postqueue -p                                the mail queue, listing form ONLY
 tail -n                                     the log viewer's bounded read
-gzip -dc                                    decompress a rotated log TO STDOUT
+head -c                                     the bounded head of a message blob, in BYTES
+gzip -dc                                    decompress a rotated log or a compressed
+                                            message blob TO STDOUT
 grep -a -F                                  the log search, matching text LITERALLY
 grep -a -E                                  the log search, with a pattern THIS TOOL owns
 grep -a -F -m / grep -a -E -m               the cap on how many matches are printed
@@ -942,6 +1002,30 @@ write-named and it **clears the unread flag** on the message it reports, which i
 the *judge by effect, not by name* rule doing its work inside a binary this tool
 now reaches.
 
+**`zmmetadump` is how message detail is answered without opening a message**, and it
+is the one command here that talks to the mailbox **database** rather than to a
+service. Read from source: every statement in `MetadataDump` is a `SELECT`, the
+connection is opened with `autoCommit(false)` and never committed, it opens no
+mailbox session, and the blob path it prints is a computed string it never opens.
+`-f` and `-s` are *input* options that decode metadata this tool never holds, and
+`--dumpster` reads the deleted-item store: none of the three is on the list, and a
+static test fails the build if any of them is written at a call site.
+
+Two consequences worth knowing before you use that screen. It is **not** behind the
+existence gate — it cannot create anything, so there is nothing to gate — and it has
+**no timeout of its own**: with the database unreachable it retries forever, so
+`ZRO_TIMEOUT` is what ends it and the screen names the database. See
+[ADR-0008](adr/0008-message-detail-is-the-dump-and-a-bounded-blob-head.md) and
+[`docs/research/2026-08-17-message-detail.md`](research/2026-08-17-message-detail.md).
+
+**`head -c` bounds by BYTES where `tail -n` bounds by lines**, and that is not a
+preference: a message blob is a MIME stream whose base64 part is routinely one line
+of megabytes, so a line bound would be no bound. It is used twice per message — two
+bytes to ask whether the file is a gzip stream, then the head itself — and the path
+it is given comes out of the dump's own output, so it is checked against a strict
+character set and against `ZRO_STORE_ROOT` before anything opens it. `head -n` is
+absent from the list on purpose: nothing here reads a blob by lines.
+
 `zmcontrol -v` runs **once per session**, at startup. Its answer is shown on the
 main menu, which is returned to after every operation, so re-reading it there
 would cost a JVM start per screen.
@@ -986,11 +1070,15 @@ and its permissive default, `static:anyone` — and never as code 90, which in t
 program means a defect. The two send you to different files, so they are kept
 apart.
 
-`tail`, `gzip` and `grep` are the only entries here that are not Zimbra's. They are
-on this list rather than treated as plumbing beside `timeout` and `id`, because
-those two serve the tool itself while these three read the content an operator
+`tail`, `head`, `gzip` and `grep` are the only entries here that are not Zimbra's.
+They are on this list rather than treated as plumbing beside `timeout` and `id`,
+because those two serve the tool itself while these four read the content an operator
 asked for — and because the thing keeping bare `gzip` out would otherwise be
 discipline instead of this list.
+
+The bare `head` this tool runs over its **own** temporary files — the stderr of a
+command it has just run — is not on the list and does not belong there, for the same
+reason: what decides is whose content it is.
 
 **`grep` is on this list in the role where it reads a log, and off it in the role
 where it does not.** The tool also runs a bare `grep` over strings it is already
@@ -1113,9 +1201,10 @@ comes from `zmmailbox gms -v`, behind the existence gate.
 | 13 | folder not found |
 | 14 | no results |
 | 20 | permission denied |
-| 21 | Zimbra service unreachable |
+| 21 | a service the operation needs is unreachable — `mailboxd` for a directory read, the mailbox **database** for the metadata dump behind message detail |
 | 22 | command timed out |
 | 23 | log unreadable |
+| 24 | a stored message file (blob) could not be read |
 | 30 | partial result — some of the sources could not be read |
 | 40 | operator cancelled — navigation, never a process exit status |
 | 90 | **allowlist denial** |
@@ -1133,11 +1222,11 @@ command it can run is on the allowlist. That covers commands whose *names* are
 reads. It does not, by itself, settle whether a read-named Zimbra command has a
 write **side effect**.
 
-Three questions are open. The first two concern `zmmailbox`, which this release
-does not use at all — they must be answered before the message-search milestone
-adds it. The third concerns a command this release does use.
+Three questions were asked on 2026-07-29, back when this tool used `zmmailbox` not
+at all: two about that binary, which it now reaches behind the existence gate, and
+one about a command it already used.
 
-All three were answered on 2026-07-29 by reading the `zm-mailbox` source, and
+All three were answered by reading the `zm-mailbox` source, and
 **all three came back on the unsafe side**. Full citations are in
 [`docs/research/2026-07-29-zimbra-cli-read-only-reference.md`](research/2026-07-29-zimbra-cli-read-only-reference.md).
 
@@ -1217,6 +1306,30 @@ server: the count rose by two during a session in which this tool created
 nothing. (`mailbox.log` also carries a byte that makes `grep` treat it as binary,
 so read it with `grep -a` or you will see nothing at all.)
 
+### Message detail, without the command that would have marked it read
+
+The second row of the table above — `zmmailbox gm` clears the unread flag on the
+message it reports — closed one door and left the question behind it open. It was
+answered on 2026-08-17, from the `zm-mailbox` source and then by measurement on the
+lab server, and recorded in
+[`docs/research/2026-08-17-message-detail.md`](research/2026-08-17-message-detail.md)
+and [ADR-0008](adr/0008-message-detail-is-the-dump-and-a-bounded-blob-head.md).
+
+| Question | Answer |
+|---|---|
+| Is `zmmetadump` read-only? | **Yes, and strictly.** Every statement in `MetadataDump` is a `SELECT` — there is no `executeUpdate`, `INSERT`, `UPDATE` or `DELETE` in the class — the connection is opened with `autoCommit(false)` and never committed, so the pool rolls it back. `-f` is an *input* option, not an output one. |
+| Does it open a mailbox session, or need one? | **No.** It connects to MySQL over JDBC: no `SoapProvisioning`, no `ZMailbox`, and mailboxd neither running nor stopped matters. So it cannot provision a mailbox, and it is the one mailbox question in this tool that is not behind the existence gate. |
+| Does it read or copy the message itself? | **No.** The `[Blob Path]` section prints a *computed path string*; the class never opens the blob. What opens it is this tool's own bounded read, and only the head of it. |
+| What does it answer for an account with no mailbox? | `Account … not found on this host` — **the same sentence** as for an address the directory has never heard of. Measured both ways, on the lab account that deliberately has no mailbox. The tool reports the weaker of the two and the screen says either cause produces it. |
+| Can it hang? | **Yes, forever.** With the database unreachable, `DbPool.startup` loops in `waitForDatabase` with no bound. `ZRO_TIMEOUT` is what ends it, and the screen names the database. |
+| Is the message body reachable from what this screen reads? | Only through two doors, and both are shut. The dump's `[Metadata]` section carries the **fragment** — preview text cut out of the body — and is not rendered at all; the blob's parts are reported by their own headers, and the bytes between a part's headers and the next boundary are skipped without being read. |
+
+The blob itself was measured too, because the parser depends on it: a stored blob is
+**CRLF**, it folds one header with a space and the next with a tab, and the primary
+volume on that server reports `compressed: false` — so compression is a per-volume
+setting and each file is asked what it is, two bytes, rather than assumed to be
+either.
+
 ### Acceptance runs
 
 | Date | Server | What was run | Result |
@@ -1228,6 +1341,8 @@ so read it with `grep -a` or you will see nothing at all.)
 | 2026-08-02 | lab (Zimbra 9.0.0 FOSS) | All five mailbox screens against an account with a populated mailbox: folders, size, quota, one folder, one folder's grants | Answered from the real binaries. 15 folders including `/Emailed Contacts` and two nested ones, 700 bytes against a 5 GB limit rendered as `%1'den az`, `/Inbox` 353 bytes, no grants. A path that does not exist returned code 13 with Zimbra's own `unknown folder` text. |
 | 2026-08-02 | lab (Zimbra 9.0.0 FOSS) | The same three of those screens against an account that is provisioned and has never been used | All three refused with code 12 before opening anything, and afterwards that account **still had no mailbox**: `zmprov gis` answered `mailbox not found` and the `mailbox` table held no row for its id. **The gate held.** An address in no directory returned code 11. |
 | 2026-08-02 | lab (Zimbra 9.0.0 FOSS) | Nested folders, created on the fixture account to settle how the listing prints them | The path column starts at the same offset for a nested folder as for a top-level one — **no indentation, hierarchy only in the path** — and `zmmailbox gf` took the full path back unchanged, spaces and all. Had it been indented, every mailbox with subfolders would have answered `unknown folder`. |
+| 2026-08-17 | lab (Zimbra 9.0.0 FOSS) | The message detail screen against the real binaries: a message with an attachment, one without, the Inbox folder's own record, an id the mailbox does not hold, an account with no mailbox row, a compressed blob, and a path outside the store root | Every case answered as designed — the attachment listed as `application/pdf … fatura.pdf`, the single-part message reported as having no parts, the folder's record drawn with no blob path, code 14 for the absent id, code 12 with Zimbra's own `not found on this host` text, and code 90 for `/etc/shadow`. **The unread set was identical before and after** — the two messages the screen displayed in full are still in it — and the account's `mailbox` row was byte-identical, `last_soap_access` included. The blob's modification time and checksum did not move, and the compressed copy read through `gzip -dc` was unchanged and still there. |
+| 2026-08-17 | lab (Zimbra 9.0.0 FOSS), **`mysqld` stopped** | The same screen with the mailbox database deliberately stopped, under a 20-second `ZRO_TIMEOUT` | Ended on **code 22** rather than hanging, and the detail the operator is shown is the command's own line: `Could not establish a connection to the database.  Retrying in 5 seconds.` Left alone it retries every five seconds forever — four retries in 22 seconds, measured — so the tool's clock is the only thing that ends it. `mysqld` was started again and the screen answered normally afterwards. |
 
 ## 6. Production acceptance
 
@@ -1243,8 +1358,9 @@ Run this sequence before using the tool against real accounts.
    it does not run, stop and investigate rather than skipping it.
 
 2. Read the allowlist in `lib/exec.sh` and confirm every entry is a read
-   operation. It is eighteen lines. Read them — and read `gzip:-dc` twice: it is
-   the one entry whose neighbouring spellings write.
+   operation. It is one table, and short enough to read in full — do that rather
+   than counting it, and read `gzip:-dc` twice: it is the one entry whose
+   neighbouring spellings write.
 
 3. Choose one test account that is **not receiving mail** during the check, and
    record its state:

@@ -34,6 +34,8 @@ ZRO_ROOT=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 . "$ZRO_ROOT/lib/store.sh"
 # shellcheck source=lib/search.sh
 . "$ZRO_ROOT/lib/search.sh"
+# shellcheck source=lib/message.sh
+. "$ZRO_ROOT/lib/message.sh"
 # shellcheck source=lib/identity.sh
 . "$ZRO_ROOT/lib/identity.sh"
 # shellcheck source=lib/directory.sh
@@ -647,6 +649,16 @@ zro_mailbox_cost_note() {
     mailbox-conversation)
       printf 'Bu ekran once bir arama calistirir, sonra actiginiz her konusma icin\n'
       printf 'bir sorgu daha yapar. %s' "$ZRO_TXT_GATE_COST" ;;
+    # THE ONE MAILBOX SCREEN THAT DOES NOT PAY THE GATE, and it says so where every
+    # other one says the opposite. It opens no mailbox session at all: the record
+    # comes from the database directly and the headers from the file on disk, so the
+    # existence oracle has nothing to add — an account whose mailbox was never
+    # created has no row to dump, and the dump says so itself.
+    mailbox-message)
+      printf 'Bu ekran veritabani kaydini BIR KEZ okur, sonra blob dosyasinin\n'
+      printf 'turunu ve baslangicini okur: UC calistirma. Sikistirilmis bir blob bir\n'
+      printf 'calistirma daha ekler. MAILBOX OTURUMU ACILMAZ, bu yuzden varlik kapisi\n'
+      printf 'bu ekrana sorgu eklemez.' ;;
     # Reached only by an operation declared in the one list and not named here,
     # which is a defect in this file rather than a screen with no cost. Said as
     # the general sentence rather than silently: an operator is told a query is
@@ -1056,9 +1068,11 @@ $(zro_mailbox_cost_note "$id")"
       "$(zro_screen_alias_note "$(zro_search_body "$acct" "$query" "$raw" \
          ${ZRO_SEARCH_SEL[@]+"${ZRO_SEARCH_SEL[@]}"})")"
 
-    # A message search ends with its answer: every row carries the id a later
-    # screen would be reached with, and there is no screen behind it yet. A
-    # conversation search does not — a conversation is a thing to open.
+    # A message search ends with its answer: every row carries the id the message
+    # detail screen is reached WITH, and that screen is its own entry on the main
+    # menu rather than a step behind this one — it opens no mailbox session, so it
+    # is not a screen this one has to lead to. A conversation search does lead
+    # somewhere: a conversation is a thing to open.
     [ "$id" = mailbox-conversation ] || continue
     zro_menu_conversation "$acct" "$title" "$raw"
   done
@@ -1138,6 +1152,165 @@ Konusma id: $conv"
     zro_show_text "$title" \
       "$(zro_screen_alias_note "$(zro_search_conv_body "$acct" "$conv" "$out")")"
   done
+}
+
+# ------------------------------------------------------- the message detail --
+#
+# ONE MESSAGE, ASKED FOR BY ITS IDENTIFIER. The screen behind the search's id
+# column, and the one mailbox screen that opens no mailbox: the record comes out of
+# the database through the metadata dump and the headers out of the file the message
+# is stored in, so neither the existence gate nor a session is involved.
+#
+# THE OPERATOR TYPES AN ID AND NOTHING ELSE. It is validated as digits before
+# anything runs, which is also what keeps the negation of an id — the value Zimbra
+# names a single-message conversation with — off a command line.
+
+ZRO_TXT_MSG_PICK='Ileti id (ornek: 274)
+
+Id degerlerini Ileti arama ekranindan okuyabilirsiniz. Yalnizca rakam olabilir:
+eksi ile baslayan bir deger tek iletilik bir KONUSMA kimligidir, ileti kimligi
+degildir.'
+
+zro_menu_message() {
+  local id=${1-} acct title item rc=0 out last=''
+  if ! title=$(zro_menu_label "$id"); then
+    zro_log error "menu defect, no label for message operation: $id"
+    zro_report_defect
+    return 0
+  fi
+  acct=$(zro_identity_selected_account)
+  if [ -z "$acct" ]; then
+    zro_log error "menu defect, message operation with no selected address: $id"
+    zro_report_defect
+    return 0
+  fi
+
+  while :; do
+    rc=0
+    # What was typed last is offered back, so reading two neighbouring messages is
+    # an edit of one digit rather than a retyping.
+    item=$(zro_ui_input "$title" "$ZRO_TXT_MSG_PICK" "$last") || rc=$?
+    [ "$rc" -eq 0 ] || return 0
+    if ! zro_validate_item_id "$item"; then
+      zro_ui_msgbox "Gecersiz girdi" \
+"Bu bir ileti id degeri degil.
+
+Id yalnizca rakamlardan olusur, sifir ile baslamaz ve en fazla on basamaklidir.
+Eksi ile baslayan bir deger tek iletilik bir konusmanin kimligidir: aradiginiz
+ileti id, o degerin isaretsiz halidir."
+      continue
+    fi
+    last=$item
+
+    zro_ui_notice "Calisiyor" "Ileti okunuyor, lutfen bekleyin.
+
+Hesap: $acct
+Ileti id: $item
+$(zro_mailbox_cost_note "$id")"
+
+    rc=0
+    out=$(zro_msg_card "$acct" "$item") || rc=$?
+    case $rc in
+      0) zro_show_text "$title" "$(zro_screen_alias_note "$out")" ;;
+      "$ZRO_E_NO_RESULT")  zro_screen_message_no_item "$acct" "$item" ;;
+      "$ZRO_E_NO_MAILBOX") zro_screen_message_not_here "$acct" ;;
+      "$ZRO_E_TIMEOUT")    zro_screen_message_timeout ;;
+      # THE SHARED REPORTER WOULD NAME THE WRONG SERVICE HERE. Its message for this
+      # code is about mailboxd and an admin certificate, and this screen's read talks
+      # to neither: it connects to the mailbox database directly.
+      "$ZRO_E_UNAVAILABLE") zro_screen_message_database ;;
+      *) zro_report_error "$rc" ;;
+    esac
+  done
+}
+
+# AN ID THIS MAILBOX DOES NOT HOLD. Its own screen rather than the shared 'kayit
+# bulunamadi', because the query ran and answered: there is no such item in this
+# account's own database rows, which is a result an operator acts on.
+#
+# The likeliest cause is not a typing mistake and is named first: an id is unique
+# per MAILBOX, so an id read off one account's search results names nothing, or
+# names something else, in another account's.
+zro_screen_message_no_item() {
+  local acct=${1-} item=${2-} detail
+  detail=$(zro_error_detail 'Zimbra ciktisi')
+
+  zro_ui_msgbox "Ileti bulunamadi" \
+"Bu hesapta $item id degerli bir oge yok.
+
+Sorgu calisti ve yanit verdi; bu bir hata degil, bir sonuc.
+
+Id degerleri HER MAILBOXA OZELDIR: baska bir hesabin arama sonucundan alinan bir
+id bu hesapta ya hicbir seyi ya da baska bir seyi gosterir. Su anda secili hesap:
+$acct
+
+Ileti listelendikten sonra silinmis de olabilir; silinen bir oge cop kutusundan
+temizlendiginde veritabani satiri da gider.$detail"
+}
+
+# THE DUMP'S ONE SENTENCE THAT COVERS TWO ANSWERS. It says `not found on this host`
+# both for an address the directory has never heard of and for an account whose
+# mailbox has never been created — it reads the mailbox table and nothing else, so it
+# cannot tell them apart. The screen says so instead of picking one.
+zro_screen_message_not_here() {
+  local acct=${1-} detail
+  detail=$(zro_error_detail 'Zimbra ciktisi')
+
+  zro_ui_msgbox "Mailbox bu sunucuda yok" \
+"$acct icin bu sunucunun veritabaninda mailbox satiri yok.
+
+Bu tek cumle IKI ANLAMA GELIR ve dokum ikisini ayirt etmez:
+  - boyle bir hesap yok, ya da
+  - hesap var ve mailboxu hic yaratilmamis (ilk giriste veya ilk teslimde
+    yaratilir).
+
+Hangisi oldugunu Mailbox var mi ekrani soyler: o ekran dizine bakar ve iki durumu
+ayri ayri yanitlar.$detail"
+}
+
+# THE HANG THIS SCREEN WOULD OTHERWISE HAVE. The dump has no timeout of its own: with
+# the database unreachable it retries forever, in a loop with no bound — measured, one
+# retry every five seconds until it is killed. What ends it is the wall-clock timeout
+# every command in this tool runs under, and the difference between a tool that hangs
+# and a tool that says this is that clock.
+#
+# THE DETAIL IS THE SERVER'S OWN SENTENCE, and getting it here took a measurement: this
+# binary writes its retries to STDOUT and leaves stderr empty, so the module borrows
+# the head of stdout when a failure said nothing on the usual stream.
+zro_screen_message_timeout() {
+  local detail
+  detail=$(zro_error_detail 'Komutun kendi cikti satirlari')
+
+  zro_ui_msgbox "Zaman asimi" \
+"Ileti kaydi ayrilan surede okunamadi ve islem kesildi.
+
+Bu ekranin okudugu dokum, mailbox veritabanina DOGRUDAN baglanir ve veritabani
+yanit vermezse kendiliginden vazgecmez: bes saniyede bir, sonsuza kadar yeniden
+dener. Bu yuzden sureyi bu arac koyar ve suresi dolunca komutu keser.
+
+Kontrol edin: mysql (mailbox veritabani) servisi calisiyor mu — zmcontrol status.
+Gerekirse ZRO_TIMEOUT degerini yukseltip yeniden deneyin.$detail"
+}
+
+# A FAILURE OF THE DUMP THIS PROGRAM DOES NOT RECOGNISE, and the service it really
+# needs. The shared reporter's message for this code names mailboxd and the admin
+# certificate, which are the SOAP path's two usual causes — and this read takes no
+# SOAP path at all: it opens a JDBC connection to the mailbox database. An operator
+# sent to check mailboxd would be looking at a service that is very likely running.
+zro_screen_message_database() {
+  local detail
+  detail=$(zro_error_detail 'Komutun kendi cikti satirlari')
+
+  zro_ui_msgbox "Mailbox veritabani okunamadi" \
+"Ileti kaydi okunamadi: dokum calisti ve bu aracin tanimadigi bir hata verdi.
+
+Bu ekran mailbox VERITABANINA dogrudan baglanir (jdbc, yerel mysql). mailboxd
+servisi ve admin sertifikasi bu okumaya dahil DEGILDIR, dolayisiyla sorun orada
+degil olabilir.
+
+Kontrol edin:
+  - mysql (mailbox veritabani) servisi calisiyor mu — zmcontrol status
+  - diskte yer var mi, ve mysql gunlugunde hata var mi$detail"
 }
 
 # A FOLDER CRITERION NAMING A FOLDER THAT IS NOT THERE. Its own screen rather than
@@ -2538,6 +2711,7 @@ mailbox-folder:account:2:Klasor detayi
 mailbox-folder-grants:account:2:Klasor paylasimlari
 mailbox-search:account:2:Ileti arama
 mailbox-conversation:account:2:Konusma arama ve konusmadaki iletiler
+mailbox-message:account:2:Ileti detayi (kayit ve basliklar)
 dl-card:list:1:Dagitim listesi karti
 domain-card:address:1:Alan adi karti
 trace-recipient:address:3:Teslim takibi: bu adrese gelenler
@@ -2898,6 +3072,10 @@ EOF
       # The two that build a query before they ask anything, and for the same
       # reason: what the operator chooses first is the question, not the screen.
       mailbox-search|mailbox-conversation) zro_menu_search "$choice" ;;
+      # And the one that asks for an identifier first. Before the family, like the
+      # four above: a case list that matched `mailbox-*` first would send it to a
+      # screen with no message to read.
+      mailbox-message) zro_menu_message "$choice" ;;
       mailbox-*)   zro_screen_mailbox "$choice" ;;
       dl-card)     zro_screen_dl "$choice" ;;
       domain-card) zro_screen_domain "$choice" ;;

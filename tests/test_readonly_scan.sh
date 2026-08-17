@@ -440,6 +440,75 @@ it "and every approved mailbox read has a call site, in exactly one spelling"
 assert_eq "$(printf '%s\n' "$mbox_calls" | awk '{print $3}' | sort -u)" \
           "$(printf '%s\n' "$allow" | sed -n 's/^zmmailbox:\([^:]*\).*$/\1/p' | sort -u)"
 
+# ------------------------------------------------------------ message detail --
+#
+# THE READS THAT REPLACE `gm`. Message detail is asked of the DATABASE and of the
+# blob on disk, because the one command that answers it in a single call clears the
+# unread flag it reports. The dump hands the gate a flag that IS the operation and
+# then an account and an id this program validated, so the generic extraction above
+# cannot decide that call site — exactly as it cannot decide the tracer's filters —
+# and the operation is checked here instead.
+it "every metadata dump call site names the approved operation"
+dump_calls=$(printf '%s\n' "$raw_code" \
+             | grep -oE 'zro_exec[[:space:]]+zmmetadump[[:space:]]+[^[:space:]]+' \
+             | sort -u)
+assert_contains "$dump_calls" "zro_exec zmmetadump -m"
+unapproved=""
+while IFS= read -r call; do
+  [ -n "$call" ] || continue
+  op=$(printf '%s' "$call" | awk '{print $3}')
+  printf '%s\n' "$allow" | grep -qxF -- "zmmetadump:$op" || unapproved="$unapproved [$op]"
+done <<EOF
+$dump_calls
+EOF
+assert_eq "$unapproved" ""
+
+it "and there is exactly one of them, in the module that owns it"
+# The entry approves that operation entire and the gate reads no flag behind a flag,
+# so what keeps the item id the only thing riding there is that there is one call
+# site and a reader can see all of it.
+assert_eq "$(printf '%s\n' "$raw_code" | grep -cE 'zro_exec[[:space:]]+zmmetadump')" "1"
+assert_eq "$(zro_strip_comments "$ZRO_SRC/lib/message.sh" \
+             | grep -cE 'zro_exec[[:space:]]+zmmetadump')" "1"
+
+it "and the forms of that binary this tool does not ask for are written nowhere"
+# `--dumpster` reads the deleted-item store — a different question about a different
+# table — while `-f` and `-s` decode metadata this program never holds. None of them
+# writes, and none of them is an operation anybody here has judged.
+for form in --dumpster -f -s -h --help; do
+  assert_not_contains "$code" "zro_exec zmmetadump $form"
+done
+assert_not_contains "$code" "--dumpster"
+
+it "the blob head is read in the bounded form and no other"
+# THREE CALL SITES, ALL IN THE MODULE THAT OWNS THEM: the two bytes that say whether
+# the file is a gzip stream, the bounded read of a plain blob, and the bounded read
+# behind the decompression. `head -n` is absent from the allowlist and from the tree —
+# a message is a MIME stream whose base64 part is one enormous line, so a line bound
+# is no bound there.
+head_calls=$(printf '%s\n' "$raw_code" \
+             | grep -oE 'zro_exec[[:space:]]+head[[:space:]]+[^[:space:]]+' \
+             | sort -u)
+assert_eq "$head_calls" "zro_exec head -c"
+assert_eq "$(printf '%s\n' "$raw_code" | grep -cE 'zro_exec[[:space:]]+head')" "3"
+assert_eq "$(zro_strip_comments "$ZRO_SRC/lib/message.sh" \
+             | grep -cE 'zro_exec[[:space:]]+head')" "3"
+for form in -n --lines -f --follow --bytes; do
+  assert_not_contains "$code" "zro_exec head $form"
+done
+assert_not_contains "$code" "zro_exec cat"
+
+it "the message module opens no mailbox session at all"
+# THE REASON THIS SCREEN NEEDS NO EXISTENCE GATE, asserted rather than described: it
+# never reaches the binary that would create a mailbox, so there is nothing for the
+# oracle to protect. `gm` and `gru` are refused by the allowlist as well; this is
+# what stops them being written.
+message=$(zro_scan_file "$ZRO_SRC/lib/message.sh")
+assert_not_contains "$message" "zro_mbox_run"
+assert_not_contains "$message" "zmprov"
+assert_not_contains "$message" "gm "
+assert_not_contains "$message" "gru "
+
 it "the mail queue is read in one form, at one call site"
 # THE WRITING FORMS LIVE IN THE SAME BINARY, which is what makes this worth
 # checking statically as well as at the gate: `-f` flushes the deferred queue,
@@ -645,8 +714,16 @@ EOF
 assert_eq "$unapproved" ""
 
 it "and every approved system operation has a call site, in exactly one spelling"
-assert_eq "$(printf '%s\n' "$viewer_calls" | grep -c 'zro_exec')" \
-          "$(printf '%s\n' "$allow" | grep -c '^\(tail\|gzip\):')"
+# ASKED OF ALL THREE READERS RATHER THAN OF THE VIEWER'S TWO. The bounded head of a
+# message blob arrived with the message detail screen and is the third; an approved
+# operation with no call site is one that reads as available and can never answer,
+# and a second spelling of one that has a call site is an approval a reader of the
+# list would have to count rather than read.
+system_calls=$(printf '%s\n' "$raw_code" \
+               | grep -oE 'zro_exec[[:space:]]+(tail|head|gzip)[[:space:]]+[^[:space:]]+' \
+               | sort -u)
+assert_eq "$(printf '%s\n' "$system_calls" | grep -c 'zro_exec')" \
+          "$(printf '%s\n' "$allow" | grep -c '^\(tail\|head\|gzip\):')"
 
 # The log search hands the gate a mode flag, a match form, and then a cap and a
 # pattern this program computed. The generic extraction above resolves the
@@ -905,6 +982,7 @@ for f in "${SOURCES[@]}"; do
          | grep -v 'zro_cap_op_available' | grep -v 'zro_allowed')
   assert_not_contains "$body" 'zmprov '
   assert_not_contains "$body" 'zmmailbox '
+  assert_not_contains "$body" 'zmmetadump '
   assert_not_contains "$body" 'zmcontrol '
   assert_not_contains "$body" 'zmmsgtrace '
 done

@@ -1,0 +1,3 @@
+Usage: zmmetadump -m <mailbox id/email> -i <item id> [--dumpster]
+   or: zmmetadump -f <file containing encoded metadata>
+   or: zmmetadump -s <encoded string>
