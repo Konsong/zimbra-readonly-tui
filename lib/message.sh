@@ -487,14 +487,21 @@ zro_msg_blob_compressed() {
 # the in-place decompression both replace the file and delete the original, and both
 # are absent from the allowlist and therefore refused.
 #
-# THE PIPELINE'S OWN STATUS IS READ, AND 141 IS AN ORDINARY ANSWER HERE. Under
-# pipefail the reader having had its fill kills the decompression with SIGPIPE, which
-# the shell reports as 141 — measured both ways on the lab server: a 5 MB stream
-# through a 64 KiB bound answers 141, and a stream that fits inside the bound answers
-# 0. Neither is a failure, and the case that IS one stays distinguishable: a file
-# that is not a gzip stream answers 1, which is also why pipefail is set at all —
-# without it that failure arrives as an empty head, which is the one answer this
-# function may not invent.
+# WHAT DECIDES IS THE ANSWER, NOT THE STATUS, and that is a portability fix rather
+# than a shortcut. A bounded reader that has had its fill closes the pipe on the
+# decompression, and HOW THAT ARRIVES DEPENDS ON THE gzip BUILD: measured on three
+# hosts, the lab server and WSL report the SIGPIPE as 141, while the CI runner's gzip
+# catches it, prints `gzip: stdout: Broken pipe` and exits non-zero with a different
+# code. Normalising 141 alone would leave every compressed blob larger than the bound
+# reading as unreadable on the third kind of host — which is exactly what happened,
+# and what a suite that only ran on the first two would never have shown.
+#
+# A DECOMPRESSION THAT REALLY FAILED YIELDS NOTHING AT ALL: a file that is not a gzip
+# stream produces no bytes, and that case stays a failure. So a non-empty head is
+# taken as the answer it is, and pipefail is still set — without it the empty-head
+# failure would arrive as success, which is the one answer this function may not
+# invent. A complaint alongside a non-empty head is logged rather than raised: what
+# was read is bounded and disclosed either way.
 zro_msg_head_fetch() {
   local path=${1-} err out rc=0 said n=$ZRO_MSG_HEAD_BYTES
   zro_msg_bound_ok || return "$ZRO_E_INPUT"
@@ -504,7 +511,10 @@ zro_msg_head_fetch() {
   if zro_msg_blob_compressed "$path"; then
     out=$( set -o pipefail
            zro_exec gzip -dc "$path" 2>"$err" | zro_exec head -c "$n" 2>>"$err" ) || rc=$?
-    [ "$rc" -eq 141 ] && rc=0
+    if [ "$rc" -ne 0 ] && [ -n "$out" ]; then
+      zro_log warn "the decompression complained after the bound was filled: $path (rc $rc)"
+      rc=0
+    fi
   else
     out=$(zro_exec head -c "$n" "$path" 2>"$err") || rc=$?
   fi

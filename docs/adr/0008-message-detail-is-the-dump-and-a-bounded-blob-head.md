@@ -81,11 +81,14 @@ both replace the file and delete the original, and both are absent from the allo
 two-byte probe — running `gzip -dc` and reading the failure — was rejected: on an uncompressed blob it answers
 `not in gzip format`, a failure this program would then have to tell apart from a blob it really cannot read.
 
-**141 from the decompression pipeline is an ordinary answer.** Under `pipefail` the bounded reader having had
-its fill kills `gzip` with SIGPIPE; measured, a 5 MB stream through a 64 KiB bound answers 141 and a stream
-that fits answers 0. Neither is a failure and the case that is one stays distinguishable at 1 — which is why
-`pipefail` is set at all: without it a file that could not be decompressed arrives as an empty head, and an
-empty head is the one answer that reader may not invent.
+**The bounded read of a compressed blob judges its answer, not its exit status.** Under `pipefail` the reader
+having had its fill closes the pipe on `gzip`, and how that arrives is a property of the **build**: measured on
+three hosts, the lab server and WSL report the SIGPIPE as 141, while the CI runner's `gzip` catches it, prints
+`gzip: stdout: Broken pipe` and exits non-zero itself. Normalising 141 alone left every compressed blob larger
+than the bound reading as unreadable on the third — green on two machines, red on CI's first run. What
+distinguishes the two cases is not a number: a decompression that really failed yields **no bytes at all**, so
+a non-empty head is taken as the answer it is and an empty one stays a failure. `pipefail` remains, because it
+is what makes the empty case visible rather than a silently successful empty read.
 
 **The body is not displayed, and that rules out the dump's third section as well.** `[Metadata]` carries the
 message FRAGMENT under the key `f` — the preview text Zimbra cuts out of the body — so only the column

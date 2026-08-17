@@ -423,15 +423,34 @@ assert_contains "$(ran)" "$(printf 'nice\t-n\t19')"
 assert_contains "$(ran)" "$(printf 'ionice\t-c\t3')"
 
 it "and a stream longer than the bound is an ordinary answer, not a failure"
-# Under pipefail the reader having had its fill kills the decompression with
-# SIGPIPE, which the shell reports as 141. Measured on the lab server: a 5 MB stream
-# through a 64 KiB bound answers 141 and a stream that fits answers 0, and neither
-# is a failure.
+# HOW THE DECOMPRESSION REPORTS THE CLOSED PIPE IS THE HOST'S BUSINESS, NOT THIS
+# SCREEN'S. Measured on three: the lab server and WSL report the SIGPIPE as 141, while
+# the CI runner's gzip catches it, prints `gzip: stdout: Broken pipe` and exits
+# non-zero with another code. This case is what caught that — it failed on CI and
+# passed here — so what is asserted is the ANSWER: the bound's worth of bytes came
+# back, whichever way the host said the pipe was closed.
 fresh
 BIG="$BLOB_DIR/276-780.msg"
 { cat "$FIX/store_blob_multipart.msg"; head -c 200000 /dev/zero | tr '\0' 'x'; } | gzip -c >"$BIG"
 big_out=$(ZRO_MSG_HEAD_BYTES=4096 zro_msg_head_fetch "$BIG")
 assert_eq "${#big_out}" "4096"
+
+it "and the same answer on a host whose gzip complains instead of dying of SIGPIPE"
+# THE HOST THIS SUITE CANNOT BE RUN ON, scripted through the mock: it writes what it
+# had, prints `gzip: stdout: Broken pipe` and exits non-zero by itself. The bytes came
+# back either way, which is why this reader judges the answer rather than the status.
+fresh
+big_out=$(ZRO_MOCK_GZIP_PIPE_RC=1 ZRO_MSG_HEAD_BYTES=4096 zro_msg_head_fetch "$BIG")
+assert_eq "${#big_out}" "4096"
+big_out=$(ZRO_MOCK_GZIP_PIPE_RC=2 ZRO_MSG_HEAD_BYTES=4096 zro_msg_head_fetch "$BIG")
+assert_eq "${#big_out}" "4096"
+
+it "and a decompression that yielded nothing at all is still a failure there too"
+# The rule's other half: what makes a non-empty head trustworthy is that a stream this
+# host cannot decompress produces no bytes. Scripted the same way, with no output.
+fresh
+ZRO_MOCK_GZIP_ERR="gzip: not in gzip format" ZRO_MOCK_GZIP_RC=1 \
+  assert_status "$ZRO_E_NO_BLOB" zro_msg_head_fetch "$BIG"
 
 it "and a file that is not a gzip stream is a failure rather than an empty head"
 # The one case pipefail is set for: without it the decompression's failure arrives

@@ -149,7 +149,7 @@ rather than of an idealised one.
 The same blob folds one `Received` header with a **space** and the next with a **tab**, which is what the
 fixture keeps and what the unfolding case in `tests/test_message.sh` is written against.
 
-## 6. `gzip -dc | head -c` under pipefail: 141 is an ordinary answer — MEASURED
+## 6. `gzip -dc | head -c` under pipefail: how the closed pipe arrives is the build's business — MEASURED
 
 | Pipeline | rc |
 |---|---|
@@ -165,6 +165,24 @@ a stream that fits inside the pipe buffer finishes before the reader closes it a
 failure**, and the case that is one stays distinguishable at 1 — which is also why `pipefail` is set at all:
 without it, a file that could not be decompressed arrives as an empty head, and an empty head is the one
 answer that reader may not invent.
+
+**And then a third host disagreed about the first row.** The same case on the CI runner (`ubuntu-latest`) does
+not answer 141 at all: that `gzip` catches the closed pipe, prints `gzip: stdout: Broken pipe` and exits
+non-zero by itself. Normalising 141 alone therefore left every compressed blob larger than the bound reading
+as **unreadable** on that host — a screen this suite passed green on two machines and CI failed on the first
+push:
+
+```
+[warn] blob unreadable: /tmp/…/276-780.msg (gzip: stdout: Broken pipe)
+  FAIL: and a stream longer than the bound is an ordinary answer, not a failure
+        expected [4096], got [0]
+```
+
+So the reader stopped judging the **status** and started judging the **answer**: a decompression that really
+failed yields no bytes at all, so a non-empty head is the answer it is, whichever way the host reported the
+pipe. `pipefail` stays, because it is what makes the empty case visible. The second kind of host is scriptable
+in the suite — `ZRO_MOCK_GZIP_PIPE_RC` in `tests/mocks/system/gzip` writes what it had, complains, and exits
+non-zero — so the behaviour is pinned on a machine that cannot reproduce it.
 
 ## 7. The database stopped: it retries every five seconds, forever, on STDOUT — MEASURED
 
