@@ -34,6 +34,8 @@ export ZRO_LOG_DIR="$TREE/zimbra/log"
 
 # shellcheck source=../lib/core.sh
 . "$ZRO_SRC/lib/core.sh"
+# shellcheck source=../lib/table.sh
+. "$ZRO_SRC/lib/table.sh"
 # shellcheck source=../lib/exec.sh
 . "$ZRO_SRC/lib/exec.sh"
 # shellcheck source=../lib/inventory.sh

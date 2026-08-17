@@ -745,6 +745,10 @@ zro_identity_mode() {
 # everything this tool can execute, and a test holds the two sets equal. The
 # gate's own tools — timeout, id, runuser — are absent from both: they serve this
 # function rather than an operation the operator chose.
+#
+# SC2034: read by NAME through lib/table.sh, never expanded here — which is what
+# keeps the log line able to say which declaration a refusal came from.
+# shellcheck disable=SC2034
 ZRO_BIN_ROOTS='
 zmprov:ZRO_ZIMBRA_BIN
 zmmailbox:ZRO_ZIMBRA_BIN
@@ -759,44 +763,28 @@ grep:ZRO_SYSTEM_BIN
 '
 
 zro_bin_root_entries() {
-  printf '%s' "$ZRO_BIN_ROOTS" | grep -v '^[[:space:]]*$'
+  zro_table_entries ZRO_BIN_ROOTS
 }
 
 # Prints the absolute path of a binary under its declared root, and fails when
 # the binary declares no root or the root it names is empty. Failure is never a
 # fallback: there is no default root to resolve against.
 #
-# Both failures are logged here rather than by the caller, because the gate is
+# The refusals and the log lines that go with them belong to zro_table_root,
+# which names THIS table in the message — lib/table.sh says why a table travels
+# as a name. They are logged there rather than by a caller because the gate is
 # not the only caller: zro_bin_available answers the capability probe, and an
 # undeclared root would otherwise reach the operator as a greyed-out menu entry
-# reading like a program this host does not have. Neither condition is something
-# an operator did, so both are logged the way any other defect is.
+# reading like a program this host does not have.
+#
+# What stays here is the one thing the generic reader cannot know: a binary
+# lives AT its root, under its own name, so the name is appended. The log
+# inventory declares its path suffix inside the table instead, which is why that
+# reader has nothing of its own to add.
 zro_bin_path() {
-  local bin=${1-} entry var=''
-  [ -n "$bin" ] || return 1
-
-  while IFS= read -r entry; do
-    # Quoted, so the comparison is literal text exactly as in the allowlist: a
-    # name carrying a glob character cannot borrow another binary's root.
-    case $entry in
-      "$bin":?*) var=${entry#*:}; break ;;
-    esac
-  done <<EOF
-$(zro_bin_root_entries)
-EOF
-  if [ -z "$var" ]; then
-    zro_log error "denied, no root declared for binary: $bin"
-    return 1
-  fi
-
-  # Indirect expansion, not a nameref: namerefs are bash 4.3 and the floor is
-  # 4.2. The name comes from the table above, never from anything an operator
-  # typed, and the guard above is what keeps an empty name out of it.
-  local root=${!var-}
-  if [ -z "$root" ]; then
-    zro_log error "denied, root variable is empty: $var"
-    return 1
-  fi
+  local bin=${1-} root
+  [ -n "$bin" ] || return "$ZRO_E_INPUT"
+  root=$(zro_table_root ZRO_BIN_ROOTS "$bin") || return "$ZRO_E_INPUT"
   printf '%s/%s' "$root" "$bin"
 }
 

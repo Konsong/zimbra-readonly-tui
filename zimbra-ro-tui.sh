@@ -10,6 +10,8 @@ ZRO_ROOT=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 
 # shellcheck source=lib/core.sh
 . "$ZRO_ROOT/lib/core.sh"
+# shellcheck source=lib/table.sh
+. "$ZRO_ROOT/lib/table.sh"
 # shellcheck source=lib/validate.sh
 . "$ZRO_ROOT/lib/validate.sh"
 # shellcheck source=lib/selection.sh

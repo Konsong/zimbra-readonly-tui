@@ -13,6 +13,8 @@ set -uo pipefail
 . "$ZRO_TEST_ROOT/lib/assert.sh"
 # shellcheck source=../lib/core.sh
 . "$ZRO_SRC/lib/core.sh"
+# shellcheck source=../lib/table.sh
+. "$ZRO_SRC/lib/table.sh"
 # shellcheck source=../lib/validate.sh
 . "$ZRO_SRC/lib/validate.sh"
 
@@ -51,7 +53,8 @@ resolve() {
   # that is the point of running it in a fresh process with a scripted server.
   # shellcheck disable=SC2016
   env "$@" ZRO_CASE_ADDR="$addr" bash -c '
-    . "$ZRO_SRC/lib/core.sh"; . "$ZRO_SRC/lib/validate.sh"
+    . "$ZRO_SRC/lib/core.sh"; . "$ZRO_SRC/lib/table.sh"
+    . "$ZRO_SRC/lib/validate.sh"
     . "$ZRO_SRC/lib/exec.sh"; . "$ZRO_SRC/lib/account.sh"
     . "$ZRO_SRC/lib/identity.sh"
     zro_identity_resolve "$ZRO_CASE_ADDR"'

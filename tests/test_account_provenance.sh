@@ -5,6 +5,8 @@ set -uo pipefail
 . "$ZRO_TEST_ROOT/lib/assert.sh"
 # shellcheck source=../lib/core.sh
 . "$ZRO_SRC/lib/core.sh"
+# shellcheck source=../lib/table.sh
+. "$ZRO_SRC/lib/table.sh"
 # shellcheck source=../lib/validate.sh
 . "$ZRO_SRC/lib/validate.sh"
 
