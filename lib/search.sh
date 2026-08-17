@@ -75,6 +75,8 @@ ZRO_SEARCH_TEXT_MAX=200
 # match really matched: research §7. Two are recorded there as answering nothing on
 # that server — the envelope pair — and the screen says so, because an empty result
 # presented as proof is the worst thing a search screen can do.
+# SC2034: read by NAME through lib/table.sh, never expanded here.
+# shellcheck disable=SC2034
 ZRO_SEARCH_CRITERIA='sender:address:from:Gonderen adres
 sender-domain:domain:from:Gonderen alan adi
 recipient:address:to:Alici adres
@@ -94,51 +96,25 @@ scope:scope:is:Butun mailbox (cop kutusu ve spam dahil)'
 # The declared entry for a criterion id, or a refusal. Every lookup goes through
 # this, so an id nobody declared has one answer everywhere.
 zro_search_criterion() {
-  local id=${1-} entry
-  [ -n "$id" ] || return "$ZRO_E_INPUT"
-  while IFS= read -r entry; do
-    [ -n "$entry" ] || continue
-    if [ "${entry%%:*}" = "$id" ]; then
-      printf '%s' "$entry"
-      return 0
-    fi
-  done <<EOF
-$ZRO_SEARCH_CRITERIA
-EOF
-  return "$ZRO_E_INPUT"
+  zro_table_entry ZRO_SEARCH_CRITERIA "${1-}"
 }
 
 zro_search_ids() {
-  local entry
-  while IFS= read -r entry; do
-    [ -n "$entry" ] || continue
-    printf '%s\n' "${entry%%:*}"
-  done <<EOF
-$ZRO_SEARCH_CRITERIA
-EOF
+  zro_table_keys ZRO_SEARCH_CRITERIA
 }
 
 zro_search_kind() {
-  local entry
-  entry=$(zro_search_criterion "${1-}") || return "$ZRO_E_INPUT"
-  entry=${entry#*:}
-  printf '%s' "${entry%%:*}"
+  zro_table_field ZRO_SEARCH_CRITERIA "${1-}" 1
 }
 
 zro_search_operator() {
-  local entry
-  entry=$(zro_search_criterion "${1-}") || return "$ZRO_E_INPUT"
-  entry=${entry#*:}
-  entry=${entry#*:}
-  printf '%s' "${entry%%:*}"
+  zro_table_field ZRO_SEARCH_CRITERIA "${1-}" 2
 }
 
+# The remainder rather than a fixed field: a label is operator-facing Turkish and
+# may carry a colon.
 zro_search_label() {
-  local entry
-  entry=$(zro_search_criterion "${1-}") || return "$ZRO_E_INPUT"
-  entry=${entry#*:}
-  entry=${entry#*:}
-  printf '%s' "${entry#*:}"
+  zro_table_rest ZRO_SEARCH_CRITERIA "${1-}" 3
 }
 
 # THE VALUES THIS PROGRAM OWNS, for the two criteria an operator does not type at
@@ -226,9 +202,13 @@ EOF
   return 1
 }
 
+# SC2034: read by NAME through lib/table.sh, never expanded here.
+# shellcheck disable=SC2034
 ZRO_SEARCH_STATES='read:Okunmus
 unread:Okunmamis'
 
+# SC2034: read by NAME through lib/table.sh, never expanded here.
+# shellcheck disable=SC2034
 ZRO_SEARCH_ATTACHMENTS='any:Herhangi bir ek
 pdf:PDF
 word:Word
@@ -239,19 +219,13 @@ none:Eki olmayan iletiler'
 
 # Whether a word is one this program offers, and what it reads as. One lookup for
 # both tables, because the question is the same one twice.
+#
+# THE TABLE ARRIVES AS A NAME, not as its text. It used to arrive as a value, and
+# a call site that passed the wrong one would have been a menu drawn from one
+# table and judged against the other with nothing to say so. Named, the two call
+# sites read as the two questions they are.
 zro_search_choice_label() {
-  local table=${1-} value=${2-} entry
-  [ -n "$value" ] || return "$ZRO_E_INPUT"
-  while IFS= read -r entry; do
-    [ -n "$entry" ] || continue
-    if [ "${entry%%:*}" = "$value" ]; then
-      printf '%s' "${entry#*:}"
-      return 0
-    fi
-  done <<EOF
-$table
-EOF
-  return "$ZRO_E_INPUT"
+  zro_table_rest "${1-}" "${2-}" 1
 }
 
 # ---------------------------------------------------------- building a term --
@@ -444,10 +418,10 @@ zro_search_term() {
       quoted=$(zro_query_quote "$value") || return "$ZRO_E_INPUT"
       printf '%s:%s' "$op" "$quoted" ;;
     state)
-      zro_search_choice_label "$ZRO_SEARCH_STATES" "$value" >/dev/null || return "$ZRO_E_INPUT"
+      zro_search_choice_label ZRO_SEARCH_STATES "$value" >/dev/null || return "$ZRO_E_INPUT"
       printf '%s:%s' "$op" "$value" ;;
     atype)
-      zro_search_choice_label "$ZRO_SEARCH_ATTACHMENTS" "$value" >/dev/null || return "$ZRO_E_INPUT"
+      zro_search_choice_label ZRO_SEARCH_ATTACHMENTS "$value" >/dev/null || return "$ZRO_E_INPUT"
       printf '%s:%s' "$op" "$value" ;;
     scope)
       # One value, and it is the criterion itself: the operator chose to widen the
@@ -975,9 +949,9 @@ zro_search_value_label() {
   local id=${1-} value=${2-} kind label
   kind=$(zro_search_kind "$id") || { printf '%s' "$value"; return 0; }
   case $kind in
-    state) label=$(zro_search_choice_label "$ZRO_SEARCH_STATES" "$value") || label=$value
+    state) label=$(zro_search_choice_label ZRO_SEARCH_STATES "$value") || label=$value
            printf '%s' "$label" ;;
-    atype) label=$(zro_search_choice_label "$ZRO_SEARCH_ATTACHMENTS" "$value") || label=$value
+    atype) label=$(zro_search_choice_label ZRO_SEARCH_ATTACHMENTS "$value") || label=$value
            printf '%s' "$label" ;;
     scope) printf 'evet (cop kutusu ve spam dahil)' ;;
     *)     printf '%s' "$value" ;;

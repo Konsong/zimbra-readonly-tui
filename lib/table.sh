@@ -7,8 +7,16 @@ ZRO_LIB_TABLE_LOADED=1
 # A DECLARED TABLE is a newline-separated list of "<key>:<field>[:<field>...]"
 # rows held in a ZRO_ variable. What it declares is the whole of what can be
 # reached through it: a key absent from the table is REFUSED, never resolved
-# against a default. Twelve of them exist across this tree, and this file is the
-# only thing that reads one.
+# against a default. Eleven are declared across this tree and read through the
+# accessors below, and this file is the only thing that takes one apart.
+#
+# Two more lists are ENUMERATED through it and looked up by nothing here: the
+# allowlist and the low-priority list in lib/exec.sh. Both answer a membership
+# question rather than a lookup, and both keep that answer to themselves — see
+# docs/adr/0009 for why the one read whose refusal means exit 90 does not share a
+# reader with eleven screens. A third, ZRO_SEARCH_PROMPTS, is keyed but declares
+# where one entry ends rather than how many fields it has, so it is not one of
+# these either and lib/search.sh reads it alone.
 #
 # Five rules were re-derived at every reader this replaces, and each of them was
 # a defect somewhere first:

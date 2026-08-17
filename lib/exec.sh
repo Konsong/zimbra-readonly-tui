@@ -485,8 +485,13 @@ grep:-a:-E:-m
 grep:-a:-E:-i
 '
 
+# The rows of the list, blank lines dropped. ENUMERATION ONLY: the membership
+# question below is this list's own and is not shared with anything, because the
+# allowlist is the one read in this program whose refusal means exit 90 — a
+# defect by definition — and a reader shared with eleven screens is a reader that
+# can be changed for a reason that has nothing to do with the gate.
 zro_allow_entries() {
-  printf '%s' "$ZRO_ALLOW" | grep -v '^[[:space:]]*$'
+  zro_table_entries ZRO_ALLOW
 }
 
 # Whether the list carries this entry, matched as one whole line. -x anchors to
@@ -667,8 +672,12 @@ grep
 gzip
 '
 
+# Enumeration only, as the allowlist's is, and for the same reason: the
+# membership question below stays here. This list carries no colon at all — a row
+# IS a binary name — so it is enumerated through lib/table.sh and looked up by
+# nothing there.
 zro_low_priority_bins() {
-  printf '%s' "$ZRO_LOW_PRIORITY" | grep -v '^[[:space:]]*$'
+  zro_table_entries ZRO_LOW_PRIORITY
 }
 
 # Whether this binary's work is heavy enough to be made to wait for the server's.
