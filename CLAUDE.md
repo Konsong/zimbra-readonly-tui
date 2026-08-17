@@ -52,9 +52,23 @@ claiming anything works — this project is developed on Windows, so run them
 under WSL (`wsl -- bash -lc './tests/run.sh'`), not Git Bash:
 
 ```bash
-shellcheck zimbra-ro-tui.sh lib/*.sh tests/*.sh tests/lib/*.sh
+shellcheck zimbra-ro-tui.sh lib/*.sh tests/*.sh tests/lib/*.sh \
+           tests/mocks/*.sh tests/mocks/bin/* tests/mocks/libexec/* \
+           tests/mocks/system/* tests/mocks/sbin/*
 ./tests/run.sh
 ```
+
+**The mocks are in that list because CI lints them.** This command used to stop at
+`tests/lib`, so a mock could fail the build after a green local run —
+`.github/workflows/ci.yml` is what this has to match, and it is the file to check
+if the two ever drift again.
+
+**A green suite here is not a green suite everywhere.** The runner's `gzip` reports
+a closed pipe differently from WSL's, which is how a compressed-blob read passed on
+two machines and failed on CI. When a case turns on how an external command
+*reports* something, script the other host's behaviour into the mock rather than
+trusting the local one — `ZRO_MOCK_GZIP_PIPE_RC` in `tests/mocks/system/gzip` is
+the worked example.
 
 ## Agent skills
 
