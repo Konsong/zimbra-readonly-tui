@@ -505,10 +505,16 @@ _Avoid_: bulk query (that is the screen, not the hazard), full scan
 What a screen says before it reads anything. For class 3 that is how many files
 and how many bytes: an operator about to spend two minutes of the mail server's
 disk is entitled to know before it starts, not after. For class 1 it is normally
-that the number of queries depends on what the account turns out to name — except
-on [provenance](#asking-about-an-address), which is the one screen that can be
-exact, and says so, because paying twice for one entry is the reason it is a
-screen an operator chooses rather than a field on the card.
+that the number of queries depends on what the account turns out to name — with
+**two exceptions that can be exact, and say so**.
+[Provenance](#asking-about-an-address) reads one entry twice, always, whatever the
+account holds; paying twice for one entry is the reason it is a screen an operator
+chooses rather than a field on the card. A [bulk
+query](#asking-about-many-accounts) knows the whole list before it reads anything,
+so it states the count, the estimate and the [cap](#asking-about-many-accounts)
+and asks — which is where an operator who did not mean to spend seven minutes can
+still say no, and the only place the cap can be stated while it still changes
+anything.
 _Avoid_: warning, confirmation
 
 ## Asking about an address

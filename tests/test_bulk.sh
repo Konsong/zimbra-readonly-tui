@@ -191,6 +191,20 @@ assert_contains "$out" "gecersiz"
 assert_contains "$out" "3."
 assert_contains "$out" "tekrar"
 
+it "and an entry that is not an address is never crowded out by one this tool refused on purpose"
+# The budget is per reason, and the invalid entries come first. Shared, twenty
+# repeats would use it up and the one entry the operator has to go and fix would
+# collapse into a count — which is the acceptance criterion this screen owes:
+# reported WITH ITS POSITION.
+many="$A1"
+i=0
+while [ "$i" -lt 30 ]; do i=$((i + 1)); many="$many,$A1"; done
+many="$many,ali@@example"
+plan=$(zro_bulk_plan "$many")
+out=$(zro_bulk_plan_rejects "$plan")
+assert_contains "$out" "32. oge"
+assert_contains "$out" "ali@@example"
+
 it "and the rejected entries are bounded, with the number not shown said out loud"
 many=""
 i=0
@@ -370,6 +384,44 @@ assert_contains "$out" "yerel teslimi kapali"
 
 it "and an account with nothing set is counted in none of them"
 assert_out_eq "" zro_bulk_tally mail 0 '# name sade@example.com'
+
+# THE ROW AND THE TALLY READ THE SAME ACCOUNT TWICE, and deliberately: a summary
+# parsed back out of rendered text would agree with the rendering by construction
+# and with the account by luck. What that costs is two derivations of the same four
+# facts, which could drift — a row saying an account has a filter while the summary
+# counts nobody. So they are held equal here, fact by fact, in both directions.
+it "an account's row and its place in the summary never disagree about one fact"
+row=$(zro_bulk_row mail "$A1" 0 "$MAIL_RAW")
+counted=$(zro_bulk_tally mail 0 "$MAIL_RAW")
+# admin forwarding, user forwarding, a filter, local delivery off: shown, counted.
+assert_contains "$row" "Yonetici tanimli yonlendirme"
+assert_contains "$counted" "yonetici tanimli yonlendirmesi olan"
+assert_contains "$row" "Kullanici tanimli yonlendirme"
+assert_contains "$counted" "yonlendirmesi olan"
+assert_contains "$row" "Gelen filtre"
+assert_contains "$counted" "filtresi olan"
+assert_contains "$row" "Yerel teslim"
+assert_contains "$counted" "yerel teslimi kapali"
+
+it "and neither says anything about an account that has none of it"
+row=$(zro_bulk_row mail "$A2" 0 '# name sade@example.com')
+counted=$(zro_bulk_tally mail 0 '# name sade@example.com')
+# The labelled lines, not the words: the one line this row does print says
+# 'filtre yok', which is the absence being stated rather than a field appearing.
+for shown in "Yonetici tanimli" "Kullanici tanimli" "Gelen filtre" "Giden filtre" "Yerel teslim:"; do
+  assert_not_contains "$row" "$shown"
+done
+assert_eq "$counted" ""
+
+it "and an account with only ONE of them is shown and counted for that one alone"
+one='# name tek@example.com
+zimbraPrefMailForwardingAddress: baska@example.net'
+row=$(zro_bulk_row mail 'tek@example.com' 0 "$one")
+counted=$(zro_bulk_tally mail 0 "$one")
+assert_contains "$row" "Kullanici tanimli yonlendirme: baska@example.net"
+assert_not_contains "$row" "Yonetici tanimli"
+assert_not_contains "$row" "Gelen filtre"
+assert_eq "$counted" "yonlendirmesi olan"
 
 it "the summary counts what the tally said, and is the same list twice over"
 out=$(zro_bulk_summary "active

@@ -29,6 +29,16 @@ ZRO_LIB_BULK_LOADED=1
 # cost of refusing it is a JVM start per account, and it is disclosed rather than
 # hidden: the screen states the estimate before it spends it and shows the run
 # advancing through it.
+#
+# WHY THIS MODULE DRAWS WHEN NO OTHER ONE DOES, said out loud because it is a
+# departure. Every other module here answers with text and lets a screen in
+# zimbra-ro-tui.sh draw it, which is what keeps rendering and reading apart. This
+# one cannot: what it has to show — where the run has got to, how long is left,
+# and that ESC stops it — is only true WHILE the loop is running, and a function
+# that returned it would be returning it after the last thing an operator could
+# have done about it. So the loop draws, through lib/ui.sh like everything else,
+# and it is the ONE function here that does: zro_bulk_run. Everything above it is
+# a pure function over text, which is what the cases below drive.
 
 # HOW MANY ADDRESSES ONE RUN WILL READ. Overridable, because the right number
 # depends on how long an operator is willing to sit in front of it, and refused
@@ -216,6 +226,11 @@ zro_bulk_plan() {
         printf 'dup%s%s%s%s\n' "$ZRO_TAB" "$n" "$ZRO_TAB" "$entry"
         continue ;;
     esac
+    # MARKED AS SEEN BEFORE THE CAP IS TESTED, so an address the cap dropped and
+    # then met again is recorded as a repeat rather than as a second thing the cap
+    # dropped. Both sentences are true; only this one keeps the counts honest,
+    # because 'two addresses did not fit' about one address written twice is a
+    # number an operator would act on.
     seen="$seen|$key|"
     if [ "$accepted" -ge "$ZRO_BULK_MAX" ]; then
       printf 'cut%s%s%s%s\n' "$ZRO_TAB" "$n" "$ZRO_TAB" "$entry"
@@ -267,15 +282,13 @@ zro_bulk_reject_line() {
   esac
 }
 
-# Everything the run will not read, in the order it was written, bounded.
-zro_bulk_plan_rejects() {
-  local plan=${1-} rec tag pos text shown=0 hidden=0
+# One reason's worth of refused entries, in the order they were written, bounded,
+# with what is not shown counted rather than dropped.
+zro_bulk_plan_rejects_tag() {
+  local plan=${1-} want=${2-} rec tag pos text shown=0 hidden=0
   while IFS= read -r rec; do
     tag=${rec%%"$ZRO_TAB"*}
-    case $tag in
-      bad|dup|cut) ;;
-      *) continue ;;
-    esac
+    [ "$tag" = "$want" ] || continue
     rec=${rec#*"$ZRO_TAB"}
     pos=${rec%%"$ZRO_TAB"*}
     text=${rec#*"$ZRO_TAB"}
@@ -289,8 +302,25 @@ zro_bulk_plan_rejects() {
 $plan
 EOF
   if [ "$hidden" -gt 0 ]; then
-    printf '(ve %s girdi daha)\n' "$hidden"
+    printf '(bu sebeple %s girdi daha atlandi)\n' "$hidden"
   fi
+  return 0
+}
+
+# Everything the run will not read, by reason, each reason bounded on its own.
+#
+# THE BUDGET IS PER REASON AND THE INVALID ENTRIES COME FIRST, which is not a
+# presentation choice. One budget shared across all three would let twenty repeats
+# or twenty capped entries use it up, and the invalid ones behind them would
+# collapse into a count — while an invalid entry is the only one of the three the
+# operator has to go and FIX, and the position is what lets them find it in their
+# own list. A repeat and a capped entry are things this program did on purpose and
+# said so; a refused entry is a mistake somebody has to see.
+zro_bulk_plan_rejects() {
+  local plan=${1-} tag
+  for tag in bad dup cut; do
+    zro_bulk_plan_rejects_tag "$plan" "$tag"
+  done
   return 0
 }
 
@@ -410,9 +440,10 @@ zro_bulk_progress() {
 
 # ---------------------------------------------------------------- the read --
 
-# ONE ACCOUNT, ONE DIRECTORY READ. The only function in this module that runs
-# anything, which is what leaves everything below it pure and drivable without a
-# server.
+# ONE ACCOUNT, ONE DIRECTORY READ. The only function in this module that asks the
+# directory anything, which is what leaves every renderer below it pure and
+# drivable without a server. The loop that calls it draws and reads the keyboard
+# as well — see the note at the top of this file — and does nothing else.
 zro_bulk_read() {
   local q=${1-} acct=${2-}
   # The question first: an id this tool does not ask must reach no directory at

@@ -249,8 +249,53 @@ ZRO_WHIPTAIL_BIN="${ZRO_WHIPTAIL_BIN:-$(zro_first_existing /usr/bin/whiptail /bi
 # inherited, and overridable so the suite can prove the drawing arrived.
 ZRO_UI_TTY="${ZRO_UI_TTY:-/dev/tty}"
 ZRO_UI_HEIGHT="${ZRO_UI_HEIGHT:-20}"
+# The SMALLEST a notice may be, not the size it is drawn at. See below.
 ZRO_UI_NOTICE_HEIGHT="${ZRO_UI_NOTICE_HEIGHT:-8}"
 ZRO_UI_WIDTH="${ZRO_UI_WIDTH:-78}"
+
+# WHAT AN INFOBOX SPENDS ON ITSELF, in rows, MEASURED rather than reasoned about:
+# whiptail keeps `height - 7` rows of text in one. Two of those are the border and
+# the rest are its own padding; the number is what a real whiptail did, checked by
+# drawing a seven-line notice at every height from 8 to 15 and asking which of its
+# lines survived.
+#
+# THIS IS WHY THE HEIGHT IS COMPUTED AND NOT DECLARED. A notice used to be drawn
+# at a fixed height of 8, which by the rule above is ONE row of text — so every
+# notice in this program showed its first line and silently dropped the rest: the
+# account a card was about, the cost a screen was spending, the key that stops a
+# run. Nothing caught it, because the stub backend the suite drives has no
+# geometry at all and the transcript it writes carries every line.
+#
+# Sized HERE, in the one place a box is built, rather than by each caller: a rule
+# that every future caller has to remember is a rule the next screen breaks.
+ZRO_UI_NOTICE_CHROME=7
+
+# How tall a box has to be to show this text, bounded at both ends. The floor
+# keeps a one-line notice from being a box with no shape; the ceiling is the
+# height every other box in this program uses, because a box taller than the
+# terminal does not draw at all. A notice longer than that is clipped, as it was
+# before — but nothing in this program has one, and what does not fit is now the
+# end of a long explanation rather than everything after the first line.
+#
+# WRAPPING IS NOT COUNTED. A line wider than the box takes two rows, and this
+# counts the lines it was given. The ceiling leaves the slack; a caller whose text
+# really is that long should shorten it rather than have the box grow past the
+# screen.
+zro_ui_notice_height() {
+  local text=${1-} lines
+  # The count is stripped of whitespace before it is judged: not every wc writes a
+  # bare number, and a count that arrived padded would fail the test below and
+  # silently size every box as though it held one line — which is the exact bug
+  # this function exists to fix, reintroduced by its own guard.
+  lines=$(printf '%s\n' "$text" | wc -l | tr -d '[:space:]')
+  case $lines in
+    ''|*[!0-9]*) lines=1 ;;
+  esac
+  local h=$((lines + ZRO_UI_NOTICE_CHROME))
+  [ "$h" -ge "$ZRO_UI_NOTICE_HEIGHT" ] || h=$ZRO_UI_NOTICE_HEIGHT
+  [ "$h" -le "$ZRO_UI_HEIGHT" ] || h=$ZRO_UI_HEIGHT
+  printf '%s' "$h"
+}
 ZRO_UI_LISTHEIGHT="${ZRO_UI_LISTHEIGHT:-10}"
 ZRO_UI_BACKTITLE="Zimbra salt-okunur yonetim araci"
 
@@ -274,7 +319,7 @@ zro_ui_whiptail_build() {
     menu)    ZRO_UI_ARGV+=(--notags --menu "$text" "$ZRO_UI_HEIGHT" "$ZRO_UI_WIDTH" "$ZRO_UI_LISTHEIGHT" "$@") ;;
     input)   ZRO_UI_ARGV+=(--inputbox "$text" "$ZRO_UI_HEIGHT" "$ZRO_UI_WIDTH" "$@") ;;
     msgbox)  ZRO_UI_ARGV+=(--msgbox "$text" "$ZRO_UI_HEIGHT" "$ZRO_UI_WIDTH") ;;
-    infobox) ZRO_UI_ARGV+=(--infobox "$text" "$ZRO_UI_NOTICE_HEIGHT" "$ZRO_UI_WIDTH") ;;
+    infobox) ZRO_UI_ARGV+=(--infobox "$text" "$(zro_ui_notice_height "$text")" "$ZRO_UI_WIDTH") ;;
     textbox) ZRO_UI_ARGV+=(--scrolltext --textbox "$text" "$ZRO_UI_HEIGHT" "$ZRO_UI_WIDTH") ;;
     yesno)   ZRO_UI_ARGV+=(--yesno "$text" "$ZRO_UI_HEIGHT" "$ZRO_UI_WIDTH") ;;
   esac
