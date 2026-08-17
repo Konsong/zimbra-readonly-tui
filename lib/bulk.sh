@@ -89,32 +89,20 @@ ZRO_BULK_ADDR_W=36
 # table here rather than two modules. The set is held equal to the operations the
 # menu offers, the way the window presets and the allowlist already are, so a
 # question implemented here and offered nowhere fails the build.
+#
+# SC2034: read by NAME through lib/table.sh, never expanded here.
+# shellcheck disable=SC2034
 ZRO_BULK_QUESTIONS='status:Hesap durumu
 mail:Filtre ve yonlendirme'
 
 zro_bulk_question_ids() {
-  local entry
-  while IFS= read -r entry; do
-    [ -n "$entry" ] || continue
-    printf '%s\n' "${entry%%:*}"
-  done <<EOF
-$ZRO_BULK_QUESTIONS
-EOF
+  zro_table_keys ZRO_BULK_QUESTIONS
 }
 
+# The remainder rather than a fixed field: a label is operator-facing text and
+# may carry a colon, here as everywhere else in this tree.
 zro_bulk_question_label() {
-  local id=${1-} entry
-  [ -n "$id" ] || return "$ZRO_E_INPUT"
-  while IFS= read -r entry; do
-    [ -n "$entry" ] || continue
-    if [ "${entry%%:*}" = "$id" ]; then
-      printf '%s' "${entry#*:}"
-      return 0
-    fi
-  done <<EOF
-$ZRO_BULK_QUESTIONS
-EOF
-  return "$ZRO_E_INPUT"
+  zro_table_rest ZRO_BULK_QUESTIONS "${1-}" 1
 }
 
 # What each question reads. Alphabetical, because that is the order zmprov answers

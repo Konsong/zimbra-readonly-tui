@@ -10,6 +10,8 @@ ZRO_ROOT=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 
 # shellcheck source=lib/core.sh
 . "$ZRO_ROOT/lib/core.sh"
+# shellcheck source=lib/table.sh
+. "$ZRO_ROOT/lib/table.sh"
 # shellcheck source=lib/validate.sh
 . "$ZRO_ROOT/lib/validate.sh"
 # shellcheck source=lib/selection.sh
@@ -221,6 +223,8 @@ Onarim: sahiplik veya izinler bozulmussa: zmfixperms"
 # time without one of them reaching into the other's business, so the suite holds
 # the two sets equal instead, the way it holds the allowlist and the binary-root
 # table equal.
+# SC2034: read by NAME through lib/table.sh, never expanded here.
+# shellcheck disable=SC2034
 ZRO_WINDOW_CHOICES='hour:Son 1 saat
 day:Son 24 saat
 yesterday:Dun (tam gun)
@@ -243,13 +247,13 @@ explicit:Belirli aralik gir'
 # answer. The trace's wording stays the default, because it was here first and
 # every existing caller means it.
 zro_prompt_window() {
-  local text=${1:-$ZRO_TXT_ARRIVAL} choice rc=0 now day_start entry
+  local text=${1:-$ZRO_TXT_ARRIVAL} choice rc=0 now day_start id
   local -a items=()
-  while IFS= read -r entry; do
-    [ -n "$entry" ] || continue
-    items+=("${entry%%:*}" "${entry#*:}")
+  while IFS= read -r id; do
+    [ -n "$id" ] || continue
+    items+=("$id" "$(zro_table_rest ZRO_WINDOW_CHOICES "$id" 1)")
   done <<EOF
-$ZRO_WINDOW_CHOICES
+$(zro_table_keys ZRO_WINDOW_CHOICES)
 EOF
 
   choice=$(zro_ui_menu "Varis araligi" "$text" "${items[@]}") || rc=$?
@@ -896,14 +900,16 @@ zro_menu_search_value() {
       printf 'anywhere'
       return 0 ;;
     state|atype)
-      local table=$ZRO_SEARCH_STATES
-      [ "$kind" = atype ] && table=$ZRO_SEARCH_ATTACHMENTS
-      local entry
-      while IFS= read -r entry; do
-        [ -n "$entry" ] || continue
-        items+=("${entry%%:*}" "${entry#*:}")
+      # The table travels as a NAME, so the menu is drawn from the same
+      # declaration it is judged against and a reader can see that it is.
+      local table=ZRO_SEARCH_STATES
+      [ "$kind" = atype ] && table=ZRO_SEARCH_ATTACHMENTS
+      local choice_id
+      while IFS= read -r choice_id; do
+        [ -n "$choice_id" ] || continue
+        items+=("$choice_id" "$(zro_search_choice_label "$table" "$choice_id")")
       done <<EOF
-$table
+$(zro_table_keys "$table")
 EOF
       value=$(zro_ui_menu "$label" "Deger secin:" "${items[@]}") || return "$ZRO_E_CANCEL"
       # Judged against the table this program drew, exactly as a menu id is: a
@@ -2895,6 +2901,8 @@ $(zro_bulk_plan_rejects "$plan")"
 # the queue tool on an empty one; what a busy queue costs is the SCREEN, which is
 # why the screen behind this class answers with counts before it answers with a
 # list.
+# SC2034: read by NAME through lib/table.sh, never expanded here.
+# shellcheck disable=SC2034
 ZRO_COST_CLASSES='1:entry
 2:mailbox
 3:file
@@ -2904,18 +2912,7 @@ ZRO_COST_CLASSES='1:entry
 # tool does not declare. Every lookup goes through this, so a class nobody
 # declared — 4 above all — has exactly one answer everywhere: no.
 zro_cost_unit() {
-  local class=${1-} entry
-  [ -n "$class" ] || return "$ZRO_E_INPUT"
-  while IFS= read -r entry; do
-    [ -n "$entry" ] || continue
-    if [ "${entry%%:*}" = "$class" ]; then
-      printf '%s' "${entry#*:}"
-      return 0
-    fi
-  done <<EOF
-$ZRO_COST_CLASSES
-EOF
-  return "$ZRO_E_INPUT"
+  zro_table_rest ZRO_COST_CLASSES "${1-}" 1
 }
 
 # THE ONE LIST: every operation this tool offers, in the order it offers them, as
@@ -2957,6 +2954,8 @@ EOF
 # directions, the way it already holds the allowlist and the table of binary
 # roots. An operation with no class fails the build; a class no operation claims
 # fails it too.
+# SC2034: read by NAME through lib/table.sh, never expanded here.
+# shellcheck disable=SC2034
 ZRO_MENU_OPS='account-card:account:1:Hesap karti
 account-provenance:account:1:Deger nereden geliyor (hesap mi, devralma mi)
 account-membership:account:1:Dagitim listesi uyelikleri
@@ -2986,57 +2985,32 @@ bulk-mail:server:1:Toplu sorgu: listedeki filtre ve yonlendirmeler'
 # The declared entry for an id, or a refusal. Every lookup below goes through
 # this, so an id that is not in the list has exactly one answer everywhere.
 zro_menu_entry() {
-  local id=${1-} entry
-  [ -n "$id" ] || return "$ZRO_E_INPUT"
-  while IFS= read -r entry; do
-    [ -n "$entry" ] || continue
-    if [ "${entry%%:*}" = "$id" ]; then
-      printf '%s' "$entry"
-      return 0
-    fi
-  done <<EOF
-$ZRO_MENU_OPS
-EOF
-  return "$ZRO_E_INPUT"
+  zro_table_entry ZRO_MENU_OPS "${1-}"
 }
 
 # The declared ids, in the order they are offered.
 zro_menu_ids() {
-  local entry
-  while IFS= read -r entry; do
-    [ -n "$entry" ] || continue
-    printf '%s\n' "${entry%%:*}"
-  done <<EOF
-$ZRO_MENU_OPS
-EOF
+  zro_table_keys ZRO_MENU_OPS
 }
 
 zro_menu_scope() {
-  local entry
-  entry=$(zro_menu_entry "${1-}") || return "$ZRO_E_INPUT"
-  entry=${entry#*:}
-  printf '%s' "${entry%%:*}"
+  zro_table_field ZRO_MENU_OPS "${1-}" 1
 }
 
 # The cost class an operation claims. A class this tool does not declare is not
 # reported as the operation's own — it is refused here, so an entry naming class
 # 4 answers the same way an entry naming nothing does.
 zro_menu_cost() {
-  local entry class
-  entry=$(zro_menu_entry "${1-}") || return "$ZRO_E_INPUT"
-  entry=${entry#*:}
-  entry=${entry#*:}
-  class=${entry%%:*}
+  local class
+  class=$(zro_table_field ZRO_MENU_OPS "${1-}" 2) || return "$ZRO_E_INPUT"
   zro_cost_unit "$class" >/dev/null || return "$ZRO_E_INPUT"
   printf '%s' "$class"
 }
 
+# The remainder rather than a fixed field: a label is what the operator reads and
+# may carry a colon, as the bulk query's two already do.
 zro_menu_label() {
-  local entry
-  entry=$(zro_menu_entry "${1-}") || return "$ZRO_E_INPUT"
-  entry=${entry#*:}
-  entry=${entry#*:}
-  printf '%s' "${entry#*:}"
+  zro_table_rest ZRO_MENU_OPS "${1-}" 3
 }
 
 # WHY an operation cannot answer, in one word, or nothing when it can. Decided in

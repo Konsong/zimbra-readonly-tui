@@ -79,6 +79,9 @@ ZRO_LOGSEARCH_TEXT_MAX=200
 # because which file answers a question is not an operator's decision to get wrong:
 # rejected mail is in the mail log and nowhere else, and a session is in the audit
 # log and nowhere else.
+#
+# SC2034: read by NAME through lib/table.sh, never expanded here.
+# shellcheck disable=SC2034
 ZRO_LOGSEARCH_QUESTIONS='rejected:syslog:Reddedilen mail (sunucu kabul etmedi)
 deferred:syslog:Ertelenen mail (kuyrukta bekliyor, denemeler suruyor)
 bounced:syslog:Geri donen mail (teslim edilemedi, gonderene bildirildi)
@@ -88,7 +91,7 @@ mboxerror:mailbox:Mailbox hatalari (istisna ve hata satirlari)'
 
 # --- reading a declaration table ---------------------------------------------
 #
-# TWO TABLES SHARE ONE SHAPE, `<id>:<log>:<label>`, and therefore one parser. They
+# TWO TABLES SHARE ONE SHAPE, `<id>:<log>:<label>`, and therefore one reader. They
 # are two tables because their CONTRACTS differ — a question below carries a
 # pattern this program owns and may be narrowed by an address, while a lookup
 # further down takes a value and asks whether it is there at all — and that is a
@@ -96,62 +99,27 @@ mboxerror:mailbox:Mailbox hatalari (istisna ve hata satirlari)'
 # A second copy of the taking-apart is a copy that can drift while both tables
 # still look right.
 #
-# The table travels as a value rather than as a name, so nothing here has to know
-# which declarations exist; the four named accessors below say which is which, and
-# they are what call sites and the suite read.
+# That reader used to live here and took its table as a VALUE, so that nothing
+# generic had to know which declarations exist. It is lib/table.sh now, it takes
+# the table as a NAME, and that file says why the trade turned the other way once
+# a refusal had to be able to name the declaration it came from.
+#
+# What stays here is the six names the rest of the program uses. Thin on purpose:
+# what they carry is WHICH declaration is being read, which is the thing a call
+# site should say out loud and the thing a generic reader cannot.
 
-zro_logsearch_entries() {
-  printf '%s' "${1-}" | grep -v '^[[:space:]]*$'
-}
-
-zro_logsearch_ids() {
-  zro_logsearch_entries "${1-}" | sed 's/:.*$//'
-}
-
-zro_logsearch_entry() {
-  local table=${1-} id=${2-} entry
-  [ -n "$id" ] || return "$ZRO_E_INPUT"
-  while IFS= read -r entry; do
-    [ -n "$entry" ] || continue
-    if [ "${entry%%:*}" = "$id" ]; then
-      printf '%s' "$entry"
-      return 0
-    fi
-  done <<EOF
-$(zro_logsearch_entries "$table")
-EOF
-  return "$ZRO_E_INPUT"
-}
-
-# Which declared log an entry is about.
-zro_logsearch_entry_log() {
-  local entry
-  entry=$(zro_logsearch_entry "${1-}" "${2-}") || return "$ZRO_E_INPUT"
-  entry=${entry#*:}
-  printf '%s' "${entry%%:*}"
-}
-
-# What it is called on screen.
-zro_logsearch_entry_label() {
-  local entry
-  entry=$(zro_logsearch_entry "${1-}" "${2-}") || return "$ZRO_E_INPUT"
-  entry=${entry#*:}
-  printf '%s' "${entry#*:}"
-}
-
-# The four names the rest of the program uses. Thin on purpose: what they carry is
-# WHICH declaration is being read, which is the thing a call site should say out
-# loud and the thing the generic reader above cannot.
 zro_logsearch_questions() {
-  zro_logsearch_ids "$ZRO_LOGSEARCH_QUESTIONS"
+  zro_table_keys ZRO_LOGSEARCH_QUESTIONS
 }
 
 zro_logsearch_question_log() {
-  zro_logsearch_entry_log "$ZRO_LOGSEARCH_QUESTIONS" "${1-}"
+  zro_table_field ZRO_LOGSEARCH_QUESTIONS "${1-}" 1
 }
 
+# The remainder, not a field: a label is operator-facing text and may carry a
+# colon.
 zro_logsearch_question_label() {
-  zro_logsearch_entry_label "$ZRO_LOGSEARCH_QUESTIONS" "${1-}"
+  zro_table_rest ZRO_LOGSEARCH_QUESTIONS "${1-}" 2
 }
 
 # THE PATTERNS THEMSELVES, one per question, each keyed on a line a real server
@@ -798,19 +766,22 @@ zro_logsearch_named() {
 # locally — that is a second record of a subset, not a second source, and reaching
 # it costs a second scan of a second family. An operator who wants it has the
 # free-text door.
+#
+# SC2034: read by NAME through lib/table.sh, never expanded here.
+# shellcheck disable=SC2034
 ZRO_LOGSEARCH_LOOKUPS='msgid:syslog:Ileti kimligi sunucudan gecti mi
 sender-domain:syslog:Bu alan adindan mail geldi mi'
 
 zro_logsearch_lookups() {
-  zro_logsearch_ids "$ZRO_LOGSEARCH_LOOKUPS"
+  zro_table_keys ZRO_LOGSEARCH_LOOKUPS
 }
 
 zro_logsearch_lookup_log() {
-  zro_logsearch_entry_log "$ZRO_LOGSEARCH_LOOKUPS" "${1-}"
+  zro_table_field ZRO_LOGSEARCH_LOOKUPS "${1-}" 1
 }
 
 zro_logsearch_lookup_label() {
-  zro_logsearch_entry_label "$ZRO_LOGSEARCH_LOOKUPS" "${1-}"
+  zro_table_rest ZRO_LOGSEARCH_LOOKUPS "${1-}" 2
 }
 
 # Whether one message passed through this server, by its identifier.

@@ -4,6 +4,8 @@ set -uo pipefail
 . "$ZRO_TEST_ROOT/lib/assert.sh"
 # shellcheck source=../lib/core.sh
 . "$ZRO_SRC/lib/core.sh"
+# shellcheck source=../lib/table.sh
+. "$ZRO_SRC/lib/table.sh"
 
 export ZRO_MOCK_LIB="$ZRO_TEST_ROOT/mocks"
 export ZRO_ID_BIN="$ZRO_TEST_ROOT/mocks/bin/id"

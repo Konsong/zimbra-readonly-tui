@@ -29,6 +29,15 @@ on every change.
   mode 644, no shebang.
 - Exit codes are defined in `lib/core.sh`. `90` (allowlist denial) is a defect,
   not a user error — always logged.
+- **A declared table is read through `lib/table.sh`, never by hand.** A table is
+  `<key>:<field>[:<field>…]` rows in a `ZRO_` variable, and it travels to the
+  reader as a **name**, not as its text — that is what lets a refusal say which
+  declaration to edit. Absence is a refusal, never a default: an undeclared key,
+  a missing field and an empty root all fail rather than resolve. Add the table
+  to the list in `tests/test_table.sh` and give it a `# shellcheck disable=SC2034`
+  with the reason on it. Two lists are deliberately NOT read this way — `ZRO_ALLOW`
+  and `ZRO_LOW_PRIORITY` answer their own membership question; see
+  [ADR-0009](docs/adr/0009-what-is-not-a-declared-table.md) before folding them in.
 - Documentation and code in English; whiptail UI strings in Turkish.
 - LF line endings, enforced by `.gitattributes`. This repo is developed on
   Windows where `core.autocrlf=true`; CRLF in a `.sh` file breaks the shebang

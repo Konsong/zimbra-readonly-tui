@@ -49,6 +49,10 @@ ZRO_STAT_BIN="${ZRO_STAT_BIN:-$(zro_first_existing /usr/bin/stat /bin/stat)}"
 # every other file's is already gzipped. Excluding it keeps that inversion — the
 # likeliest off-by-one in this area — out of the code entirely. The ActiveSync log
 # and raw mailboxd output are absent for want of a reader, not a reason.
+#
+# SC2034: read by NAME through lib/table.sh, never expanded here — which is what
+# keeps the log line able to say which declaration a refusal came from.
+# shellcheck disable=SC2034
 ZRO_INVENTORY='
 syslog:ZRO_SYSLOG_FILE
 mailbox:ZRO_LOG_DIR/mailbox.log
@@ -56,52 +60,28 @@ audit:ZRO_LOG_DIR/audit.log
 '
 
 zro_inv_entries() {
-  printf '%s' "$ZRO_INVENTORY" | grep -v '^[[:space:]]*$'
+  zro_table_entries ZRO_INVENTORY
 }
 
 zro_inv_keys() {
-  zro_inv_entries | sed 's/:.*$//'
+  zro_table_keys ZRO_INVENTORY
 }
 
 # Prints the absolute base path of one declared log, and fails when the name is
 # not declared or the root it names is empty. Failure is never a fallback.
 #
-# Both failures are logged here rather than by the caller, for the same reason
-# zro_bin_path logs its own: an inventory that quietly resolves to nothing reaches
-# the operator as an empty answer, which is the one thing this feature may not
-# produce.
+# Nothing is added to what the table resolves to, unlike zro_bin_path: the path
+# under the root is part of the declaration — `mailbox:ZRO_LOG_DIR/mailbox.log` —
+# and the primary mail log declares none at all, because it IS a file and an
+# operator overrides it as one.
+#
+# The refusals and the log lines that go with them belong to zro_table_root,
+# which names THIS table in the message. They are logged there rather than by a
+# caller for the reason this module exists: an inventory that quietly resolves to
+# nothing reaches the operator as an empty answer, which is the one thing this
+# feature may not produce.
 zro_inv_base_path() {
-  local key=${1-} entry spec=''
-  [ -n "$key" ] || return 1
-
-  while IFS= read -r entry; do
-    # Quoted, so the comparison is literal text: a name carrying a glob
-    # character cannot borrow another log's root.
-    case $entry in
-      "$key":?*) spec=${entry#*:}; break ;;
-    esac
-  done <<EOF
-$(zro_inv_entries)
-EOF
-  if [ -z "$spec" ]; then
-    zro_log error "denied, not a declared log: $key"
-    return 1
-  fi
-
-  local var=${spec%%/*} under=''
-  case $spec in
-    */*) under="/${spec#*/}" ;;
-  esac
-
-  # Indirect expansion, not a nameref: namerefs are bash 4.3 and the floor is
-  # 4.2. The name comes from the table above, never from anything an operator
-  # typed, and the guard above is what keeps an empty name out of it.
-  local root=${!var-}
-  if [ -z "$root" ]; then
-    zro_log error "denied, log root variable is empty: $var"
-    return 1
-  fi
-  printf '%s%s' "$root" "$under"
+  zro_table_root ZRO_INVENTORY "${1-}"
 }
 
 # --- admission -------------------------------------------------------------

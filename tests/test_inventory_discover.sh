@@ -7,6 +7,8 @@ set -uo pipefail
 . "$ZRO_TEST_ROOT/lib/assert.sh"
 # shellcheck source=../lib/core.sh
 . "$ZRO_SRC/lib/core.sh"
+# shellcheck source=../lib/table.sh
+. "$ZRO_SRC/lib/table.sh"
 
 # Every timestamp below is a local wall-clock time, which is this tool's only
 # time model. Pinned so the suite does not depend on the zone of whoever runs it.
