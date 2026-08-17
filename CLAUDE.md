@@ -33,6 +33,11 @@ on every change.
 - LF line endings, enforced by `.gitattributes`. This repo is developed on
   Windows where `core.autocrlf=true`; CRLF in a `.sh` file breaks the shebang
   on the server.
+- **A screen test that answers the window menu reads the real clock**, so stamp
+  its fixture tree RELATIVE to now (`NOW`/`TODAY` offsets, as
+  `tests/test_delivery_screen.sh` does), never with calendar dates. Only the pure
+  cases get a fixed tree, and only because they pass fixed bounds to match it. An
+  absolute stamp in a screen test is a suite that goes red on a date nobody chose.
 
 ## Verification
 
