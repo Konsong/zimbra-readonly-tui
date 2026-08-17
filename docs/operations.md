@@ -493,6 +493,8 @@ report is the claim.
 - **Log arama (dosyalarin tamaminda)** — described below.
 - **Mail kuyrugu (bekleyen iletiler)** — described below.
 - **Servis durumu** — described below.
+- **Toplu sorgu: listedeki hesaplarin durumu** — described below.
+- **Toplu sorgu: listedeki filtre ve yonlendirmeler** — described below.
 
 All three traces ask for an arrival window and answer in the same report. The
 only differences are the filter, the label on the report's first line, and the
@@ -698,9 +700,76 @@ bound every command here runs under is what cuts it, and the screen reports the
 expiry as itself — naming the directory as the place to look — rather than as a
 server that answered nothing.
 
+*Toplu sorgu: listedeki hesaplarin durumu* and *Toplu sorgu: listedeki filtre ve
+yonlendirmeler*:
+
+- The same question asked about many accounts: which of these are closed, and
+  which of them are forwarding their mail somewhere. **You supply the list** —
+  from a file, or typed and pasted as comma-separated text — and the run reads one
+  directory entry per address on it.
+
+**There is no screen here that asks the server about everybody.** The obvious
+implementation of both questions is `zmprov gqu` or `gaa -v`, which walk the whole
+directory; on this server either is a production event, and neither is bounded and
+offered — they are not in the tool at all. What replaces them is your list, and
+that is why the work grows with how many addresses you hand over rather than with
+how many accounts exist.
+
+**The list is capped and the cap is stated.** Two hundred addresses by default,
+which is roughly seven minutes. What the cap left out is counted on the
+confirmation screen *before* the run and again on the report, so a shortened list
+is never a shortened answer nobody mentioned. Raise it with `ZRO_BULK_MAX` if you
+mean to sit through it.
+
+**Every entry is judged before anything runs.** An entry that is not an address is
+reported with **its position in the list** — the third entry, not the third line,
+because three addresses can be written on one line — and the run continues past
+it. A repeated address is read once and the repeat is counted: it would cost a
+second JVM start to answer the same thing twice.
+
+**A file path is validated before it is opened**, which is the one place in this
+tool where you name a file. It must be absolute, must not contain `..`, and may
+contain only letters, digits, dot, underscore, hyphen and slash. A path that is
+not there, a directory, a file this tool cannot read, an empty file and one too
+large to be a list of addresses are five different screens, because they are five
+different repairs. The size bound is 256 KB by default (`ZRO_BULK_FILE_BYTES`),
+which is thousands of addresses.
+
+**The run shows where it has got to and what is left of the wait.** The estimate
+starts from a declared two seconds per account and switches to what *this* run has
+actually been spending as soon as it has read one — the number you are deciding on
+is how long this will take on this server, under whatever load it is under now.
+
+**ESC stops the run and keeps what it found.** The result is shown as it stood,
+under a banner naming how many addresses were never read, and the title carries
+`EKSIK SONUC`. A stop takes effect between accounts: a query already in flight
+finishes, because a half-read answer may not reach the report. The same marking
+covers the other way a run can be incomplete — an address the directory would not
+answer for is shown as `OKUNAMADI` and makes the whole answer partial, while an
+address that simply is not an account is shown as `HESAP YOK` and is an **answer**
+rather than a gap. The number in `OKUNAMADI (kod N)` is the exit code from section
+4 below — most often 21, the mailbox service not answering.
+
+**The status run shows Zimbra's own word** — `active`, `closed`, `locked`,
+`maintenance` — with a count per word underneath. The mail run prints only what is
+*set*: an account with no forwarding, no filter and local delivery left on is one
+line saying so, and every line that does appear is something somebody has to
+explain. The two kinds of forwarding stay on separate lines here as they do on the
+account card, because the administrator-set one is invisible in the user's own web
+client and is the one an audit after an incident is looking for.
+
+**The batch mode that reads commands from a file is not used.** `zmprov -f` would
+answer a whole list in one JVM start, and it would put what runs outside the
+allowlist's view — the file would carry command names this program never wrote,
+which is the same objection that forbids evaluating strings as commands. The cost
+of refusing it is a JVM start per account, and that cost is declared and shown
+rather than hidden.
+
 Cancel and ESC return to the previous screen from every prompt and from every
 screen. The main menu is the one place where there is no previous screen: leaving
-it there leaves the tool, as the explicit *Cikis* entry does.
+it there leaves the tool, as the explicit *Cikis* entry does. The single exception
+is a bulk query that is already running, where ESC stops the run and shows what it
+found so far.
 
 ### When the entry reads `KULLANILAMAZ`
 

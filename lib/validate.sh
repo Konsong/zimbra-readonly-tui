@@ -285,6 +285,50 @@ zro_validate_item_id() {
   return 0
 }
 
+# THE ONE PATH IN THIS PROGRAM AN OPERATOR TYPES, and the reason it has a
+# validator of its own.
+#
+# Every other file this tool opens is one the tool chose: the log inventory
+# declares the names and the environment decides only where they live, which is
+# what keeps a log viewer from being a general-purpose file reader. A bulk query
+# breaks that pattern on purpose — the list of accounts is the operator's, and
+# there is no table it could be declared in — so the value is judged here before
+# anything opens it.
+#
+# ABSOLUTE, because a relative path means whatever directory this tool happened
+# to be started in, which is not something an operator can check from the screen
+# they typed it on. Requiring the leading '/' also refuses the leading '-' every
+# other validator here has to refuse separately.
+#
+# THE SAME CHARACTER SET THE LOG INVENTORY ADMITS, and for a reason that outlives
+# the current call site: this value is a filename, and a filename is the kind of
+# value that ends up interpolated into somebody else's command line. Nothing here
+# hands it to a shell today; admitting a quote or a space would mean owning every
+# program that might see it tomorrow. A list of accounts needs none of them.
+#
+# NO PARENT-DIRECTORY COMPONENT, which is not about reaching a file the operator
+# could not otherwise name — they may write any absolute path — but about the
+# path on the screen being the file that was read. '/tmp/../etc/shadow' reports
+# itself as being under /tmp on the report's own header line.
+ZRO_LIST_PATH_MAX=4096
+
+zro_validate_list_path() {
+  local p=${1-}
+  [ -n "$p" ] || return "$ZRO_E_INPUT"
+  [ "${#p}" -le "$ZRO_LIST_PATH_MAX" ] || return "$ZRO_E_INPUT"
+  case $p in
+    /*) ;;
+    *) return "$ZRO_E_INPUT" ;;
+  esac
+  case $p in
+    *[!A-Za-z0-9._/-]*) return "$ZRO_E_INPUT" ;;
+  esac
+  case $p in
+    ..|../*|*/..|*/../*) return "$ZRO_E_INPUT" ;;
+  esac
+  return 0
+}
+
 zro_validate_email() {
   local e=${1-}
   [ -n "$e" ] || return "$ZRO_E_INPUT"
