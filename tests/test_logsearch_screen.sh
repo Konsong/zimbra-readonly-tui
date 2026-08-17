@@ -28,6 +28,16 @@ chmod +x "$ZRO_TEST_ROOT"/mocks/bin/* "$ZRO_TEST_ROOT"/mocks/libexec/* \
 
 export TZ=UTC
 
+# The log tree these screens select from. Its timestamps are RELATIVE TO THE REAL
+# CLOCK, the same rule tests/test_delivery_screen.sh states and for the same
+# reason: a screen case answers the window menu, so the clock decides what 'the
+# last week' covers, and a tree stamped with fixed dates only sits inside that
+# answer for the week it was written. Absolute dates here are a test that expires.
+NOW=$(date '+%s')
+TODAY=$(date -d 'today 00:00:00' '+%s')
+# 03:20, which is when cron.daily fires rotation.
+ROTATED=$((TODAY - 86400 + 12000))
+
 TREE=$(mktemp -d)
 mkdir -p "$TREE/var/log" "$TREE/zimbra/log"
 export ZRO_SYSLOG_FILE="$TREE/var/log/zimbra.log"
@@ -41,9 +51,9 @@ MBOX="$TREE/zimbra/log/mailbox.log"
 # whose end holds nothing but noise.
 pad() { seq 1 "$1" | sed 's/^/Aug  2 12:00:00 posta postfix\/smtpd[1]: padding line /'; }
 { pad 300; cat "$FIX/zimbra_log_outcomes.txt"; pad 300; } >"$SYS"
-touch -d '2026-07-30 10:00' -- "$SYS"
+touch -d "@$((NOW - 300))" -- "$SYS"
 cat "$FIX/mailbox_log_errors.txt" >"$MBOX"
-touch -d '2026-07-30 09:00' -- "$MBOX"
+touch -d "@$((NOW - 600))" -- "$MBOX"
 chmod 644 -- "$SYS" "$MBOX"
 # The audit log is declared and simply not on this host, which is ordinary and is
 # one of the screens below.
@@ -199,11 +209,24 @@ it "and names the files that absence covers, not just how many there were"
 # they conclude anything from it.
 assert_contains "$out" "$SYS"
 
+cp "$MBOX" "$TREE/zimbra/log/mailbox.log.1.gz"
+touch -d "@$ROTATED" -- "$TREE/zimbra/log/mailbox.log.1.gz"
+
+it "the rotation these cases need is inside the window they ask for, on any day"
+# THE REGRESSION THIS LOCKS DOWN, and the reason it is asserted here rather than
+# left implied. This tree was once stamped with fixed calendar dates while the
+# window menu asks the REAL clock: the cases below passed for the week they were
+# written in, and from the eighth day on 'week' no longer reached the rotation.
+# The scan then had nothing it could fail to open, so it was COMPLETE — and the
+# failure surfaced as an absent warning three assertions away from its cause,
+# which reads as the disclosure being broken rather than the tree having expired.
+win=$(zro_win_preset week "$NOW" "$TODAY")
+assert_eq "$(zro_logsearch_files mailbox \
+  "$(printf '%s' "$win" | cut -f1)" "$(printf '%s' "$win" | cut -f2)" | grep -c .)" 2
+
 it "and an incomplete one never says it"
 # The same empty result out of a scan that could not open a file is a different
 # screen with the opposite meaning.
-cp "$MBOX" "$TREE/zimbra/log/mailbox.log.1.gz"
-touch -d '2026-07-29 03:20' -- "$TREE/zimbra/log/mailbox.log.1.gz"
 queue "text" "mailbox" "yok-boyle-bir-sey-19283746" "week" "yes" "__CANCEL__" "__CANCEL__"
 : >"$ZRO_UI_OUT"
 zro_menu_logsearch
