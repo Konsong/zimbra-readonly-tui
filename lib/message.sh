@@ -330,12 +330,8 @@ ZRO_MSG_TXT_USAGE='Usage: zmmetadump'
 # difference: the code is the no-mailbox one and the screen says in as many words
 # that either cause produces it.
 zro_msg_fail_code() {
-  # $2 is unread now that the gate's codes are filtered above it, and is kept so the
-  # three mappers keep one signature — which is what lets a shared settler call any
-  # of them by name.
-  # shellcheck disable=SC2034
-  local errfile=${1-} rc=${2-1}
-  # A GATE CODE NEVER ARRIVES HERE. zro_msg_settle asks zro_gate_code first and
+  local errfile=${1-}
+  # A GATE CODE NEVER ARRIVES HERE. zro_msg_settle asks zro_exec_own_code first and
   # returns what the gate returned, so everything below is a failure of a command
   # that actually ran. The timeout used to be re-stated at the top of this function
   # for exactly that reason and is not any more: one place decides which codes are
@@ -393,13 +389,13 @@ zro_msg_settle() {
   # below used to end by returning $rc unchanged, which passed a denial through by
   # accident, and when that line became a constant the denial started reaching the
   # operator as a stopped mailboxd.
-  if zro_gate_code "$rc"; then
+  if zro_exec_own_code "$rc"; then
     rm -f -- "$errfile"
     printf '%s' "$rc"
     return 0
   fi
 
-  mapped=$(zro_msg_fail_code "$errfile" "$rc")
+  mapped=$(zro_msg_fail_code "$errfile")
   rm -f -- "$errfile"
   printf '%s' "$mapped"
 }
@@ -533,22 +529,24 @@ zro_msg_head_fetch() {
   fi
   said=$(head -c 500 -- "$err" 2>/dev/null)
   rm -f -- "$err"
-
   # A GATE REFUSAL IS PASSED THROUGH RATHER THAN FLATTENED, and everything else
-  # becomes the one documented code for a stored file that could not be read — the
-  # shape lib/logview.sh gives its own failures. A binary this host does not have, an
-  # unsupported user, an expired clock: none of those is a blob that cannot be read,
-  # and an operator sent to check the store over a missing `head` would repair
-  # nothing. What must not happen either is `gzip`'s own exit status leaving this
-  # module: a file that is not a gzip stream answers 1, which is not a code this
-  # program defines, and a caller switching on it would be reading a number nobody
-  # documented.
+  # becomes the one documented code for a stored file that could not be read. A
+  # binary this host does not have, an unsupported user, an expired clock: none of
+  # those is a blob that cannot be read, and an operator sent to check the store
+  # over a missing `head` would repair nothing. What must not happen either is
+  # `gzip`'s own exit status leaving this module: a file that is not a gzip stream
+  # answers 1, which is not a code this program defines, and a caller switching on
+  # it would be reading a number nobody documented.
+  #
+  # ASKED OF THE GATE rather than listed here. The list this replaces carried
+  # ZRO_E_INPUT, which zro_exec never returns — it converts zro_bin_path's and
+  # zro_identity_mode's before they leave — so it was passing through a code that
+  # could not arrive, which is what a list nobody could check against its source
+  # drifts into. The two early returns above are this function's own and are made
+  # before anything runs.
   if [ "$rc" -ne 0 ]; then
     [ -z "$said" ] || zro_set_error "$said"
-    case $rc in
-      "$ZRO_E_DENIED"|"$ZRO_E_BADUSER"|"$ZRO_E_NOCAP"|"$ZRO_E_TIMEOUT"|"$ZRO_E_UNAVAILABLE"|"$ZRO_E_INPUT")
-        return "$rc" ;;
-    esac
+    zro_exec_own_code "$rc" && return "$rc"
     zro_log warn "blob unreadable: $path (${said:-no message on stderr})"
     return "$ZRO_E_NO_BLOB"
   fi

@@ -18,6 +18,18 @@ set -uo pipefail
 # the module's own interface, tells the two apart. The refusal is forced by
 # overriding the allowlist as an environment prefix on the assertion — the idiom
 # tests/test_exec.sh:419 established for ZRO_BIN_ROOTS.
+#
+# TEN SEAMS, AND TWO LEFT OUT ON PURPOSE. Twelve functions in this tree call
+# zro_exec. Eight map failures and could swallow a gate code; two — zro_trace_exec
+# and zro_logsearch_grep — hold no mapping code at all and are asserted anyway, so
+# that an arm which grew an rc check would fail here. The two left out are
+# zro_cap_version_load and zro_msg_blob_compressed, and they are left out because
+# THEY ANSWER WITH A BOOLEAN: one asks whether the host reports a version, the
+# other whether a stored file begins with the gzip magic. A boolean cannot carry a
+# code, so a case demanding 90 from either would be asserting something neither
+# claims. Nothing is lost by it: the capability probe is not a safety check —
+# CONTEXT.md says so in as many words — and the compression question's refusal
+# surfaces one call down, at zro_msg_head_fetch, which is asserted below.
 # shellcheck source=lib/assert.sh
 . "$ZRO_TEST_ROOT/lib/assert.sh"
 # shellcheck source=../lib/core.sh
@@ -48,7 +60,10 @@ export ZRO_SYSLOG_FILE="$TREE/var/log/zimbra.log"
 export ZRO_LOG_DIR="$TREE/zimbra/log"
 export ZRO_STORE_ROOT="$TREE/store"
 ZRO_MBOX_PROOF_FILE=$(mktemp); export ZRO_MBOX_PROOF_FILE
-printf '%s\n' "Aug  2 12:00:00 posta postfix/smtpd[1]: line" >"$ZRO_SYSLOG_FILE"
+# One line, so the log seams have a file to open. Its date is never read — no case
+# here asks a question about time — which is why it may be a literal rather than
+# stamped relative to now, the way a screen test answering the window menu must be.
+printf '%s\n' 'Aug  2 12:00:00 posta postfix/smtpd[1]: line' >"$ZRO_SYSLOG_FILE"
 chmod +x "$ZRO_TEST_ROOT"/mocks/bin/* "$ZRO_TEST_ROOT"/mocks/libexec/* \
          "$ZRO_TEST_ROOT"/mocks/system/* "$ZRO_TEST_ROOT"/mocks/sbin/* 2>/dev/null || true
 
@@ -87,6 +102,15 @@ ITEM=274
 # denial is the thing under test.
 DENY_ALL='zmprov:gis'
 
+
+# THE TWO REFUSALS THAT ARE FORCED IDENTICALLY AT EVERY SEAM. The prefix dies with
+# the call — bash restores an assignment made before a function invocation — so no
+# case can leak its override into the next. The third, ZRO_E_NOCAP, is written out
+# at each seam instead, because the root to empty differs per binary and naming it
+# is what proves the seam reaches the binary it claims to.
+gate_denies()  { ZRO_ALLOW="$DENY_ALL"   assert_status "$ZRO_E_DENIED"  "$@"; }
+gate_baduser() { ZRO_MOCK_ID_USER=nobody assert_status "$ZRO_E_BADUSER" "$@"; }
+
 # ---------------------------------------------- the metadata dump --
 
 it "the metadata dump reports an allowlist denial as a denial, not as a stopped service"
@@ -96,13 +120,9 @@ ZRO_ALLOW="$DENY_ALL" assert_status "$ZRO_E_DENIED" zro_msg_dump_fetch "$ACCT" "
 it "and it ran nothing"
 assert_eq "$(cat "$ZRO_MOCK_LOG")" ""
 
-# THE TWO REFUSALS THAT ARE FORCED IDENTICALLY AT EVERY SEAM. The prefix dies with
-# the call — bash restores an assignment made before a function invocation — so no
-# case can leak its override into the next. The third, ZRO_E_NOCAP, is written out
-# at each seam instead, because the root to empty differs per binary and naming it
-# is what proves the seam reaches the binary it claims to.
-gate_denies()  { ZRO_ALLOW="$DENY_ALL"   assert_status "$ZRO_E_DENIED"  "$@"; }
-gate_baduser() { ZRO_MOCK_ID_USER=nobody assert_status "$ZRO_E_BADUSER" "$@"; }
+it "and the metadata dump passes the gate's other two codes as well"
+gate_baduser zro_msg_dump_fetch "$ACCT" "$ITEM"
+ZRO_ZIMBRA_BIN=/nonexistent assert_status "$ZRO_E_NOCAP" zro_msg_dump_fetch "$ACCT" "$ITEM"
 
 # ------------------------------------------------- the server itself --
 
@@ -148,13 +168,33 @@ zro_mbox_forget
 ZRO_MOCK_ZMPROV_GIS_OUT="$ZRO_TEST_ROOT/fixtures/zmprov_gis_ok.txt" \
   ZRO_MOCK_ZMPROV_GIS_RC=0 ZRO_ALLOW="$DENY_ALL" \
   assert_status "$ZRO_E_DENIED" zro_mbox_run "$ACCT" gaf
+
+# THE PROOF IS SEEDED FIRST, AND WITHOUT IT THESE TWO CASES ASSERT NOTHING ABOUT
+# THE SUBCOMMAND. The gate runs its oracle before the subcommand and the oracle
+# goes through zro_exec too, so a bad user or a missing binary refuses the ORACLE
+# and the case passes with `gaf` deleted. A mailbox already proven costs no read at
+# all — zro_mbox_require returns without calling zro_exec — which leaves the
+# zmmailbox call as the only thing left to refuse.
+#
+# SAID PLAINLY: that is an argument from the code, not something these two cases
+# can show. Both refusals happen before anything is executed, so the mock log is
+# empty either way and no assertion here can tell the seeded path from the
+# unseeded one. The allowlist case above is the discriminating one — it names a
+# subcommand, and nothing but the subcommand can be refused for it.
 zro_mbox_forget
+zro_mbox_prove "$ACCT"
 ZRO_MOCK_ID_USER=nobody assert_status "$ZRO_E_BADUSER" zro_mbox_run "$ACCT" gaf
+ZRO_ZIMBRA_BIN=/nonexistent assert_status "$ZRO_E_NOCAP" zro_mbox_run "$ACCT" gaf
+zro_mbox_forget
 
 it "the blob head passes the gate's codes through"
 BLOB="$ZRO_STORE_ROOT/0/9/msg/0/274-778.msg"
 mkdir -p "$(dirname -- "$BLOB")"
 : >"$BLOB"
+# The allowlist case is deliberately not alone here: zro_msg_admit_blob answers with
+# the same code for a path outside the store root, so a denial on its own cannot say
+# which of the two refused. The other two can only come from the gate, and they are
+# what pins this seam.
 gate_denies  zro_msg_head_fetch "$BLOB"
 gate_baduser zro_msg_head_fetch "$BLOB"
 ZRO_SYSTEM_BIN=/nonexistent assert_status "$ZRO_E_NOCAP" zro_msg_head_fetch "$BLOB"
@@ -167,6 +207,8 @@ ZRO_SYSTEM_BIN=/nonexistent assert_status "$ZRO_E_NOCAP" zro_msg_head_fetch "$BL
 it "the directory read passes the gate's codes through"
 gate_denies  zro_prov_read "$ZRO_E_NO_ACCOUNT" ga "$ACCT"
 gate_baduser zro_prov_read "$ZRO_E_NO_ACCOUNT" ga "$ACCT"
+ZRO_ZIMBRA_BIN=/nonexistent assert_status "$ZRO_E_NOCAP" \
+  zro_prov_read "$ZRO_E_NO_ACCOUNT" ga "$ACCT"
 
 # ------------------------------------------------------- the log reads --
 
@@ -181,12 +223,26 @@ ZRO_SYSTEM_BIN=/nonexistent assert_status "$ZRO_E_NOCAP" \
 # zro_logsearch_gate_code then reads. So the gate's code travels out of this seam in
 # that file, and a case asserting the return value would pass while proving nothing.
 it "the log scan records the gate's code in the statuses it writes"
-SCAN_ERR=$(mktemp); SCAN_ST=$(mktemp)
-ZRO_ALLOW="$DENY_ALL" \
-  assert_status 0 zro_logsearch_scan_file "$ZRO_SYSLOG_FILE" -F 'reject' '' 10 "$SCAN_ERR" "$SCAN_ST"
-assert_contains "$(cat "$SCAN_ST")" "$ZRO_E_DENIED"
+SCAN_ERR=$(mktemp)
+SCAN_DENIED=$(mktemp); SCAN_BADUSER=$(mktemp); SCAN_NOCAP=$(mktemp)
+# A status file each, rather than one reused: the last case below reads a status
+# back through the reader that interprets it, and a shared file would hand it
+# whichever scan happened to run last.
+ZRO_ALLOW="$DENY_ALL" assert_status 0 \
+  zro_logsearch_scan_file "$ZRO_SYSLOG_FILE" -F 'reject' '' 10 "$SCAN_ERR" "$SCAN_DENIED"
+assert_contains "$(cat "$SCAN_DENIED")" "$ZRO_E_DENIED"
+
+it "and the same is true of the gate's other two codes"
+ZRO_MOCK_ID_USER=nobody assert_status 0 \
+  zro_logsearch_scan_file "$ZRO_SYSLOG_FILE" -F 'reject' '' 10 "$SCAN_ERR" "$SCAN_BADUSER"
+assert_contains "$(cat "$SCAN_BADUSER")" "$ZRO_E_BADUSER"
+ZRO_SYSTEM_BIN=/nonexistent assert_status 0 \
+  zro_logsearch_scan_file "$ZRO_SYSLOG_FILE" -F 'reject' '' 10 "$SCAN_ERR" "$SCAN_NOCAP"
+assert_contains "$(cat "$SCAN_NOCAP")" "$ZRO_E_NOCAP"
 
 it "and the reader turns those statuses back into the gate's own code"
-assert_out_eq "$ZRO_E_DENIED" zro_logsearch_gate_code "$(cat "$SCAN_ST")"
+assert_out_eq "$ZRO_E_DENIED"  zro_logsearch_gate_code "$(cat "$SCAN_DENIED")"
+assert_out_eq "$ZRO_E_BADUSER" zro_logsearch_gate_code "$(cat "$SCAN_BADUSER")"
+assert_out_eq "$ZRO_E_NOCAP"   zro_logsearch_gate_code "$(cat "$SCAN_NOCAP")"
 
 zro_t_report
