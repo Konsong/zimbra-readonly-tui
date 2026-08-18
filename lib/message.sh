@@ -330,17 +330,16 @@ ZRO_MSG_TXT_USAGE='Usage: zmmetadump'
 # difference: the code is the no-mailbox one and the screen says in as many words
 # that either cause produces it.
 zro_msg_fail_code() {
+  # $2 is unread now that the gate's codes are filtered above it, and is kept so the
+  # three mappers keep one signature — which is what lets a shared settler call any
+  # of them by name.
+  # shellcheck disable=SC2034
   local errfile=${1-} rc=${2-1}
-  # AN EXPIRED CLOCK IS REPORTED AS ITSELF, BEFORE ANY TEXT IS READ. The timeout is
-  # this program's own fact — the gate stopped the command — and it is the one failure
-  # this screen must never re-describe from whatever the streams happened to carry.
-  # It is asked first rather than last because that is the difference between the
-  # screen that names the database and the shared box that names mailboxd, which this
-  # command does not talk to at all.
-  if [ "$rc" -eq "$ZRO_E_TIMEOUT" ]; then
-    printf '%s' "$ZRO_E_TIMEOUT"
-    return 0
-  fi
+  # A GATE CODE NEVER ARRIVES HERE. zro_msg_settle asks zro_gate_code first and
+  # returns what the gate returned, so everything below is a failure of a command
+  # that actually ran. The timeout used to be re-stated at the top of this function
+  # for exactly that reason and is not any more: one place decides which codes are
+  # the gate's, and it is not this one.
   if grep -qF -- "$ZRO_MSG_TXT_NO_ITEM" "$errfile" 2>/dev/null; then
     printf '%s' "$ZRO_E_NO_RESULT"
     return 0
@@ -368,8 +367,8 @@ zro_msg_fail_code() {
   #
   # So anything this function does not recognise is reported as the service this
   # command really needs being unreachable, and the screen for it names the database.
-  # The command's own words travel with it: the caller keeps them where the screen can
-  # find them.
+  # That is now only ever true of a command that RAN — which is what makes it safe to
+  # say, and what it could not say while a denial reached this line.
   printf '%s' "$ZRO_E_UNAVAILABLE"
 }
 
@@ -385,8 +384,22 @@ zro_msg_settle() {
     return 0
   fi
   msg=$(head -c 500 -- "$errfile" 2>/dev/null)
-  mapped=$(zro_msg_fail_code "$errfile" "$rc")
   [ -n "$msg" ] && zro_set_error "$msg"
+
+  # A CODE THE GATE PRODUCED TRAVELS AS ITSELF, and is never handed to the mapper
+  # below. Asked of lib/exec.sh rather than answered here: the gate knows which
+  # codes are its own, and six modules that each decided separately arrived at
+  # three different answers. This module's own history is the argument — the mapper
+  # below used to end by returning $rc unchanged, which passed a denial through by
+  # accident, and when that line became a constant the denial started reaching the
+  # operator as a stopped mailboxd.
+  if zro_gate_code "$rc"; then
+    rm -f -- "$errfile"
+    printf '%s' "$rc"
+    return 0
+  fi
+
+  mapped=$(zro_msg_fail_code "$errfile" "$rc")
   rm -f -- "$errfile"
   printf '%s' "$mapped"
 }
