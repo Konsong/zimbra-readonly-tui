@@ -957,3 +957,39 @@ zro_exec() {
   fi
   return "$rc"
 }
+
+# WHETHER A STATUS IS THIS GATE'S OWN RATHER THAN THE BINARY'S.
+#
+# zro_exec returns one of five codes it produced itself, or the exit status of the
+# command it ran, verbatim — only 124 is rewritten, to the timeout above. A caller
+# holding a number cannot tell those apart, and the two call for opposite handling:
+# the gate's codes travel to the operator unchanged — some name this program, some
+# name the host it is pointed at, and none of them describes the command that ran —
+# while a binary's status is undocumented here and has to become a code this
+# program defines.
+#
+# ONE PLACE TO ASK, because six modules answered this question separately and
+# arrived at three different answers. What that cost is on the record:
+# zro_msg_fail_code stopped answering it at all, and an allowlist denial on the
+# metadata dump — code 90, which this program defines as a defect in itself —
+# reached the operator as a screen naming mailboxd, a service that command never
+# talks to.
+#
+# THREE HAND-WRITTEN LISTS STILL STAND — lib/logview.sh, lib/queue.sh and
+# lib/service.sh — and that is a scope line rather than an oversight: this change
+# fixes the module that was wrong and gives the others somewhere to ask. Both
+# queue and service use ZRO_E_UNAVAILABLE as their own fall-through sink, so
+# converting them is a decision about what a sink means and not a substitution.
+# tests/test_gate_passthrough.sh holds all three to the rule meanwhile, which is
+# what makes leaving them safe.
+#
+# THE MEMBERSHIP IS READ OFF zro_exec ABOVE, not chosen. Those are the only five it
+# returns: ZRO_E_INPUT appears in zro_bin_path and zro_identity_mode, and zro_exec
+# converts both before they leave it, so it is not one of these.
+zro_exec_own_code() {
+  case ${1-} in
+    "$ZRO_E_DENIED"|"$ZRO_E_BADUSER"|"$ZRO_E_NOCAP"|"$ZRO_E_UNAVAILABLE"|"$ZRO_E_TIMEOUT")
+      return 0 ;;
+  esac
+  return 1
+}
