@@ -30,6 +30,8 @@ ZRO_MBOX_PROOF_FILE=$(mktemp); export ZRO_MBOX_PROOF_FILE
 
 # shellcheck source=../lib/exec.sh
 . "$ZRO_SRC/lib/exec.sh"
+# shellcheck source=../lib/settle.sh
+. "$ZRO_SRC/lib/settle.sh"
 # shellcheck source=../lib/account.sh
 . "$ZRO_SRC/lib/account.sh"
 # shellcheck source=../lib/mailbox.sh
@@ -56,6 +58,7 @@ GMS="$FIX/zmmailbox_gms_bytes.txt"
 GMS_HUMAN="$FIX/zmmailbox_gms_human.txt"
 GMS_LOCALE="$FIX/zmmailbox_gms_synthetic_locale.txt"
 NO_FOLDER="$FIX/zmmailbox_unknown_folder.err"
+UNCLASSIFIED="$FIX/zmmailbox_synthetic_unclassified.err"
 
 ran() { cat "$ZRO_MOCK_LOG"; }
 fresh() { : >"$ZRO_MOCK_LOG"; zro_mbox_forget; zro_clear_error; }
@@ -289,6 +292,25 @@ it "and the same for a grant listing"
 fresh
 ZRO_MOCK_ZMMAILBOX_GFG_ERR="$NO_FOLDER" ZRO_MOCK_ZMMAILBOX_GFG_RC=2 \
   assert_status "$ZRO_E_NO_FOLDER" proven zro_store_grants_fetch "$ACCT" '/Yok'
+
+it "a failure nobody has classified names the service the read needed, not a bare code"
+# THE ONE OPERATOR-VISIBLE CHANGE THIS MIGRATION MAKES. This module's failure
+# reader used to end by returning whatever status it was handed, so a failure it
+# did not recognise reached the screen as "islem basarisiz (kod 2)" — a number this
+# program does not define and cannot explain. It answers with the documented
+# unreachable-service code now, which is the answer lib/message.sh already gives
+# and which the screen naming the mail service already exists for.
+#
+# THE FIXTURE IS SYNTHETIC AND ITS NAME SAYS SO, which is the honest choice here
+# rather than this suite's usual one: the case is about a sentence NOTHING in this
+# tree recognises, and a captured sentence would be one somebody could classify —
+# at which point the fixture would quietly stop testing this.
+fresh
+ZRO_MOCK_ZMMAILBOX_GAF_ERR="$UNCLASSIFIED" ZRO_MOCK_ZMMAILBOX_GAF_RC=2 \
+  assert_status "$ZRO_E_UNAVAILABLE" proven zro_store_folders_fetch "$ACCT"
+
+it "and what the command said is still kept where the error screen finds it"
+assert_contains "$(zro_last_error)" "service.FAILURE"
 
 it "a listing that answered with nothing at all is no result, not an empty mailbox"
 # Every mailbox has a root folder. Nothing to parse means the answer was not a

@@ -33,6 +33,8 @@ ZRO_MBOX_PROOF_FILE=$(mktemp); export ZRO_MBOX_PROOF_FILE
 
 # shellcheck source=../lib/exec.sh
 . "$ZRO_SRC/lib/exec.sh"
+# shellcheck source=../lib/settle.sh
+. "$ZRO_SRC/lib/settle.sh"
 # shellcheck source=../lib/account.sh
 . "$ZRO_SRC/lib/account.sh"
 # shellcheck source=../lib/mailbox.sh
@@ -55,6 +57,7 @@ PARSE_ERR="$FIX/zmmailbox_s_query_parse_error.err"
 NOFOLDER_ERR="$FIX/zmmailbox_s_no_such_folder.err"
 NOCONV_ERR="$FIX/zmmailbox_sc_no_such_conv.err"
 BADID_ERR="$FIX/zmmailbox_sc_malformed_id.err"
+UNCLASSIFIED="$FIX/zmmailbox_synthetic_unclassified.err"
 
 ran() { cat "$ZRO_MOCK_LOG"; }
 fresh() { : >"$ZRO_MOCK_LOG"; zro_mbox_forget; zro_clear_error; }
@@ -516,6 +519,25 @@ it "and a stopped service reports the outage rather than an empty mailbox"
 fresh
 assert_status "$ZRO_E_UNAVAILABLE" proven search_msg_err "$FIX/zmprov_io_error_refused.err" 1 \
   zro_search_fetch "$ACCT" 'in:"/Inbox"'
+
+it "a failure nobody has classified names the service the read needed, not a bare code"
+# THE ONE OPERATOR-VISIBLE CHANGE THIS MIGRATION MAKES, in this module's copy of
+# it. The failure reader used to end by returning whatever status it was handed, so
+# a failure it did not recognise reached the screen as "islem basarisiz (kod 2)" —
+# a number this program does not define and cannot explain. It answers with the
+# documented unreachable-service code now, and the screen for it names the mail
+# service this search really goes through.
+#
+# THE FIXTURE IS SYNTHETIC AND ITS NAME SAYS SO, which is the honest choice for
+# this one case rather than this suite's usual one: it is about a sentence NOTHING
+# in this tree recognises, and a captured sentence would be one somebody could
+# classify — at which point the fixture would quietly stop testing this.
+fresh
+assert_status "$ZRO_E_UNAVAILABLE" proven search_msg_err "$UNCLASSIFIED" 2 \
+  zro_search_fetch "$ACCT" 'in:"/Inbox"'
+
+it "and what the command said is still kept where the error screen finds it"
+assert_contains "$(zro_last_error)" "service.FAILURE"
 
 # ------------------------------------------------------------- the screens --
 

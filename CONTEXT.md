@@ -421,6 +421,18 @@ stopped service.
 _Avoid_: exit code, error code — both also name what a binary returned, which is
 the thing this term exists to tell apart
 
+**The existence gate's verdict**:
+What `zro_mbox_require` answers with when a mailbox may not be opened — no
+mailbox, no account — or the code it forwards from the oracle's own read. It is
+NOT a gate's own code in the sense above, however alike the two look on a screen:
+`zro_exec` never produced it, so the predicate does not answer for it, and no
+predicate of its own can be read off the existence gate either. A read behind that
+gate therefore ASKS it before running anything, rather than trying to recognise
+its verdict in a status afterwards
+([ADR-0010](docs/adr/0010-the-gate-owns-the-predicate-and-one-settler-asks-it.md)).
+_Avoid_: gate code — that phrase belongs to the exec gate, and reading the two as
+one is how an account that has never been used gets reported as a stopped service
+
 **Failure reader**:
 The part of a module that turns what ITS command printed into a code this program
 documents. One per module, because the sentences differ per binary; it never sees

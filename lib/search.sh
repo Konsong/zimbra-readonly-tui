@@ -701,7 +701,11 @@ ZRO_SEARCH_TXT_PARSE='QUERY_PARSE_ERROR'
 ZRO_SEARCH_TXT_BAD_ID='malformed item ID'
 
 zro_search_fail_code() {
-  local errfile=${1-} rc=${2-1} mapped
+  local errfile=${1-} mapped
+  # A GATE CODE NEVER ARRIVES HERE, and neither does the existence gate's verdict.
+  # lib/settle.sh asks zro_exec_own_code before it calls this, and each read below
+  # asks the existence gate before it runs anything, so everything here is a
+  # failure of a command that REALLY RAN.
   if grep -qF -- "$ZRO_SEARCH_TXT_NO_FOLDER" "$errfile" 2>/dev/null; then
     printf '%s' "$ZRO_E_NO_FOLDER"
     return 0
@@ -727,27 +731,23 @@ zro_search_fail_code() {
     printf '%s' "$mapped"
     return 0
   fi
-  printf '%s' "$rc"
+  # ANYTHING ELSE IS THE SERVICE THIS READ NEEDED, NOT A NUMBER. This function used
+  # to end by returning the status it was handed, which was a pass-through by
+  # accident: right for a code the gate produced, and wrong for everything else,
+  # because the mailbox binary's own exit status then reached the operator as
+  # "islem basarisiz (kod 2)" — a number this program does not define and cannot
+  # explain. Nothing arrives here now but a failure of a command that ran and that
+  # nothing above recognised, so the answer is the one lib/message.sh already gives
+  # for the same situation: the mail service this read goes through is unreachable,
+  # and the screen for that code names it.
+  printf '%s' "$ZRO_E_UNAVAILABLE"
 }
 
-# What a finished gated read costs the caller: the code to return, with the
-# underlying message kept where the error screen can find it. The message is only
-# replaced when there is one, for the reason lib/store.sh gives: a read the gate
-# refused never ran, and the sentence already in the file is the oracle's.
-zro_search_settle() {
-  local errfile=${1-} rc=${2-0} msg mapped
-  if [ "$rc" -eq 0 ]; then
-    rm -f -- "$errfile"
-    zro_clear_error
-    printf '0'
-    return 0
-  fi
-  msg=$(head -c 500 -- "$errfile" 2>/dev/null)
-  mapped=$(zro_search_fail_code "$errfile" "$rc")
-  [ -n "$msg" ] && zro_set_error "$msg"
-  rm -f -- "$errfile"
-  printf '%s' "$mapped"
-}
+# THE EXISTENCE GATE IS ASKED IN EACH READ BELOW, AND ASKED FIRST, for the reason
+# lib/store.sh states beside its own four reads: zro_mbox_run asks it too and goes
+# on asking it, but a caller that learned of the refusal only from a status could
+# not tell it from the command failing, and only one of those two is about a
+# mailbox. Asking first is what leaves the settler nothing but a command that ran.
 
 # OUTPUT THAT IS NOT A TABLE AT ALL, told apart from an answer with no hits — and
 # LOGGED, because the two are different facts and only one of them is about the
@@ -813,10 +813,11 @@ zro_search_fetch() {
   # an allowlist denial means a defect.
   case $query in -*) return "$ZRO_E_INPUT" ;; esac
   zro_reset_mode
+  zro_mbox_require "$acct" || return $?
   err=$(zro_tmpfile) || return "$ZRO_E_UNAVAILABLE"
 
   out=$(zro_mbox_run "$acct" s -t message -l "$ZRO_SEARCH_LIMIT" "$query" 2>"$err") || rc=$?
-  rc=$(zro_search_settle "$err" "$rc")
+  rc=$(zro_settle "$err" "$rc" zro_search_fail_code)
   [ "$rc" -eq 0 ] || return "$rc"
 
   # A search that answered always prints its count line, even when the count is
@@ -842,10 +843,11 @@ zro_search_conv_fetch() {
   [ -n "$query" ] || return "$ZRO_E_INPUT"
   case $query in -*) return "$ZRO_E_INPUT" ;; esac
   zro_reset_mode
+  zro_mbox_require "$acct" || return $?
   err=$(zro_tmpfile) || return "$ZRO_E_UNAVAILABLE"
 
   out=$(zro_mbox_run "$acct" s -l "$ZRO_SEARCH_LIMIT" "$query" 2>"$err") || rc=$?
-  rc=$(zro_search_settle "$err" "$rc")
+  rc=$(zro_settle "$err" "$rc" zro_search_fail_code)
   [ "$rc" -eq 0 ] || return "$rc"
 
   zro_search_no_table "$out" && return "$ZRO_E_NO_RESULT"
@@ -865,10 +867,11 @@ zro_search_conv_messages() {
   zro_validate_email "$acct" || return "$ZRO_E_INPUT"
   zro_validate_item_id "$conv" || return "$ZRO_E_INPUT"
   zro_reset_mode
+  zro_mbox_require "$acct" || return $?
   err=$(zro_tmpfile) || return "$ZRO_E_UNAVAILABLE"
 
   out=$(zro_mbox_run "$acct" sc -l "$ZRO_SEARCH_LIMIT" "$conv" "$ZRO_SEARCH_CONV_QUERY" 2>"$err") || rc=$?
-  rc=$(zro_search_settle "$err" "$rc")
+  rc=$(zro_settle "$err" "$rc" zro_search_fail_code)
   [ "$rc" -eq 0 ] || return "$rc"
 
   # The usage banner arrives on STDOUT with exit 1, which is the shape a missing
