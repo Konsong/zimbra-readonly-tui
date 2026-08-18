@@ -401,6 +401,26 @@ UNREADABLE="$SYS.2.gz" RC=2 assert_status 2 \
 assert_contains "$(zro_last_error)" "$SYS.2.gz"
 assert_contains "$(zro_last_error)" "unable to open file"
 
+it "and it survives a message from the tracer longer than the bound"
+# THE REASON THE BOUND IS NOT ENFORCED INSIDE THE ERROR STORE, asserted rather than
+# left to a comment. What the command said is bounded HERE and the skipped file is
+# named after it, so a tracer that printed a stack trace cannot spend the whole
+# budget and push the disclosure off the end of the message. The bound moved one
+# layer down, into zro_set_error, would turn a bound into a silence.
+#
+# PADDING RATHER THAN A CAPTURE, and in the tree this test already owns rather than
+# in tests/fixtures. What is under test is a length: no stderr any Zimbra tool has
+# printed on the lab server is longer than the bound, and a fixture claiming one
+# would be inventing it. The padding says nothing recognisable on purpose — a
+# tracer message that named an unreadable file would be read as a skip and would
+# never reach the refusal this case is about.
+LONG_ERR="$TREE/tracer-stderr-over-the-bound.txt"
+head -c "$(( ZRO_ERROR_KEEP_BYTES * 2 ))" /dev/zero | tr '\0' 'x' >"$LONG_ERR"
+UNREADABLE="$SYS.2.gz" RC=2 ERR="$LONG_ERR" assert_status 2 \
+  trace 'ahmet.yilmaz@example.com' "$W_28_DAY_FROM" "$W_28_DAY_TO"
+assert_contains "$(zro_last_error)" "Okunamayan log dosyalari"
+assert_contains "$(zro_last_error)" "$SYS.2.gz"
+
 it "a log it could not open is reported as the documented log failure"
 # The tool dies with a message and an exit status of its own — Perl hands back
 # whatever errno was set, which can collide with the codes this program defines.

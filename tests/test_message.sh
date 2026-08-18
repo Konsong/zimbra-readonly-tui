@@ -337,6 +337,34 @@ fresh; fails "$FIX/zmmetadump_not_on_host.err"
 assert_status "$ZRO_E_NO_MAILBOX" zro_msg_dump_fetch "$ACCT" "$ITEM"
 assert_contains "$(zro_last_error)" "not found on this host"
 
+it "keeps only as much of what the command said as the bound allows"
+# THE BOUND'S FIRST TEST, and it needs no fixture of its own: both of these captures
+# are a sentence of explanation over a Java stack trace, both are longer than the
+# bound, and both already reach the error store through this read.
+#
+# ASSERTED AGAINST THE DECLARATION rather than against the digit. The number was
+# chosen and never measured — lib/core.sh says so where it is declared — so a suite
+# that pinned 500 would be claiming a measurement nobody made. What is worth pinning
+# is that the prefix is bounded at all, and that one declaration decides where.
+fresh; fails "$FIX/zmmetadump_no_such_item.err"
+assert_status "$ZRO_E_NO_RESULT" zro_msg_dump_fetch "$ACCT" "$ITEM"
+kept=$(zro_last_error)
+assert_eq "${#kept}" "$ZRO_ERROR_KEEP_BYTES"
+
+fresh; fails "$FIX/zmmetadump_not_on_host.err"
+assert_status "$ZRO_E_NO_MAILBOX" zro_msg_dump_fetch "$ACCT" "$ITEM"
+kept=$(zro_last_error)
+assert_eq "${#kept}" "$ZRO_ERROR_KEEP_BYTES"
+
+it "and the bound is read from that declaration rather than written out at the site"
+# The one thing a name buys over a number repeated at ten sites, asserted rather
+# than assumed: move the declaration and what reaches the screen moves with it. In
+# a subshell so the override cannot outlive the read it was made for.
+fresh; fails "$FIX/zmmetadump_no_such_item.err"
+( ZRO_ERROR_KEEP_BYTES=120; zro_msg_dump_fetch "$ACCT" "$ITEM" ) >/dev/null 2>&1
+kept=$(zro_last_error)
+assert_eq "${#kept}" "120"
+
 it "reports the usage banner as a defect in this program, and says so in the log"
 # The banner arrives on stderr with exit 1 when an option is missing or malformed.
 # Nobody types this: the vector is built here.
