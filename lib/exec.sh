@@ -968,7 +968,13 @@ zro_exec() {
 # while a binary's status is undocumented here and has to become a code this
 # program defines.
 #
-# ONE PLACE TO ASK, because six modules answered this question separately and
+# ONE PLACE TO ASK, AND ONE CALLER THAT ASKS IT: lib/settle.sh, the routine a gated
+# read finishes through — the message read today, the store and search reads next.
+# The predicate stays here rather than moving there because
+# its membership is a fact about zro_exec above — it changes when that function's
+# return set changes and at no other time. ADR-0010 records the decision.
+#
+# It is here at all because six modules answered this question separately and
 # arrived at three different answers. What that cost is on the record:
 # zro_msg_fail_code stopped answering it at all, and an allowlist denial on the
 # metadata dump — code 90, which this program defines as a defect in itself —

@@ -331,11 +331,11 @@ ZRO_MSG_TXT_USAGE='Usage: zmmetadump'
 # that either cause produces it.
 zro_msg_fail_code() {
   local errfile=${1-}
-  # A GATE CODE NEVER ARRIVES HERE. zro_msg_settle asks zro_exec_own_code first and
-  # returns what the gate returned, so everything below is a failure of a command
-  # that actually ran. The timeout used to be re-stated at the top of this function
-  # for exactly that reason and is not any more: one place decides which codes are
-  # the gate's, and it is not this one.
+  # A GATE CODE NEVER ARRIVES HERE. zro_settle asks zro_exec_own_code before it calls
+  # this, and returns what the gate returned, so everything below is a failure of a
+  # command that actually ran. The timeout used to be re-stated at the top of this
+  # function for exactly that reason and is not any more: one place decides which
+  # codes are the gate's, and it is not this one.
   if grep -qF -- "$ZRO_MSG_TXT_NO_ITEM" "$errfile" 2>/dev/null; then
     printf '%s' "$ZRO_E_NO_RESULT"
     return 0
@@ -366,38 +366,6 @@ zro_msg_fail_code() {
   # That is now only ever true of a command that RAN — which is what makes it safe to
   # say, and what it could not say while a denial reached this line.
   printf '%s' "$ZRO_E_UNAVAILABLE"
-}
-
-# What a finished read costs the caller: the code to return, with the underlying
-# message kept where the error screen can find it. The message is only replaced when
-# there is one, for the reason lib/store.sh gives about its own settler.
-zro_msg_settle() {
-  local errfile=${1-} rc=${2-0} msg mapped
-  if [ "$rc" -eq 0 ]; then
-    rm -f -- "$errfile"
-    zro_clear_error
-    printf '0'
-    return 0
-  fi
-  msg=$(head -c 500 -- "$errfile" 2>/dev/null)
-  [ -n "$msg" ] && zro_set_error "$msg"
-
-  # A CODE THE GATE PRODUCED TRAVELS AS ITSELF, and is never handed to the mapper
-  # below. Asked of lib/exec.sh rather than answered here: the gate knows which
-  # codes are its own, and six modules that each decided separately arrived at
-  # three different answers. This module's own history is the argument — the mapper
-  # below used to end by returning $rc unchanged, which passed a denial through by
-  # accident, and when that line became a constant the denial started reaching the
-  # operator as a stopped mailboxd.
-  if zro_exec_own_code "$rc"; then
-    rm -f -- "$errfile"
-    printf '%s' "$rc"
-    return 0
-  fi
-
-  mapped=$(zro_msg_fail_code "$errfile")
-  rm -f -- "$errfile"
-  printf '%s' "$mapped"
 }
 
 # THE STORED RECORD OF ONE MESSAGE. One invocation.
@@ -437,7 +405,7 @@ zro_msg_dump_fetch() {
     printf '%.500s\n' "$out" >"$err"
   fi
 
-  rc=$(zro_msg_settle "$err" "$rc")
+  rc=$(zro_settle "$err" "$rc" zro_msg_fail_code)
   [ "$rc" -eq 0 ] || return "$rc"
 
   # A dump that answered always prints its column section. Output without one is not
