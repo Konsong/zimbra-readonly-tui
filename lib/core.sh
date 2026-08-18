@@ -112,12 +112,19 @@ ZRO_TAB=$'\t'
 # HOW MUCH OF THE UNDERLYING FAILURE MESSAGE IS KEPT, in bytes. Every screen that
 # explains a failure prints this tool's own reading of it and, under that, the words
 # the command itself printed — and this is the bound on the second, so that a stack
-# trace cannot push the explanation off the screen it is the explanation for. Every
-# site that reads a scratch file holding a command's error stream applies it, and so
-# do the two that report a list of log files instead, because that list is assembled
-# out of what those commands said. One bound rather than the eleven copies of a
-# number this replaces is what keeps one screen from being quietly more talkative
-# than another.
+# trace cannot push the explanation off the screen it is the explanation for. It is
+# the bound on WHAT REACHES THE ERROR STORE BELOW, and eleven sites apply it: eight
+# read a command's captured error stream, two bound the list of log files a scan could
+# not open, and one writes a borrowed prefix of a command's stdout into the capture the
+# others read. One bound rather than the eleven copies of a number this replaces is
+# what keeps one screen from being quietly more talkative than another.
+#
+# IT IS NOT THE ONLY BOUND ON WHAT A COMMAND SAID, and the other one is deliberately
+# left alone. The delivery trace and the log search each keep the first non-empty line
+# of a SKIPPED file's message at 200 characters, so that the list naming those files
+# stays a list — a bound paid per file rather than once for the whole message, and a
+# different question from this one. Folding the two together would be a decision about
+# what those banners may cost, not a substitution.
 #
 # THE NUMBER WAS CHOSEN AND NEVER MEASURED. Nothing in this tree records where 500
 # came from, no document states it, and no screen was ever rendered against a wider

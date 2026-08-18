@@ -454,11 +454,13 @@ one
 What the command ITSELF said, held where the error screen can find it and printed
 under this tool's own explanation of the failure. Bounded — `ZRO_ERROR_KEEP_BYTES`
 in `lib/core.sh` — so a stack trace cannot push the explanation off the screen it is
-the explanation for, and bounded to the same length wherever the sentence came from,
+the explanation for, and bounded to the same length whichever command it came from,
 so that one screen is not quietly more talkative than another. The bound is applied
-by whoever read the command's error stream and deliberately NOT by the store: two
-screens append the log files they could not open after it, and that disclosure may
-not be the thing that gets cut. The number was chosen and never measured.
+by whoever captured the command's error stream and deliberately NOT by the store:
+two screens append the log files they could not open after it, and that disclosure
+may not be the thing that gets cut. It is not the only bound on text a command
+produced — a skipped file's reason is bounded per file, for the banner — and the
+number was chosen and never measured.
 _Avoid_: error message — a screen shows those whether this tool or a command wrote
 them, and this term is only the part that came from the command
 

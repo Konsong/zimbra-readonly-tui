@@ -2,8 +2,9 @@
 
 - **Status:** accepted
 - **Date:** 2026-08-18
-- **Affects:** `lib/exec.sh` keeps `zro_exec_own_code`, `lib/settle.sh` is added beside it, and
-  `lib/message.sh`, `lib/store.sh` and `lib/search.sh` all finish through it
+- **Affects:** `lib/exec.sh` keeps `zro_exec_own_code`, `lib/settle.sh` is added beside it,
+  `lib/message.sh`, `lib/store.sh` and `lib/search.sh` all finish through it, and `lib/core.sh` declares the
+  bound on the kept message that eleven sites had been writing out
 - **Evidence:** the defect that produced it, fixed on the branch this one follows, and
   [`tests/test_gate_passthrough.sh`](../../tests/test_gate_passthrough.sh), which holds ten gated seams to
   the rule
@@ -174,5 +175,12 @@ each carrying the number. It is deliberately NOT enforced inside `zro_set_error`
 bound what the command said and then append the log files they could not open — a bound one layer down would
 let a long message spend the whole budget and cut the disclosure off the end, which turns a bound into a
 silence. The declaration carries the note that 500 was chosen and never measured: nothing in this tree
-records where it came from. The bound also has its first test, at the message read, where two captured
-failures are already longer than it.
+records where it came from.
+
+The bound has its first test at the message read, where two captured failures are already longer than it,
+and the rule about where it may live is held by
+[`tests/test_delivery.sh`](../../tests/test_delivery.sh) — a refusal after a skipped file, with a tracer
+message twice the bound, whose disclosure still names the file. Its twin in `lib/logsearch.sh` keeps the same
+shape and has no case of its own: the message there is whatever a GATE REFUSAL left on the stream, and a gate
+refusal is a command that did not run, so there is no long message to produce at that seam without teaching a
+mock to refuse one file and not another.

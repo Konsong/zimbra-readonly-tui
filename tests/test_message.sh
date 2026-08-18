@@ -342,28 +342,31 @@ it "keeps only as much of what the command said as the bound allows"
 # are a sentence of explanation over a Java stack trace, both are longer than the
 # bound, and both already reach the error store through this read.
 #
+# MEASURED IN BYTES, because that is what the bound is in and what `head -c` counts.
+# `${#...}` would count CHARACTERS, and would pass on these two ASCII captures while
+# saying nothing about a message that is not one. The last byte dropped is the newline
+# the store itself writes; taking it off here rather than through a command
+# substitution is what keeps the count right if the bound ever falls on one.
+#
 # ASSERTED AGAINST THE DECLARATION rather than against the digit. The number was
 # chosen and never measured — lib/core.sh says so where it is declared — so a suite
 # that pinned 500 would be claiming a measurement nobody made. What is worth pinning
 # is that the prefix is bounded at all, and that one declaration decides where.
 fresh; fails "$FIX/zmmetadump_no_such_item.err"
 assert_status "$ZRO_E_NO_RESULT" zro_msg_dump_fetch "$ACCT" "$ITEM"
-kept=$(zro_last_error)
-assert_eq "${#kept}" "$ZRO_ERROR_KEEP_BYTES"
+assert_eq "$(zro_last_error | head -c -1 | wc -c)" "$ZRO_ERROR_KEEP_BYTES"
 
 fresh; fails "$FIX/zmmetadump_not_on_host.err"
 assert_status "$ZRO_E_NO_MAILBOX" zro_msg_dump_fetch "$ACCT" "$ITEM"
-kept=$(zro_last_error)
-assert_eq "${#kept}" "$ZRO_ERROR_KEEP_BYTES"
+assert_eq "$(zro_last_error | head -c -1 | wc -c)" "$ZRO_ERROR_KEEP_BYTES"
 
 it "and the bound is read from that declaration rather than written out at the site"
-# The one thing a name buys over a number repeated at ten sites, asserted rather
+# The one thing a name buys over a number repeated at eleven sites, asserted rather
 # than assumed: move the declaration and what reaches the screen moves with it. In
 # a subshell so the override cannot outlive the read it was made for.
 fresh; fails "$FIX/zmmetadump_no_such_item.err"
 ( ZRO_ERROR_KEEP_BYTES=120; zro_msg_dump_fetch "$ACCT" "$ITEM" ) >/dev/null 2>&1
-kept=$(zro_last_error)
-assert_eq "${#kept}" "120"
+assert_eq "$(zro_last_error | head -c -1 | wc -c)" "120"
 
 it "reports the usage banner as a defect in this program, and says so in the log"
 # The banner arrives on stderr with exit 1 when an option is missing or malformed.
