@@ -2,8 +2,8 @@
 
 - **Status:** accepted
 - **Date:** 2026-08-18
-- **Affects:** `lib/exec.sh` keeps `zro_exec_own_code`, `lib/settle.sh` is added beside it, `lib/message.sh`
-  finishes through it, and `lib/store.sh` and `lib/search.sh` follow in the change after this one
+- **Affects:** `lib/exec.sh` keeps `zro_exec_own_code`, `lib/settle.sh` is added beside it, and
+  `lib/message.sh`, `lib/store.sh` and `lib/search.sh` all finish through it
 - **Evidence:** the defect that produced it, fixed on the branch this one follows, and
   [`tests/test_gate_passthrough.sh`](../../tests/test_gate_passthrough.sh), which holds ten gated seams to
   the rule
@@ -108,10 +108,12 @@ reader: the capture, the classification and the sink are written inline in the f
 a redesign rather than a de-duplication, and the passthrough suite holds them to the rule meanwhile, which is
 what makes leaving them safe.
 
-**Of the three, the message read is the one that moves with this ADR**, and it is chosen because nothing an
-operator sees changes: its unrecognised-failure code is already the documented one. The other two still end by
-returning the status they were handed, so their migration deletes that arm and changes what an operator is
-shown — which is a change worth making on its own, where a reviewer is looking for it.
+**The message read moved first**, and it was chosen because nothing an operator saw changed: its
+unrecognised-failure code was already the documented one. The store and search reads followed in a change of
+their own, because deleting their fall-through changes what an operator is shown — an unrecognised failure of
+a command that ran now names the mail service the read needed instead of printing the mailbox binary's exit
+status as a bare number. Splitting it that way is what put that one change where a reviewer was looking for
+it.
 
 **One read inside the migrated module does not move either.** `zro_msg_head_fetch` reads the stored blob
 and runs the same steps inline, and it already asks the predicate — but it has no failure reader to hand
@@ -127,16 +129,45 @@ one scratch file across every log file in the window and appends the list of fil
 kept message, after the bound; a settler that removed the file and stopped at the bound would take the
 disclosure with it. Both are named here so that a later reader does not take them for work somebody forgot.
 
+## The existence gate is asked before the command, not read off its status
+
+The store and search reads do not reach `zro_exec` directly. They go through `zro_mbox_run`, which asks the
+existence gate first and runs nothing at all for an account whose mailbox has not been proven. So a status
+those reads hold can be one of THREE things rather than two — a code the exec gate produced, a refusal the
+existence gate answered with, or the mailbox binary's own exit status — and the predicate answers for the
+first only.
+
+The fall-through hid that. `printf '%s' "$rc"` passed `ZRO_E_NO_MAILBOX` and `ZRO_E_NO_ACCOUNT` out as
+themselves for exactly the accidental reason it passed the exec gate's codes out as themselves. Deleting it
+without noticing turns an account that has never been used into a stopped mail service on the screen — the
+same shape of defect this ADR was written about, running the other way. Seven cases in
+[`tests/test_store.sh`](../../tests/test_store.sh) catch it; it is written down here because reasoning from
+the spec alone did not.
+
+**A second predicate is not the answer.** `zro_exec_own_code` works because its membership is READ OFF
+`zro_exec`'s return set — that is the whole reason it belongs to the gate. `zro_mbox_run` has no such set to
+read off: `zro_mbox_verdict` forwards whatever the oracle's directory read returned, and that read ends in a
+fall-through of its own, so the codes the existence gate can produce are not bounded by anything the mailbox
+module wrote.
+
+**So each read asks the gate itself, before it runs anything.** `zro_mbox_require` at the top of the seven
+reads, with the gate's answer returning from there instead of travelling on as a status. `zro_mbox_run` goes
+on asking it too — that precondition is what makes it the only path to the gated binary, and weakening it was
+never on the table — and the second ask costs no invocation, because a mailbox proven once is proven for the
+session and the proof is a file. What reaches the settler after that is a command that ran.
+
 ## Consequences
 
-`lib/settle.sh` is sourced after `lib/exec.sh` — in the entry point, and in the two test files that source
-the message module directly. That is the only edit those two suites needed: no case in either changed, which
-is what makes them evidence that the migration preserved behaviour rather than evidence of nothing.
+`lib/settle.sh` is sourced after `lib/exec.sh` — in the entry point, and in the four test files that source
+the message, store or search module directly. Two of those four needed nothing but that source line. The
+store and search suites needed it and gained cases as well, for the one behaviour that changed and for the
+claim about what the second gate ask costs. Nothing else in any of the four moved, which is what makes them
+evidence that the migration preserved behaviour rather than evidence of nothing.
 
 `tests/test_settle.sh` tests one thing, the refused name, and nothing else. No higher seam can reach it: a
 module names its reader in its own source, so a bad name is a maintainer's edit rather than anything an
 operator can do. Every other question about the settler is asked where an operator would meet it.
 
-The bound on the kept message is still the number `500`, written out in the settler and at twelve other
-sites. Naming it is a change of its own and comes after the two reads that have not moved yet — by then the
-three copies of it that stood in the three settlers are one, and this is the first of them.
+The bound on the kept message is still the number `500`, written out in the settler and at ten other sites.
+Naming it is a change of its own and comes after these three reads: the three copies of it that stood in the
+three settlers are one now, which is what makes that change eleven sites rather than thirteen.

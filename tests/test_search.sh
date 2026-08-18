@@ -33,6 +33,8 @@ ZRO_MBOX_PROOF_FILE=$(mktemp); export ZRO_MBOX_PROOF_FILE
 
 # shellcheck source=../lib/exec.sh
 . "$ZRO_SRC/lib/exec.sh"
+# shellcheck source=../lib/settle.sh
+. "$ZRO_SRC/lib/settle.sh"
 # shellcheck source=../lib/account.sh
 . "$ZRO_SRC/lib/account.sh"
 # shellcheck source=../lib/mailbox.sh
@@ -55,6 +57,7 @@ PARSE_ERR="$FIX/zmmailbox_s_query_parse_error.err"
 NOFOLDER_ERR="$FIX/zmmailbox_s_no_such_folder.err"
 NOCONV_ERR="$FIX/zmmailbox_sc_no_such_conv.err"
 BADID_ERR="$FIX/zmmailbox_sc_malformed_id.err"
+UNCLASSIFIED="$FIX/zmmailbox_synthetic_unclassified.err"
 
 ran() { cat "$ZRO_MOCK_LOG"; }
 fresh() { : >"$ZRO_MOCK_LOG"; zro_mbox_forget; zro_clear_error; }
@@ -467,6 +470,14 @@ assert_status "$ZRO_E_NO_MAILBOX" no_mailbox conv_msgs "$SCMSG" 0 \
   zro_search_conv_messages "$ACCT" '265'
 assert_not_contains "$(ran)" "zmmailbox"
 
+# The conversation search is the third of the three, and it was the one with no
+# case of its own here. The two above do not cover it: each read asks the gate in
+# its own body, so an omission in one is invisible from the others.
+fresh
+assert_status "$ZRO_E_NO_MAILBOX" no_mailbox search_conv "$CONVS" 0 \
+  zro_search_conv_fetch "$ACCT" 'in:"/Inbox"'
+assert_not_contains "$(ran)" "zmmailbox"
+
 it "and a gate that cannot answer refuses rather than searching anyway"
 fresh
 assert_status "$ZRO_E_UNAVAILABLE" outage search_msg "$HITS" 0 \
@@ -516,6 +527,32 @@ it "and a stopped service reports the outage rather than an empty mailbox"
 fresh
 assert_status "$ZRO_E_UNAVAILABLE" proven search_msg_err "$FIX/zmprov_io_error_refused.err" 1 \
   zro_search_fetch "$ACCT" 'in:"/Inbox"'
+
+it "a failure nobody has classified names the service the read needed, not a bare code"
+# THE ONE OPERATOR-VISIBLE CHANGE THIS MIGRATION MAKES, in this module's copy of
+# it. The failure reader used to end by returning whatever status it was handed, so
+# a failure it did not recognise reached the screen as "islem basarisiz (kod 2)" —
+# a number this program does not define and cannot explain. It answers with the
+# documented unreachable-service code now, and the screen for it names the mail
+# service this search really goes through.
+#
+# THE FIXTURE IS SYNTHETIC AND ITS NAME SAYS SO, which is the honest choice for
+# this one case rather than this suite's usual one: it is about a sentence NOTHING
+# in this tree recognises, and a captured sentence would be one somebody could
+# classify — at which point the fixture would quietly stop testing this.
+fresh
+assert_status "$ZRO_E_UNAVAILABLE" proven search_msg_err "$UNCLASSIFIED" 2 \
+  zro_search_fetch "$ACCT" 'in:"/Inbox"'
+
+it "and what the command said is still kept where the error screen finds it"
+assert_contains "$(zro_last_error)" "service.FAILURE"
+
+it "and the fixture really is a sentence nothing in this tree reads"
+# THE GUARD ON THE CASE ABOVE, because the case turns on what NOTHING recognises
+# and nothing is a moving target. Teach the shared Zimbra reader this sentence
+# later and the case above would keep passing while testing an arm above the sink
+# instead of the sink itself. This goes red first, and points at the fixture.
+assert_out_eq "0" zro_zimbra_error_code "$UNCLASSIFIED"
 
 # ------------------------------------------------------------- the screens --
 

@@ -243,7 +243,11 @@ EOF
 ZRO_STORE_TXT_NO_FOLDER='unknown folder'
 
 zro_store_fail_code() {
-  local errfile=${1-} rc=${2-1} mapped
+  local errfile=${1-} mapped
+  # A GATE CODE NEVER ARRIVES HERE, and neither does the existence gate's refusal.
+  # lib/settle.sh asks zro_exec_own_code before it calls this, and each read below
+  # asks the existence gate before it runs anything, so everything that arrives
+  # here is a failure of a command that REALLY RAN.
   if grep -qF -- "$ZRO_STORE_TXT_NO_FOLDER" "$errfile" 2>/dev/null; then
     printf '%s' "$ZRO_E_NO_FOLDER"
     return 0
@@ -255,30 +259,41 @@ zro_store_fail_code() {
     printf '%s' "$mapped"
     return 0
   fi
-  printf '%s' "$rc"
+  # ANYTHING ELSE IS THE SERVICE THIS READ NEEDED, NOT A NUMBER. This function used
+  # to end by returning the status it was handed, which was a pass-through by
+  # accident: right for a code the gate produced, and wrong for everything else,
+  # because the mailbox binary's own exit status then reached the operator as
+  # "islem basarisiz (kod 2)" — a number this program does not define and cannot
+  # explain. Nothing arrives here now but a failure of a command that ran and that
+  # nothing above recognised, so the answer is the one lib/message.sh already gives
+  # for the same situation: the mail service this read goes through is unreachable,
+  # and the screen for that code names it.
+  printf '%s' "$ZRO_E_UNAVAILABLE"
 }
 
-# What a finished gated read costs the caller: the code to return, with the
-# underlying message kept where the error screen can find it.
+# THE EXISTENCE GATE IS ASKED HERE, AND ASKED FIRST, in each of the four reads
+# below. zro_mbox_run asks it too and keeps asking it — that precondition is what
+# makes it the only path to the gated binary — but a caller that learned of the
+# refusal only from a status could not tell it from the command failing. Both
+# arrive as one non-zero number, and only one of them is about a mailbox.
 #
-# THE MESSAGE IS ONLY REPLACED WHEN THERE IS ONE. A read the gate refused never
-# ran, so the file is empty — and the sentence already in there is the oracle's,
-# which is the one an operator needs. Overwriting it with nothing would leave the
-# screen reporting a bare code for the one refusal that has a real explanation.
-zro_store_settle() {
-  local errfile=${1-} rc=${2-0} msg mapped
-  if [ "$rc" -eq 0 ]; then
-    rm -f -- "$errfile"
-    zro_clear_error
-    printf '0'
-    return 0
-  fi
-  msg=$(head -c 500 -- "$errfile" 2>/dev/null)
-  mapped=$(zro_store_fail_code "$errfile" "$rc")
-  [ -n "$msg" ] && zro_set_error "$msg"
-  rm -f -- "$errfile"
-  printf '%s' "$mapped"
-}
+# WHY NO PREDICATE CAN ANSWER THIS INSTEAD. lib/settle.sh keeps a failure reader
+# away from a code the exec gate produced by asking zro_exec_own_code, whose
+# membership is read off zro_exec's return set. The existence gate's refusals — no
+# mailbox, no account — are not in that set and may not be added to it. Nor can the
+# existence gate own the same kind of predicate: zro_mbox_verdict forwards whatever
+# the oracle's read returned, so its return set is not bounded by anything it wrote
+# itself. Asking first is what bounds it, and it is the whole reason these lines
+# exist: everything after one of them is a failure of a command that RAN.
+#
+# IT COSTS NO INVOCATION WHILE THE PROOF IS KEPT, which is the ordinary case and the
+# one the suite pins: a mailbox proven once is proven for the session, and the proof
+# is a file rather than a variable, so the second ask inside zro_mbox_run returns
+# without reading anything. THE EXCEPTION IS NAMED RATHER THAN GLOSSED. zro_mbox_prove
+# swallows a write it could not make, by design, and a proof that was never written
+# costs a second oracle read on every read here — one server, one of everything, so
+# that is worth knowing. The scratch file is not even created for a read the gate
+# refused now, which it used to be.
 
 # Every folder in the mailbox, as parsed rows. One invocation.
 #
@@ -290,10 +305,11 @@ zro_store_settle() {
 zro_store_folders_fetch() {
   local acct=${1-} err out rows rc=0
   zro_validate_email "$acct" || return "$ZRO_E_INPUT"
+  zro_mbox_require "$acct" || return $?
   err=$(zro_tmpfile) || return "$ZRO_E_UNAVAILABLE"
 
   out=$(zro_mbox_run "$acct" gaf 2>"$err") || rc=$?
-  rc=$(zro_store_settle "$err" "$rc")
+  rc=$(zro_settle "$err" "$rc" zro_store_fail_code)
   [ "$rc" -eq 0 ] || return "$rc"
 
   rows=$(zro_store_parse_folders <<EOF
@@ -312,10 +328,11 @@ zro_store_folder_fetch() {
   local acct=${1-} path=${2-} err out rc=0
   zro_validate_email "$acct" || return "$ZRO_E_INPUT"
   zro_validate_folder_path "$path" || return "$ZRO_E_INPUT"
+  zro_mbox_require "$acct" || return $?
   err=$(zro_tmpfile) || return "$ZRO_E_UNAVAILABLE"
 
   out=$(zro_mbox_run "$acct" gf "$path" 2>"$err") || rc=$?
-  rc=$(zro_store_settle "$err" "$rc")
+  rc=$(zro_settle "$err" "$rc" zro_store_fail_code)
   [ "$rc" -eq 0 ] || return "$rc"
   [ -n "$out" ] || return "$ZRO_E_NO_RESULT"
   printf '%s\n' "$out"
@@ -325,10 +342,11 @@ zro_store_grants_fetch() {
   local acct=${1-} path=${2-} err out rc=0
   zro_validate_email "$acct" || return "$ZRO_E_INPUT"
   zro_validate_folder_path "$path" || return "$ZRO_E_INPUT"
+  zro_mbox_require "$acct" || return $?
   err=$(zro_tmpfile) || return "$ZRO_E_UNAVAILABLE"
 
   out=$(zro_mbox_run "$acct" gfg "$path" 2>"$err") || rc=$?
-  rc=$(zro_store_settle "$err" "$rc")
+  rc=$(zro_settle "$err" "$rc" zro_store_fail_code)
   [ "$rc" -eq 0 ] || return "$rc"
 
   # NO GRANTS IS AN ANSWER AND RETURNS SUCCESS. The listing prints its two header
@@ -344,10 +362,11 @@ EOF
 zro_store_size_fetch() {
   local acct=${1-} err out rc=0
   zro_validate_email "$acct" || return "$ZRO_E_INPUT"
+  zro_mbox_require "$acct" || return $?
   err=$(zro_tmpfile) || return "$ZRO_E_UNAVAILABLE"
 
   out=$(zro_mbox_run "$acct" gms -v 2>"$err") || rc=$?
-  rc=$(zro_store_settle "$err" "$rc")
+  rc=$(zro_settle "$err" "$rc" zro_store_fail_code)
   [ "$rc" -eq 0 ] || return "$rc"
   zro_store_parse_size "$out"
 }
