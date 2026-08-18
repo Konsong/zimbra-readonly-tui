@@ -109,12 +109,44 @@ zro_clock_fmt() {
 # producer and a consumer end up splitting on different things.
 ZRO_TAB=$'\t'
 
+# HOW MUCH OF THE UNDERLYING FAILURE MESSAGE IS KEPT, in bytes. Every screen that
+# explains a failure prints this tool's own reading of it and, under that, the words
+# the command itself printed — and this is the bound on the second, so that a stack
+# trace cannot push the explanation off the screen it is the explanation for. It is
+# the bound on WHAT REACHES THE ERROR STORE BELOW, and eleven sites apply it: eight
+# read a command's captured error stream, two bound the list of log files a scan could
+# not open, and one writes a borrowed prefix of a command's stdout into the capture the
+# others read. One bound rather than the eleven copies of a number this replaces is
+# what keeps one screen from being quietly more talkative than another.
+#
+# IT IS NOT THE ONLY BOUND ON WHAT A COMMAND SAID, and the other one is deliberately
+# left alone. The delivery trace and the log search each keep the first non-empty line
+# of a SKIPPED file's message at 200 characters, so that the list naming those files
+# stays a list — a bound paid per file rather than once for the whole message, and a
+# different question from this one. Folding the two together would be a decision about
+# what those banners may cost, not a substitution.
+#
+# THE NUMBER WAS CHOSEN AND NEVER MEASURED. Nothing in this tree records where 500
+# came from, no document states it, and no screen was ever rendered against a wider
+# or a narrower one to see which read better. What this name preserves is that every
+# screen keeps the SAME amount; what it does not preserve is any claim that this
+# amount is the right one. Whoever changes it is overturning a default nobody
+# checked, not a finding — and now changes it in one place rather than eleven.
+ZRO_ERROR_KEEP_BYTES=500
+
 # The last underlying failure message, kept in a file rather than a variable.
 # Menu code runs operations inside command substitution, so a variable set in
 # that subshell would never reach the caller — the operator would be left with
 # a bare exit code instead of what the command actually said.
 ZRO_ERROR_FILE="${ZRO_ERROR_FILE:-${TMPDIR:-/tmp}/zro-error.$$}"
 
+# THE BOUND IS NOT APPLIED HERE, and that is deliberate. Two callers — the delivery
+# trace and the log search — bound what the command said and then APPEND the list of
+# log files they could not open, because the one thing those two screens may never do
+# is let a skipped file go unmentioned. A bound enforced in this function would let a
+# long message from the command spend the whole budget and cut that disclosure off
+# the end, which turns a bound into a silence. So the bound belongs to the part that
+# came from a command, and each caller applies it to that part before adding its own.
 zro_set_error() {
   ( umask 077; printf '%s\n' "$1" >"$ZRO_ERROR_FILE" ) 2>/dev/null || true
 }

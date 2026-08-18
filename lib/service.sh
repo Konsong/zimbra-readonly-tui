@@ -141,7 +141,7 @@ zro_svc_fetch() {
   local out err rc=0 said
   err=$(zro_tmpfile) || return "$ZRO_E_UNAVAILABLE"
   out=$(zro_exec zmcontrol status 2>"$err") || rc=$?
-  said=$(head -c 500 -- "$err" 2>/dev/null)
+  said=$(head -c "$ZRO_ERROR_KEEP_BYTES" -- "$err" 2>/dev/null)
   rm -f -- "$err"
 
   if [ "$rc" -ne 0 ]; then

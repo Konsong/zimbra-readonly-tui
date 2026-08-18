@@ -2,8 +2,9 @@
 
 - **Status:** accepted
 - **Date:** 2026-08-18
-- **Affects:** `lib/exec.sh` keeps `zro_exec_own_code`, `lib/settle.sh` is added beside it, and
-  `lib/message.sh`, `lib/store.sh` and `lib/search.sh` all finish through it
+- **Affects:** `lib/exec.sh` keeps `zro_exec_own_code`, `lib/settle.sh` is added beside it,
+  `lib/message.sh`, `lib/store.sh` and `lib/search.sh` all finish through it, and `lib/core.sh` declares the
+  bound on the kept message that eleven sites had been writing out
 - **Evidence:** the defect that produced it, fixed on the branch this one follows, and
   [`tests/test_gate_passthrough.sh`](../../tests/test_gate_passthrough.sh), which holds ten gated seams to
   the rule
@@ -168,6 +169,18 @@ evidence that the migration preserved behaviour rather than evidence of nothing.
 module names its reader in its own source, so a bad name is a maintainer's edit rather than anything an
 operator can do. Every other question about the settler is asked where an operator would meet it.
 
-The bound on the kept message is still the number `500`, written out in the settler and at ten other sites.
-Naming it is a change of its own and comes after these three reads: the three copies of it that stood in the
-three settlers are one now, which is what makes that change eleven sites rather than thirteen.
+The bound on the kept message has a name now: `ZRO_ERROR_KEEP_BYTES`, declared in `lib/core.sh` beside the
+exit codes and the error store it belongs to, and read at the settler and at the ten other sites that were
+each carrying the number. It is deliberately NOT enforced inside `zro_set_error`, because two of those sites
+bound what the command said and then append the log files they could not open — a bound one layer down would
+let a long message spend the whole budget and cut the disclosure off the end, which turns a bound into a
+silence. The declaration carries the note that 500 was chosen and never measured: nothing in this tree
+records where it came from.
+
+The bound has its first test at the message read, where two captured failures are already longer than it,
+and the rule about where it may live is held by
+[`tests/test_delivery.sh`](../../tests/test_delivery.sh) — a refusal after a skipped file, with a tracer
+message twice the bound, whose disclosure still names the file. Its twin in `lib/logsearch.sh` keeps the same
+shape and has no case of its own: the message there is whatever a GATE REFUSAL left on the stream, and a gate
+refusal is a command that did not run, so there is no long message to produce at that seam without teaching a
+mock to refuse one file and not another.

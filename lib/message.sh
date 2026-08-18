@@ -402,7 +402,7 @@ zro_msg_dump_fetch() {
   # the one screen that has something useful to show — the timeout, on the one command
   # in this tool that would otherwise hang forever — would have nothing to show.
   if [ "$rc" -ne 0 ] && [ ! -s "$err" ] && [ -n "$out" ]; then
-    printf '%.500s\n' "$out" >"$err"
+    printf '%.*s\n' "$ZRO_ERROR_KEEP_BYTES" "$out" >"$err"
   fi
 
   rc=$(zro_settle "$err" "$rc" zro_msg_fail_code)
@@ -495,7 +495,7 @@ zro_msg_head_fetch() {
   else
     out=$(zro_exec head -c "$n" "$path" 2>"$err") || rc=$?
   fi
-  said=$(head -c 500 -- "$err" 2>/dev/null)
+  said=$(head -c "$ZRO_ERROR_KEEP_BYTES" -- "$err" 2>/dev/null)
   rm -f -- "$err"
   # A GATE REFUSAL IS PASSED THROUGH RATHER THAN FLATTENED, and everything else
   # becomes the one documented code for a stored file that could not be read. A

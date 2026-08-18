@@ -604,7 +604,7 @@ zro_logsearch_run() {
     # whichever way the operation ends.
     gate=$(zro_logsearch_gate_code "$statuses")
     if [ -n "$gate" ]; then
-      said=$(head -c 500 -- "$err" 2>/dev/null)
+      said=$(head -c "$ZRO_ERROR_KEEP_BYTES" -- "$err" 2>/dev/null)
       [ "$skipped_n" -eq 0 ] || said="$said
 Okunamayan log dosyalari:$skipped"
       [ -z "$said" ] || zro_set_error "$said"
@@ -665,7 +665,7 @@ EOF
   # answer at all. Reported with the reasons kept, so the screen can name the cause
   # and the repair, and with no output whatsoever.
   if [ "$read_n" -eq 0 ]; then
-    zro_set_error "$(printf 'Okunamayan log dosyalari:%s' "$skipped" | head -c 500)"
+    zro_set_error "$(printf 'Okunamayan log dosyalari:%s' "$skipped" | head -c "$ZRO_ERROR_KEEP_BYTES")"
     return "$ZRO_E_NO_LOG"
   fi
   zro_clear_error

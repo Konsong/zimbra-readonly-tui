@@ -330,7 +330,7 @@ zro_trace_run() {
         # covered. Refused whole, with whatever the tool said, so the failure
         # reaches the operator as its own cause rather than as a bare exit code.
         # Nothing has been printed yet, which is what makes that a refusal.
-        said=$(head -c 500 -- "$err" 2>/dev/null)
+        said=$(head -c "$ZRO_ERROR_KEEP_BYTES" -- "$err" 2>/dev/null)
         # A refusal may abandon the answer; it may not abandon the disclosure. Any
         # file already skipped is named in the failure the operator is shown,
         # because the one thing this screen may never do is let a skipped file go
@@ -396,7 +396,7 @@ EOF
   if [ "$files" -eq 0 ]; then
     # The same list the banner would have printed, so the cause reaches the screen
     # named file by file rather than as "the log could not be read".
-    zro_set_error "$(printf 'Okunamayan log dosyalari:%s' "$skipped" | head -c 500)"
+    zro_set_error "$(printf 'Okunamayan log dosyalari:%s' "$skipped" | head -c "$ZRO_ERROR_KEEP_BYTES")"
     return "$ZRO_E_NO_LOG"
   fi
   zro_clear_error

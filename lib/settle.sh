@@ -95,7 +95,7 @@ zro_settle() {
     printf '0'
     return 0
   fi
-  msg=$(head -c 500 -- "$errfile" 2>/dev/null)
+  msg=$(head -c "$ZRO_ERROR_KEEP_BYTES" -- "$errfile" 2>/dev/null)
   [ -n "$msg" ] && zro_set_error "$msg"
 
   if zro_exec_own_code "$rc"; then

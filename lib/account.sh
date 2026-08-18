@@ -320,7 +320,7 @@ zro_prov_read() {
   fi
 
   local first_msg mapped
-  first_msg=$(head -c 500 -- "$err" 2>/dev/null)
+  first_msg=$(head -c "$ZRO_ERROR_KEEP_BYTES" -- "$err" 2>/dev/null)
   mapped=$(zro_prov_fail_code "$err" "$missing_code" "$rc")
 
   # TWO QUESTIONS, AND THEY ARE DIFFERENT ONES. The first is whether Zimbra can
