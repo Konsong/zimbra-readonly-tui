@@ -3,14 +3,14 @@
 [ -n "${ZRO_LIB_SETTLE_LOADED:-}" ] && return 0
 ZRO_LIB_SETTLE_LOADED=1
 
-# THE CEREMONY, WRITTEN ONCE. Every read that goes through the exec gate ends the
-# same four steps: keep a
-# bounded prefix of what the command said where the error screen can find it,
-# decide whether the status it holds is the gate's own or the command's, turn a
-# command's own failure into a code this program documents, and remove the scratch
-# file its error stream was captured to. Three modules carried that as three
-# byte-identical copies differing in one name, which is how a rule corrected in one
-# of them stayed wrong in the other two.
+# THE CEREMONY, WRITTEN ONCE. Every read that goes through the exec gate ends in the
+# same four steps: keep a bounded prefix of what the command said where the error
+# screen can find it, decide whether the status it holds is the gate's own or the
+# command's, turn a command's own failure into a code this program documents, and
+# remove the scratch file its error stream was captured to. Three modules carried that as three copies
+# of one routine differing in the reader each named — until the one in lib/message.sh
+# grew the predicate check, which is exactly how a rule corrected in one copy stays
+# wrong in the other two.
 #
 # WHAT A MODULE STILL OWNS is the part that is genuinely its own: the reader that
 # turns THIS command's failure text into a code. It travels here BY NAME, and the
@@ -67,6 +67,12 @@ zro_settle_reader_ok() {
 #   $2  the status the gate returned
 #   $3  the name of the module's failure reader
 #
+# THE ANSWER IS PRINTED AND THE STATUS IS ALWAYS 0, which is the shape the three
+# routines this replaces already had: the caller reads the code out of a command
+# substitution and returns it itself. A status would be the wrong channel for it —
+# a settler that returned the code could not be told apart from a settler that
+# failed, and 0 is a code.
+#
 # THE MESSAGE IS ONLY REPLACED WHEN THERE IS ONE. A read the gate refused never ran,
 # so the file is empty — and the sentence already in the store is the oracle's, which
 # is the one an operator needs. Overwriting it with nothing would leave the screen
@@ -100,11 +106,16 @@ zro_settle() {
 
   # A REFUSED NAME STILL HAS TO ANSWER WITH A CODE, because the caller's next line
   # compares what this printed against zero. It answers with the input code and not
-  # with one of the gate's three: those name a refusal that did not happen — 90 is
-  # the allowlist's word, and CONTEXT.md says in as many words that it may not be
-  # borrowed. The input code is what lib/message.sh already answers with when the
-  # dump prints its usage banner, which is the same kind of fact: this program built
-  # something wrong, the log says what, and the screen for it ends by sending the
+  # with one of the three the gate keeps for a defect in this tool — 90, 91 and 92 —
+  # because each of those names a refusal that did not happen here: no list refused
+  # this, no user was wrong, no binary was missing. CONTEXT.md makes that rule about
+  # the word rather than the number, under `Refused by the host`: *denied* is the
+  # allowlist's word and may not be borrowed for a refusal that is not the
+  # allowlist's. The code carries the word.
+  #
+  # The input code is what lib/message.sh already answers with when the dump prints
+  # its usage banner, which is the same kind of fact: this program built something
+  # wrong, the log says what, and the screen for that code ends by sending the
   # operator to the tool's log. The scratch file goes either way — the reader that
   # would have read it is the one thing that did not happen.
   if ! zro_settle_reader_ok "$reader"; then

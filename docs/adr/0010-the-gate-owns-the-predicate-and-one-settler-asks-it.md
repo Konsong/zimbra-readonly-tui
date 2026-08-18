@@ -5,7 +5,8 @@
 - **Affects:** `lib/exec.sh` keeps `zro_exec_own_code`, `lib/settle.sh` is added beside it, `lib/message.sh`
   finishes through it, and `lib/store.sh` and `lib/search.sh` follow in the change after this one
 - **Evidence:** the defect that produced it, fixed on the branch this one follows, and
-  `tests/test_gate_passthrough.sh`, which holds ten gated seams to the rule
+  [`tests/test_gate_passthrough.sh`](../../tests/test_gate_passthrough.sh), which holds ten gated seams to
+  the rule
 - **Follows:** [ADR-0009](./0009-what-is-not-a-declared-table.md) twice over — for why a shared routine sits
   beside the gate rather than inside it, and for a name that is checked before it is used
 
@@ -54,11 +55,14 @@ defence against an operator, because no operator text can reach that argument; i
 edit.
 
 **Either refusal is logged as a defect in this tool, and answered with the input code.** Logged, because
-nothing an operator did can produce one. Answered with `ZRO_E_INPUT` rather than with one of the gate's
-three, because those name a refusal that did not happen — `90` is the allowlist's word, and CONTEXT.md says
-in as many words that it may not be borrowed. `ZRO_E_INPUT` is what `lib/message.sh` already answers with
-when the dump prints its usage banner, which is the same kind of fact: this program built something wrong,
-the log says what, and the screen for that code ends by sending the operator to the tool's log.
+nothing an operator did can produce one. Answered with `ZRO_E_INPUT` rather than with one of the three codes
+the gate keeps for a defect in this tool — `90`, `91`, `92` — because each of those names a refusal that did
+not happen: no list refused this, no user was wrong, no binary was missing. CONTEXT.md states that rule about
+the word rather than the number, under *Refused by the host*: *denied* is the allowlist's word and may not be
+borrowed for a refusal that is not the allowlist's. The code carries the word. `ZRO_E_INPUT` is what
+`lib/message.sh` already answers with when the dump prints its usage banner, which is the same kind of fact:
+this program built something wrong, the log says what, and the screen for that code ends by sending the
+operator to the tool's log.
 
 ## What was considered and rejected
 
@@ -108,6 +112,13 @@ what makes leaving them safe.
 operator sees changes: its unrecognised-failure code is already the documented one. The other two still end by
 returning the status they were handed, so their migration deletes that arm and changes what an operator is
 shown — which is a change worth making on its own, where a reviewer is looking for it.
+
+**One read inside the migrated module does not move either.** `zro_msg_head_fetch` reads the stored blob
+and runs the same steps inline, and it already asks the predicate — but it has no failure reader to hand
+over: what it has is one sink, `ZRO_E_NO_BLOB`, and a warning that names the file. It also needs what the
+command said AFTER the file is gone, for that warning, so the settler's order does not describe it either.
+Named here rather than left to be found, because a module the ADR says has moved is exactly where an
+unconverted read reads as an oversight.
 
 **Two more modules map a failure and are not in this at all.** `zro_prov_read` in `lib/account.sh` consumes
 its mapping BEFORE it returns — an unreachable service is what decides whether the read is retried through

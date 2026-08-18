@@ -26,6 +26,11 @@ set -uo pipefail
 
 ZRO_ERROR_FILE=$(mktemp); export ZRO_ERROR_FILE
 
+# One capture file, emptied per case rather than one per case: what is asserted is
+# what THIS call logged, and a file left behind for every case is the kind of litter
+# a suite that runs on the server itself may not leave.
+LOG=$(mktemp)
+
 # A FUNCTION THAT REALLY EXISTS AND IS NOT A FAILURE READER. Without it the shape
 # check could not be told from the existence check: a name nothing answers to is
 # refused by either, so only a name that WOULD run proves which one refused it.
@@ -35,9 +40,11 @@ ZRO_ERROR_FILE=$(mktemp); export ZRO_ERROR_FILE
 ZRO_T_SPY=$(mktemp)
 zro_t_ran_something() { printf 'ran\n' >>"$ZRO_T_SPY"; printf '%s' "$ZRO_E_NO_RESULT"; }
 
-# A scratch file per case, carrying something to keep: the refusal path still owes
-# the operator what the command said, and a file the settler failed to remove is a
-# leak whichever way the name was refused.
+# A scratch file per case, carrying something to keep. Both halves of that matter to
+# the cases below: a refused name does not excuse the settler from what the command
+# said — the capture happens before the name is judged, and the assertion below is
+# what holds it there — and a file the settler failed to remove is a leak whichever
+# way the name was refused.
 new_err() {
   local f
   f=$(mktemp)
@@ -48,7 +55,7 @@ new_err() {
 # ------------------------------------------------- a name that is not one --
 
 it "a name that is not a failure reader is refused rather than called"
-ERR=$(new_err); LOG=$(mktemp); : >"$ZRO_T_SPY"
+ERR=$(new_err); : >"$LOG"; : >"$ZRO_T_SPY"
 out=$(zro_settle "$ERR" 1 zro_t_ran_something 2>"$LOG")
 assert_eq "$out" "$ZRO_E_INPUT"
 assert_eq "$(cat "$ZRO_T_SPY")" ""
@@ -61,10 +68,16 @@ assert_contains "$(cat "$LOG")" "zro_t_ran_something"
 it "and the scratch file is removed anyway, because the settler owns it"
 assert_fail test -e "$ERR"
 
+it "and what the command said is still kept, because the refusal is not the read's"
+# The one thing this path shares with every other ending, and the only place it is
+# asserted: nothing above the settler can produce a refused name, so a capture moved
+# below the name check would leave the operator a bare code with no clue in it.
+assert_contains "$(zro_last_error)" "service.FAILURE"
+
 # --------------------------------------------- a name nothing answers to --
 
 it "a name shaped like a failure reader that nothing answers to is refused"
-ERR=$(new_err); LOG=$(mktemp)
+ERR=$(new_err); : >"$LOG"
 out=$(zro_settle "$ERR" 1 zro_nosuch_fail_code 2>"$LOG")
 assert_eq "$out" "$ZRO_E_INPUT"
 
@@ -78,7 +91,7 @@ it "and that scratch file is removed too"
 assert_fail test -e "$ERR"
 
 it "a name that is empty is refused, and nothing about it is a special case"
-ERR=$(new_err); LOG=$(mktemp)
+ERR=$(new_err); : >"$LOG"
 out=$(zro_settle "$ERR" 1 "" 2>"$LOG")
 assert_eq "$out" "$ZRO_E_INPUT"
 assert_contains "$(cat "$LOG")" "settle defect"
