@@ -18,6 +18,8 @@ ZRO_ROOT=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 . "$ZRO_ROOT/lib/selection.sh"
 # shellcheck source=lib/exec.sh
 . "$ZRO_ROOT/lib/exec.sh"
+# shellcheck source=lib/settle.sh
+. "$ZRO_ROOT/lib/settle.sh"
 # shellcheck source=lib/inventory.sh
 . "$ZRO_ROOT/lib/inventory.sh"
 # shellcheck source=lib/window.sh

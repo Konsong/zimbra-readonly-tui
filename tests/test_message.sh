@@ -31,6 +31,8 @@ chmod +x "$ZRO_TEST_ROOT"/mocks/bin/* "$ZRO_TEST_ROOT"/mocks/system/* 2>/dev/nul
 
 # shellcheck source=../lib/exec.sh
 . "$ZRO_SRC/lib/exec.sh"
+# shellcheck source=../lib/settle.sh
+. "$ZRO_SRC/lib/settle.sh"
 # shellcheck source=../lib/account.sh
 . "$ZRO_SRC/lib/account.sh"
 # shellcheck source=../lib/store.sh

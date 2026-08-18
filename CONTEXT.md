@@ -407,6 +407,34 @@ names a different repair; a cause an operator would repair the same way as anoth
 does not earn one of its own.
 _Avoid_: error code, status, failure reason
 
+## How a gated read ends
+
+**The gate's own code**:
+One of the five statuses `zro_exec` produces instead of running a command, or in
+place of the one it got — a denial, a wrong user, a missing binary, a host that
+cannot be reached, a timeout. It describes THIS TOOL or the host it is pointed at,
+never the command, and it reaches the operator unchanged. Whether a status is one
+is asked of the gate, which owns the predicate
+([ADR-0010](docs/adr/0010-the-gate-owns-the-predicate-and-one-settler-asks-it.md));
+a module that answers it for itself is how a denial once reached a screen as a
+stopped service.
+_Avoid_: exit code, error code — both also name what a binary returned, which is
+the thing this term exists to tell apart
+
+**Failure reader**:
+The part of a module that turns what ITS command printed into a code this program
+documents. One per module, because the sentences differ per binary; it never sees
+a gate code, so it never has to know one. It travels to the settler as a name.
+_Avoid_: error handler, mapper, classifier
+
+**Settler**:
+The routine every gated read finishes through: keep a bounded prefix of what the
+command said where the error screen can find it, ask the gate's predicate, call the
+module's failure reader for what remains, remove the scratch file. Written once, in
+`lib/settle.sh`, beside the gate rather than inside it.
+_Avoid_: cleanup, error handling — it decides the answer, it does not tidy up after
+one
+
 ## Reduced service
 
 Three unrelated things degrade, so they carry different names.
