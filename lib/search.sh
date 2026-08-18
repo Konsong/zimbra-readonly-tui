@@ -702,7 +702,7 @@ ZRO_SEARCH_TXT_BAD_ID='malformed item ID'
 
 zro_search_fail_code() {
   local errfile=${1-} mapped
-  # A GATE CODE NEVER ARRIVES HERE, and neither does the existence gate's verdict.
+  # A GATE CODE NEVER ARRIVES HERE, and neither does the existence gate's refusal.
   # lib/settle.sh asks zro_exec_own_code before it calls this, and each read below
   # asks the existence gate before it runs anything, so everything here is a
   # failure of a command that REALLY RAN.
@@ -731,23 +731,13 @@ zro_search_fail_code() {
     printf '%s' "$mapped"
     return 0
   fi
-  # ANYTHING ELSE IS THE SERVICE THIS READ NEEDED, NOT A NUMBER. This function used
-  # to end by returning the status it was handed, which was a pass-through by
-  # accident: right for a code the gate produced, and wrong for everything else,
-  # because the mailbox binary's own exit status then reached the operator as
-  # "islem basarisiz (kod 2)" — a number this program does not define and cannot
-  # explain. Nothing arrives here now but a failure of a command that ran and that
-  # nothing above recognised, so the answer is the one lib/message.sh already gives
-  # for the same situation: the mail service this read goes through is unreachable,
-  # and the screen for that code names it.
+  # ANYTHING ELSE IS THE SERVICE THIS READ NEEDED, NOT A NUMBER, for the reason
+  # zro_store_fail_code states in full: the arm that used to end this function by
+  # returning the status it was handed was a pass-through by accident, right for a
+  # code the gate produced and wrong for everything else. Nothing reaches this line
+  # now but a failure of a command that ran and that nothing above recognised.
   printf '%s' "$ZRO_E_UNAVAILABLE"
 }
-
-# THE EXISTENCE GATE IS ASKED IN EACH READ BELOW, AND ASKED FIRST, for the reason
-# lib/store.sh states beside its own four reads: zro_mbox_run asks it too and goes
-# on asking it, but a caller that learned of the refusal only from a status could
-# not tell it from the command failing, and only one of those two is about a
-# mailbox. Asking first is what leaves the settler nothing but a command that ran.
 
 # OUTPUT THAT IS NOT A TABLE AT ALL, told apart from an answer with no hits — and
 # LOGGED, because the two are different facts and only one of them is about the
@@ -788,6 +778,12 @@ zro_search_limit_ok() {
   fi
   return 0
 }
+
+# THE EXISTENCE GATE IS ASKED IN EACH OF THE THREE READS BELOW, AND ASKED FIRST,
+# for the reason lib/store.sh states beside its own four: zro_mbox_run asks it too
+# and goes on asking it, but a caller that learned of the refusal only from a status
+# could not tell it from the command failing, and only one of those two is about a
+# mailbox. Asking first is what leaves the settler nothing but a command that ran.
 
 # ONE SEARCH, ONE INVOCATION.
 #

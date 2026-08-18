@@ -133,9 +133,9 @@ disclosure with it. Both are named here so that a later reader does not take the
 
 The store and search reads do not reach `zro_exec` directly. They go through `zro_mbox_run`, which asks the
 existence gate first and runs nothing at all for an account whose mailbox has not been proven. So a status
-those reads hold can be one of THREE things rather than two — a code the exec gate produced, a verdict the
-existence gate reached, or the mailbox binary's own exit status — and the predicate answers for the first
-only.
+those reads hold can be one of THREE things rather than two — a code the exec gate produced, a refusal the
+existence gate answered with, or the mailbox binary's own exit status — and the predicate answers for the
+first only.
 
 The fall-through hid that. `printf '%s' "$rc"` passed `ZRO_E_NO_MAILBOX` and `ZRO_E_NO_ACCOUNT` out as
 themselves for exactly the accidental reason it passed the exec gate's codes out as themselves. Deleting it
@@ -159,10 +159,10 @@ session and the proof is a file. What reaches the settler after that is a comman
 ## Consequences
 
 `lib/settle.sh` is sourced after `lib/exec.sh` — in the entry point, and in the four test files that source
-the message, store or search module directly. That source line is the only edit three of those four suites
-needed, and the store and search suites gained two cases each for the one behaviour that changed. Nothing
-else in any of them moved, which is what makes them evidence that the migration preserved behaviour rather
-than evidence of nothing.
+the message, store or search module directly. Two of those four needed nothing but that source line. The
+store and search suites needed it and gained cases as well, for the one behaviour that changed and for the
+claim about what the second gate ask costs. Nothing else in any of the four moved, which is what makes them
+evidence that the migration preserved behaviour rather than evidence of nothing.
 
 `tests/test_settle.sh` tests one thing, the refused name, and nothing else. No higher seam can reach it: a
 module names its reader in its own source, so a bad name is a maintainer's edit rather than anything an

@@ -312,6 +312,13 @@ ZRO_MOCK_ZMMAILBOX_GAF_ERR="$UNCLASSIFIED" ZRO_MOCK_ZMMAILBOX_GAF_RC=2 \
 it "and what the command said is still kept where the error screen finds it"
 assert_contains "$(zro_last_error)" "service.FAILURE"
 
+it "and the fixture really is a sentence nothing in this tree reads"
+# THE GUARD ON THE CASE ABOVE, because the case turns on what NOTHING recognises
+# and nothing is a moving target. Teach the shared Zimbra reader this sentence
+# later and the case above would keep passing while testing an arm above the sink
+# instead of the sink itself. This goes red first, and points at the fixture.
+assert_out_eq "0" zro_zimbra_error_code "$UNCLASSIFIED"
+
 it "a listing that answered with nothing at all is no result, not an empty mailbox"
 # Every mailbox has a root folder. Nothing to parse means the answer was not a
 # folder table, and drawing it as an empty list would say this mailbox has no
@@ -361,6 +368,14 @@ fresh
 ZRO_MOCK_ZMMAILBOX_GAF_OUT="$GAF" proven zro_store_folders_fetch "$ACCT" >/dev/null
 first=$(ran | grep -nE '^(zmprov|zmmailbox)' | head -n 1)
 assert_contains "$first" "zmprov	gis"
+
+it "and it runs ONCE, though two callers ask the gate about the same mailbox"
+# THE CLAIM lib/store.sh MAKES BESIDE THESE READS, held to evidence rather than
+# left as an argument from the code. Each read asks zro_mbox_require itself and
+# zro_mbox_run asks it again; what makes the second ask free is the proof kept for
+# the session, and without it every mailbox screen would pay the oracle twice — on
+# a server that has one of everything and a hundred thousand accounts.
+assert_eq "$(ran | grep -c '^zmprov')" "1"
 
 # ------------------------------------------------------- what is refused --
 

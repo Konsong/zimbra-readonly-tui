@@ -470,6 +470,14 @@ assert_status "$ZRO_E_NO_MAILBOX" no_mailbox conv_msgs "$SCMSG" 0 \
   zro_search_conv_messages "$ACCT" '265'
 assert_not_contains "$(ran)" "zmmailbox"
 
+# The conversation search is the third of the three, and it was the one with no
+# case of its own here. The two above do not cover it: each read asks the gate in
+# its own body, so an omission in one is invisible from the others.
+fresh
+assert_status "$ZRO_E_NO_MAILBOX" no_mailbox search_conv "$CONVS" 0 \
+  zro_search_conv_fetch "$ACCT" 'in:"/Inbox"'
+assert_not_contains "$(ran)" "zmmailbox"
+
 it "and a gate that cannot answer refuses rather than searching anyway"
 fresh
 assert_status "$ZRO_E_UNAVAILABLE" outage search_msg "$HITS" 0 \
@@ -538,6 +546,13 @@ assert_status "$ZRO_E_UNAVAILABLE" proven search_msg_err "$UNCLASSIFIED" 2 \
 
 it "and what the command said is still kept where the error screen finds it"
 assert_contains "$(zro_last_error)" "service.FAILURE"
+
+it "and the fixture really is a sentence nothing in this tree reads"
+# THE GUARD ON THE CASE ABOVE, because the case turns on what NOTHING recognises
+# and nothing is a moving target. Teach the shared Zimbra reader this sentence
+# later and the case above would keep passing while testing an arm above the sink
+# instead of the sink itself. This goes red first, and points at the fixture.
+assert_out_eq "0" zro_zimbra_error_code "$UNCLASSIFIED"
 
 # ------------------------------------------------------------- the screens --
 

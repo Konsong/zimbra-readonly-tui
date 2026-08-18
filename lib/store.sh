@@ -244,7 +244,7 @@ ZRO_STORE_TXT_NO_FOLDER='unknown folder'
 
 zro_store_fail_code() {
   local errfile=${1-} mapped
-  # A GATE CODE NEVER ARRIVES HERE, and neither does the existence gate's verdict.
+  # A GATE CODE NEVER ARRIVES HERE, and neither does the existence gate's refusal.
   # lib/settle.sh asks zro_exec_own_code before it calls this, and each read below
   # asks the existence gate before it runs anything, so everything that arrives
   # here is a failure of a command that REALLY RAN.
@@ -279,17 +279,21 @@ zro_store_fail_code() {
 #
 # WHY NO PREDICATE CAN ANSWER THIS INSTEAD. lib/settle.sh keeps a failure reader
 # away from a code the exec gate produced by asking zro_exec_own_code, whose
-# membership is read off zro_exec's return set. The existence gate's verdicts — no
+# membership is read off zro_exec's return set. The existence gate's refusals — no
 # mailbox, no account — are not in that set and may not be added to it. Nor can the
 # existence gate own the same kind of predicate: zro_mbox_verdict forwards whatever
 # the oracle's read returned, so its return set is not bounded by anything it wrote
 # itself. Asking first is what bounds it, and it is the whole reason these lines
 # exist: everything after one of them is a failure of a command that RAN.
 #
-# IT COSTS NO INVOCATION. A mailbox proven once is proven for the session, and the
-# proof is a file rather than a variable, so the second ask inside zro_mbox_run
-# returns without reading anything. The scratch file is not even created for a read
-# the gate refused now, which it used to be.
+# IT COSTS NO INVOCATION WHILE THE PROOF IS KEPT, which is the ordinary case and the
+# one the suite pins: a mailbox proven once is proven for the session, and the proof
+# is a file rather than a variable, so the second ask inside zro_mbox_run returns
+# without reading anything. THE EXCEPTION IS NAMED RATHER THAN GLOSSED. zro_mbox_prove
+# swallows a write it could not make, by design, and a proof that was never written
+# costs a second oracle read on every read here — one server, one of everything, so
+# that is worth knowing. The scratch file is not even created for a read the gate
+# refused now, which it used to be.
 
 # Every folder in the mailbox, as parsed rows. One invocation.
 #
