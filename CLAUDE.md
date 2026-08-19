@@ -38,6 +38,12 @@ on every change.
   with the reason on it. Two lists are deliberately NOT read this way — `ZRO_ALLOW`
   and `ZRO_LOW_PRIORITY` answer their own membership question; see
   [ADR-0009](docs/adr/0009-what-is-not-a-declared-table.md) before folding them in.
+- **A gated read never ends by returning the status it was handed.** Ask
+  `zro_exec_own_code`; the last arm of a `*_fail_code` or `*_outcome_code` names a
+  code this program defines. And a code that also answers a second question at the
+  call site is two questions — ask them separately, because a constant doing two
+  jobs can be trusted with neither. `tests/test_settle.sh` holds both halves; see
+  [ADR-0012](docs/adr/0012-no-reader-ends-with-the-status-it-was-handed.md).
 - Documentation and code in English; whiptail UI strings in Turkish.
 - LF line endings, enforced by `.gitattributes`. This repo is developed on
   Windows where `core.autocrlf=true`; CRLF in a `.sh` file breaks the shebang

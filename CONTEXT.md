@@ -439,7 +439,11 @@ _Avoid_: verdict — the verdict is the WORD the gate reached, one of `exists`,
 **Failure reader**:
 The part of a module that turns what ITS command printed into a code this program
 documents. One per module, because the sentences differ per binary; it never sees
-a gate code, so it never has to know one. It travels to the settler as a name.
+a gate code, so it never has to know one, and it never ends by returning the status
+it was handed — the last arm names a code this program defines. It travels to the
+settler as a name, and that is now what the suffix MEANS rather than a habit: the
+set of `*_fail_code` functions and the set of names handed to `zro_settle` are held
+equal in both directions.
 _Avoid_: error handler, mapper, classifier
 _Avoid_: using it for an **outcome reader** — the suffix `_fail_code` names this
 role and nothing else, and the build says so
@@ -455,9 +459,11 @@ something to say about the answer. There is one, `zro_prov_outcome_code` in
 [ADR-0010](docs/adr/0010-the-gate-owns-the-predicate-and-one-settler-asks-it.md)
 records why that seam stays outside the settler.
 
-Holding one of the gate's own codes is NOT what makes one, however much it looked
-that way while two of these existed: a mapping that sees a gate code has simply not
-asked `zro_exec_own_code` yet, and every module asks it now
+It is bound by everything a failure reader is bound by except the settler: it never
+sees a gate code either, and it never ends on the status it was handed. Holding a
+gate code is NOT what makes one, however much it looked that way while two of these
+existed — a mapping that sees one has simply not asked `zro_exec_own_code` yet, and
+every module asks it now
 ([ADR-0012](docs/adr/0012-no-reader-ends-with-the-status-it-was-handed.md)).
 `lib/delivery.sh` had the second one until the question it really answered — could
 the tracer open THIS file — became a predicate of its own, `zro_trace_unopenable`,

@@ -212,6 +212,23 @@ gate_baduser zro_prov_read "$ZRO_E_NO_ACCOUNT" ga "$ACCT"
 ZRO_ZIMBRA_BIN=/nonexistent assert_status "$ZRO_E_NOCAP" \
   zro_prov_read "$ZRO_E_NO_ACCOUNT" ga "$ACCT"
 
+it "and a gate refusal it could retry through LDAP does not run a second command"
+# ZRO_E_UNAVAILABLE is the one gate code this seam used to act on rather than
+# report: while the mapping ended by returning the status it was handed, a
+# host-level refusal -- no `timeout` binary here -- was indistinguishable from an
+# unreachable mailboxd, and the LDAP retry ran. It could only fail the same way,
+# because what was missing is missing for both spellings.
+#
+# The predicate is asked before anything reads the status now, so the refusal
+# returns from there. What pins it is the MOCK LOG rather than the code: the code
+# was already right by accident, which is exactly the kind of correctness ADR-0012
+# is about. `ga` is retriable through LDAP, so this is the seam where a second
+# invocation would show.
+: >"$ZRO_MOCK_LOG"
+ZRO_TIMEOUT_BIN=/nonexistent assert_status "$ZRO_E_UNAVAILABLE" \
+  zro_prov_read "$ZRO_E_NO_ACCOUNT" ga "$ACCT"
+assert_not_contains "$(cat "$ZRO_MOCK_LOG")" "zmprov"
+
 # ------------------------------------------------------- the log reads --
 
 it "the bounded log read passes the gate's codes through"
