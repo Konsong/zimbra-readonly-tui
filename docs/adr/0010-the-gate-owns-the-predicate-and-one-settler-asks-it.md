@@ -165,9 +165,11 @@ store and search suites needed it and gained cases as well, for the one behaviou
 claim about what the second gate ask costs. Nothing else in any of the four moved, which is what makes them
 evidence that the migration preserved behaviour rather than evidence of nothing.
 
-`tests/test_settle.sh` tests one thing, the refused name, and nothing else. No higher seam can reach it: a
+`tests/test_settle.sh` tests one BEHAVIOUR, the refused name, and no other. No higher seam can reach it: a
 module names its reader in its own source, so a bad name is a maintainer's edit rather than anything an
-operator can do. Every other question about the settler is asked where an operator would meet it.
+operator can do. Every other question about the settler is asked where an operator would meet it. It also
+carries two claims read off the source rather than off a run — added later, and the last section here says
+why.
 
 The bound on the kept message has a name now: `ZRO_ERROR_KEEP_BYTES`, declared in `lib/core.sh` beside the
 exit codes and the error store it belongs to, and read at the settler and at the ten other sites that were
@@ -184,3 +186,36 @@ message twice the bound, whose disclosure still names the file. Its twin in `lib
 shape and has no case of its own: the message there is whatever a GATE REFUSAL left on the stream, and a gate
 refusal is a command that did not run, so there is no long message to produce at that seam without teaching a
 mock to refuse one file and not another.
+
+## The name check above did not hold, and this is what holds it now
+
+Added 2026-08-19. The decision is unchanged; what follows is a consequence that was asserted here and turned
+out not to be true, which is the kind of thing a reader who comes to check the claim should find at the claim.
+
+**The check was one question short.** It asks whether a name is shaped like a failure reader and whether a
+function answers to it. It does not ask whether that function can be CALLED with the one argument
+`zro_settle` passes — and bash cannot be asked how many arguments a function takes. Two of the five
+`*_fail_code` functions in this tree took two and three, matched the shape, and were declared:
+`zro_prov_fail_code` and `zro_trace_fail_code`, the two this ADR itself names as deliberately outside the
+settler. Handing either name over would have died inside the command substitution under `set -u`, printed
+nothing, and left the caller comparing an empty string against zero — so the operator would have been given a
+code this program does not define, by the module written to stop exactly that, **and neither refusal would
+have been logged, because neither fires**. The two names an edit is most likely to reach for were the two the
+defence did not cover.
+
+**The repair is a name, not a third question at run time.** By the glossary's own definition a failure reader
+never sees a gate code and travels to the settler as a name, and neither of those two does either: both are
+handed whatever `zro_exec` returned, and both are consumed by their own module. They were never failure
+readers; they kept the suffix from before this ADR moved the role behind it. They are now
+`zro_prov_outcome_code` and `zro_trace_outcome_code`, and `CONTEXT.md` carries **outcome reader** as a term of
+its own beside **failure reader**, with the `_Avoid_` line that keeps them apart.
+
+**What holds it is two cases at the foot of [`tests/test_settle.sh`](../../tests/test_settle.sh)**, read off
+the source because no run can ask the question: no `*_fail_code` body names a positional beyond the first, and
+the set of functions carrying that suffix equals the set of names handed to `zro_settle`, in both directions.
+The first catches the defect's own shape — a two-argument reader that IS handed over. The second catches the
+half the first cannot see, a function wearing the name of a role it does not fill, and is what stops the
+rename being undone by accident. Both were red on the tree that prompted them and green on the rename alone.
+
+**The run-time refusal is unchanged and is not weakened by any of this.** What moved is a defect no operator
+can produce: from a screen, where it was silent, to the build, where the maintainer who produced it is.
