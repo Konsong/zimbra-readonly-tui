@@ -211,8 +211,11 @@ readers; they kept the suffix from before this ADR moved the role behind it. The
 its own beside **failure reader**, with the `_Avoid_` line that keeps them apart.
 
 **What holds it is two cases at the foot of [`tests/test_settle.sh`](../../tests/test_settle.sh)**, read off
-the source because no run can ask the question: no `*_fail_code` body names a positional beyond the first, and
-the set of functions carrying that suffix equals the set of names handed to `zro_settle`, in both directions.
+the source because no run can ask the question: no `*_fail_code` body reads past the first argument — by a
+positional, by `$@`, or by `shift`, which does it while naming no positional at all — and the set of functions
+carrying that suffix equals the set of names handed to `zro_settle`, in both directions. A third case is the
+floor under those two, because a set compared against an empty extraction is a case that passes having read
+nothing.
 The first catches the defect's own shape — a two-argument reader that IS handed over. The second catches the
 half the first cannot see, a function wearing the name of a role it does not fill, and is what stops the
 rename being undone by accident. Both were red on the tree that prompted them and green on the rename alone.
