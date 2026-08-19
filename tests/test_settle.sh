@@ -9,8 +9,13 @@ set -uo pipefail
 # themselves. Neither can produce a bad name: a module names its failure reader in
 # its own source, so a name that is not one is a maintainer's edit rather than
 # anything an operator can do. That is why the refusal is asserted here and why
-# NOTHING ELSE IS — a case here for the success path or for the mapping would be a
-# second statement of what those suites already prove, free to drift from them.
+# NO SECOND BEHAVIOUR IS — a case here for the success path or for the mapping would
+# be a second statement of what those suites already prove, free to drift from them.
+#
+# That reason is about RUNNING the program, and it does not reach the two cases at
+# the foot of this file: those read the source and assert the contract the run-time
+# refusal is unable to check. A claim no run can make is not a second statement of
+# one that was made by running.
 # shellcheck source=lib/assert.sh
 . "$ZRO_TEST_ROOT/lib/assert.sh"
 # shellcheck source=../lib/core.sh
@@ -96,6 +101,112 @@ out=$(zro_settle "$ERR" 1 "" 2>"$LOG")
 assert_eq "$out" "$ZRO_E_INPUT"
 assert_contains "$(cat "$LOG")" "settle defect"
 assert_fail test -e "$ERR"
+
+# ------------------------------------------ the contract, read off the source --
+#
+# TWO CLAIMS ABOUT THE SOURCE RATHER THAN ABOUT A RUN, which is why the reason
+# above does not bar them. What it bars is a second BEHAVIOURAL statement of what
+# tests/test_message.sh and tests/test_gate_passthrough.sh already prove by running
+# the program; neither case below runs it.
+#
+# THEY ARE HERE AND NOT IN tests/test_readonly_scan.sh because that file's subject
+# is the read-only claim, and a failure reader's shape is not a safety property.
+# Widening the one file that proves the guarantee is a cost with nothing behind it.
+#
+# WHY THE SOURCE AND NOT `declare -F`: bash cannot be asked how many arguments a
+# function takes. The check zro_settle makes at run time can therefore ask whether a
+# name is SHAPED like a failure reader and whether anything answers to it, and no
+# more — so the third question, whether the thing that answers can be CALLED the way
+# the settler calls it, has to be asked of the text. That question is not a
+# weakening of the run-time refusal and does not replace it: it moves a defect that
+# no operator can produce to the build, where the maintainer who produced it is.
+#
+# COMMENTS ARE REMOVED FIRST. Prose in this tree names these functions — lib/exec.sh
+# and lib/search.sh each name a failure reader, lib/message.sh names the settler —
+# and a claim about what the program DOES may not be answered by what a comment
+# SAYS. None of those sentences happens to match the patterns below today, and that
+# is the reason the stripping is written rather than left out: a case that is
+# correct by luck reports the luck running out as a defect in the program.
+#
+# This is the narrow form of the stripper in tests/test_readonly_scan.sh: that one
+# also tracks quote state across the whole tree, because it goes on to decide what
+# stands in executable position. Neither question below is about quoting, so neither
+# pays for it.
+ZRO_T_SOURCES=("$ZRO_SRC/zimbra-ro-tui.sh" "$ZRO_SRC"/lib/*.sh)
+stripped=$(sed -e 's/^[[:space:]]*#.*$//' -e 's/\([[:space:]]\)#.*$/\1/' "${ZRO_T_SOURCES[@]}")
+readers=$(printf '%s\n' "$stripped" | sed -n 's/^\(zro_[a-z0-9_]*_fail_code\)() {$/\1/p' | sort -u)
+
+it "the source the two cases below read is the program, and the extraction found it"
+# THE FLOOR UNDER BOTH OF THEM, and it is not ceremony. Each compares a set against
+# something, and each is satisfied by two EMPTY sets — a glob that matched nothing,
+# a path that moved, a stripper that ate the file. Under `set -uo pipefail` with no
+# errexit not one of those stops this file, so both would report green while having
+# read nothing at all. This tree has shipped a case that passed while proving
+# nothing before; the floor is a case of its own rather than a comment promising it
+# cannot happen again.
+#
+# IT NAMES ONE READER RATHER THAN COUNTING THEM. A count is the number this file
+# would then be describing back to itself, and a fourth reader added tomorrow is not
+# a failure — which is the rule tests/lib/cost.sh states for the class it reads.
+assert_contains "$stripped" "zro_settle"
+assert_contains "$readers" "zro_msg_fail_code"
+
+it "every failure reader takes the scratch file and nothing else, because that is all the settler passes"
+# zro_settle calls the reader with one argument. A reader that reads a second one is
+# refused by nothing and fails where nothing is watching: under `set -u` with no
+# errexit the assignment dies, zro_settle prints nothing, and the caller compares an
+# empty string against zero. The operator is handed a code this program does not
+# define, by the module written to stop exactly that, and neither refusal is logged
+# because neither fires.
+wide=""
+unread=""
+while IFS= read -r fn; do
+  [ -n "$fn" ] || continue
+  body=$(printf '%s\n' "$stripped" \
+         | awk -v fn="$fn" '$0 == fn "() {" { inside = 1; next }
+                            inside && $0 == "}" { inside = 0 }
+                            inside')
+  # A body this loop could not find is the floor's own hole one function down: the
+  # count below would be zero and the reader would pass for having no text rather
+  # than for taking one argument. Collected under its own name because the two say
+  # different things — a reader that reads too much, against a reader nobody read.
+  [ -n "$body" ] || { unread="$unread [$fn]"; continue; }
+  # grep exits 1 when it counts nothing, which is not a failure here. Counted
+  # rather than asked with -q: -q stops at the first match and can close the pipe
+  # under the reader, and this tree has already been bitten once by a status that
+  # meant a closed pipe rather than an answer.
+  #
+  # WHAT COUNTS AS READING PAST THE FIRST ARGUMENT: `$2` upwards and the two-digit
+  # forms, `$@` and `$*`, and `shift` — which is the one that does it while naming
+  # no positional at all, and the one a plain search for `$2` waves through.
+  n=$(printf '%s\n' "$body" \
+      | grep -cE '\$\{?([2-9]|[0-9][0-9]|[@*])|(^|[^[:alnum:]_])shift([^[:alnum:]_]|$)') || n=0
+  [ "$n" -eq 0 ] || wide="$wide [$fn]"
+done <<EOF
+$readers
+EOF
+assert_eq "$wide" ""
+
+it "and each of their bodies was found, so the case above judged text rather than silence"
+assert_eq "$unread" ""
+
+it "and every failure reader is one the settler is handed, in exactly one spelling"
+# The two sets are held equal in BOTH DIRECTIONS, as the allowlist's mailbox reads
+# are. A reader nobody hands over is a function wearing the name of a role it does
+# not fill, which is what the two mappers in lib/account.sh and lib/delivery.sh were
+# before they were named for what they do; and it is the half the case above cannot
+# see, because that one judges the readers it finds rather than the ones that should
+# never have been in the set. The other direction answers the mirror of it: a name
+# handed to the settler that no module defines under that spelling.
+#
+# A CALL SITE THAT NAMED ITS READER THROUGH A VARIABLE would not match, and that is
+# the safe direction rather than a hole: the name would be missing from `handed`,
+# the two sets would differ, and the case goes red. What it may not do is pass in
+# silence, and it cannot — the reader it failed to see is still in `readers`.
+handed=$(printf '%s\n' "$stripped" \
+         | grep -oE 'zro_settle[[:space:]]+"[^"]*"[[:space:]]+"[^"]*"[[:space:]]+[a-z0-9_]+' \
+         | awk '{print $NF}' | sort -u)
+assert_eq "$readers" "$handed"
 
 rm -f -- "$ZRO_T_SPY" "$ZRO_ERROR_FILE" "$LOG"
 zro_t_report

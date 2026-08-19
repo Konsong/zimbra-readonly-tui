@@ -34,16 +34,22 @@ zro_trace_message_count() {
 }
 
 # Maps a failed trace to a documented exit code, or passes the tool's own status
-# through when it recognises nothing. Same shape as zro_prov_fail_code in
+# through when it recognises nothing. Same shape as zro_prov_outcome_code in
 # lib/account.sh, and for the same reason: an operator who is shown a bare status
 # has to reproduce the command by hand to learn what went wrong.
+#
+# AN OUTCOME READER AND NOT A FAILURE READER, for the reason the name carries: its
+# answer decides whether THIS log file is skipped or the whole scan refused, so it
+# is read in the middle of the loop rather than as a read's last step, and the
+# status it is handed can still be one of the gate's. ADR-0010 records why this
+# seam stays outside the settler.
 #
 # A log the tool cannot open is the one failure worth naming. It dies with
 # "unable to open file" on stderr and no exit status of its own, so the message is
 # the only signal there is. That text comes from the tool's source as documented
 # in docs/research/2026-07-29-zimbra-cli-read-only-reference.md §B.11 rather than
 # from a capture, which is why the match lives here alone and stays this narrow.
-zro_trace_fail_code() {
+zro_trace_outcome_code() {
   local errfile=$1 rc=$2
   if grep -q 'unable to open file' "$errfile" 2>/dev/null; then
     printf '%s' "$ZRO_E_NO_LOG"
@@ -324,7 +330,7 @@ zro_trace_run() {
             --time "$from,$to" --year "$year" "$path" \
             2>"$err" </dev/null) || rc=$?
     if [ "$rc" -ne 0 ]; then
-      mapped=$(zro_trace_fail_code "$err" "$rc")
+      mapped=$(zro_trace_outcome_code "$err" "$rc")
       if [ "$mapped" != "$ZRO_E_NO_LOG" ]; then
         # Not a file the tracer could not open, so nothing is known about what was
         # covered. Refused whole, with whatever the tool said, so the failure

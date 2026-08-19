@@ -441,6 +441,24 @@ The part of a module that turns what ITS command printed into a code this progra
 documents. One per module, because the sentences differ per binary; it never sees
 a gate code, so it never has to know one. It travels to the settler as a name.
 _Avoid_: error handler, mapper, classifier
+_Avoid_: using it for an **outcome reader** — the suffix `_fail_code` names this
+role and nothing else, and the build says so
+
+**Outcome reader**:
+A module's own reading of a failed command, **consumed by that module rather than
+handed over**. Its answer decides what the module does next — retry the directory
+read through LDAP, skip this log file or refuse the whole scan — and is therefore
+not necessarily what the operator is told. Two things follow, and both are what a
+failure reader is not: it may be holding one of the gate's own codes, because
+nothing has answered them yet, and it may need more than the scratch file, because
+the caller has something to say about the answer. There are two, in
+`lib/account.sh` and `lib/delivery.sh`, and
+[ADR-0010](docs/adr/0010-the-gate-owns-the-predicate-and-one-settler-asks-it.md)
+records why each stays outside the settler.
+_Avoid_: failure reader — the two wore one suffix until the settler was found
+accepting a reader it could not call, and telling them apart is what fixed it
+_Avoid_: pre-settler reader — it names when it runs rather than what it answers,
+and one of the two is not on a settled read's path at all
 
 **Settler**:
 The routine every gated read finishes through: keep a bounded prefix of what the

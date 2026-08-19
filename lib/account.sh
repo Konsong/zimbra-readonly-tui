@@ -220,6 +220,15 @@ zro_zimbra_error_code() {
 # Maps a failure to a documented code. $2 is the code to use when the text
 # names a missing object, which differs between an account and a mailbox.
 #
+# AN OUTCOME READER AND NOT A FAILURE READER, and the name is what says so. A
+# failure reader never sees a gate code and travels to the settler as a name; this
+# one is handed whatever zro_exec returned, gate codes included, and is consumed
+# BEFORE the read returns, because whether the mailbox service was unreachable is
+# what decides the LDAP retry below. ADR-0010 records why this seam stays outside
+# the settler. The name carries the rest: it also takes the CALLER's missing code,
+# so it could not be called the way the settler calls a reader even if the order
+# allowed it — and while it wore the reader's name, nothing said so.
+#
 # NO_SUCH_DISTRIBUTION_LIST is here because a list read is now one of the reads:
 # `zmprov gdl` on anything that is not a list answers
 # `ERROR: account.NO_SUCH_DISTRIBUTION_LIST (...)`, and without this line that
@@ -230,7 +239,7 @@ zro_zimbra_error_code() {
 # TEST-C, `zmprov gd` answers it both for a domain nobody has heard of and for an
 # address handed to it in place of a domain. Without this line the domain screen
 # would report "islem basarisiz (kod 2)" for the one answer that ends the search.
-zro_prov_fail_code() {
+zro_prov_outcome_code() {
   local errfile=$1 missing_code=$2 rc=$3
   if grep -qE 'NO_SUCH_ACCOUNT|NO_SUCH_MAILBOX|NO_SUCH_COS|NO_SUCH_DISTRIBUTION_LIST|NO_SUCH_DOMAIN' \
        "$errfile" 2>/dev/null; then
@@ -321,7 +330,7 @@ zro_prov_read() {
 
   local first_msg mapped
   first_msg=$(head -c "$ZRO_ERROR_KEEP_BYTES" -- "$err" 2>/dev/null)
-  mapped=$(zro_prov_fail_code "$err" "$missing_code" "$rc")
+  mapped=$(zro_prov_outcome_code "$err" "$missing_code" "$rc")
 
   # TWO QUESTIONS, AND THEY ARE DIFFERENT ONES. The first is whether Zimbra can
   # answer this read from LDAP at all — `gmi` cannot, because mailbox usage does
@@ -342,7 +351,7 @@ zro_prov_read() {
       printf '%s' "$out"
       return 0
     fi
-    mapped=$(zro_prov_fail_code "$err" "$missing_code" "$rc")
+    mapped=$(zro_prov_outcome_code "$err" "$missing_code" "$rc")
   fi
 
   # The SOAP message is the informative one; a retry failure just repeats it.
