@@ -280,6 +280,15 @@ point at each other become the module's own. **Strong**, and the smallest blast 
 
 ## 9. Two seams still decide the gate's codes for themselves
 
+**SHIPPED as #81, #84 and #86, and recorded in
+[ADR-0012](../adr/0012-no-reader-ends-with-the-status-it-was-handed.md).** Two things the walk below did not
+reach. The `errno` collision is worse than the bare code it names: `zmmsgtrace` is Perl, so a failed trace
+exits with `$!`, and `errno` 23 IS `ZRO_E_NO_LOG` — which the trace loop was also using as its
+skip-this-file signal, so such a trace was disclosed as a file that could not be opened and answered as a
+partial scan. A wrong ANSWER about delivery, not a wrong screen. And the leak was pinned by four assertions
+rather than tolerated by none. The general rule this produced — *no mapping of a failed command ends by
+returning the status it was handed* — is now static in `tests/test_settle.sh`.
+
 **Files:** `lib/logview.sh:196`, `lib/delivery.sh:52`, `lib/exec.sh:995`, `lib/message.sh:517`
 
 **VERIFIED — three hand-written memberships survive:** `logview.sh:196` (5 codes), `queue.sh:254` (4),
@@ -519,7 +528,8 @@ misreading is easy to repeat: *0% untested* and *0% tested* are one character ap
    against itself.
 2. **§4** and **§2** — a handful of lines each, both measured, and the correct version already exists elsewhere
    in the tree.
-3. **§8** and **§9** — safety rules with a home available and no ADR or static scan in the way.
+3. ~~**§9**~~ — shipped as #81, #84 and #86, with ADR-0012 and a static rule behind it. **§8** remains: a
+   safety rule with a home available and no ADR or static scan in the way.
 4. **§3** — a live disclosure gap, then the design question behind it.
 5. **§10** — the largest lever. Coverage here is a function of setup cost, and this is the setup cost. **§6** is
    its counterpart in the program.
