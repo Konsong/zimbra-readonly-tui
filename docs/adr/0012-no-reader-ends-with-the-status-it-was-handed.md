@@ -4,9 +4,9 @@
 - **Date:** 2026-08-19
 - **Affects:** `lib/delivery.sh` and `lib/account.sh` lose their fall-throughs and split one overloaded code
   each, `lib/logview.sh` asks the predicate instead of naming its five codes, `lib/logsearch.sh` loses a
-  comment that cited a rationale this removes, `tests/test_gate_passthrough.sh` gains the rule as a static
-  case beside the two #75 added, and CONTEXT.md's *Outcome reader* is defined by what actually separates the
-  two roles
+  comment that cited a rationale this removes, `tests/test_settle.sh` gains the rule as a static case beside
+  the two #75 added, `tests/test_gate_passthrough.sh` gains the retry that no longer runs, and CONTEXT.md's
+  *Outcome reader* is defined by what actually separates the two roles
 - **Evidence:** the errno table below, `tests/test_delivery.sh`, which asserted the leak as a feature, and
   `tests/test_readonly_scan.sh`, which had no rule of this kind at all
 - **Follows:** [ADR-0010](./0010-the-gate-owns-the-predicate-and-one-settler-asks-it.md), which rejected the
@@ -169,9 +169,16 @@ refuses the whole trace as `ZRO_E_NO_LOG`, and `RC=23` no longer disappears into
 other errno rows above are not cased individually — that would test errno numbers rather than the behaviour
 being protected, and the existing `RC=13` case already records that collisions happen.
 
-`tests/test_gate_passthrough.sh` gains the static rule and a case for the retry that no longer runs. That
-seam was previously held only for `90`, `91` and `92`; `21` had never been asserted there, which is why the
-retry's dependence on it went unseen.
+`tests/test_gate_passthrough.sh` gains the case for the retry that no longer runs, and pins it on the mock
+log rather than on the code: the code was already right by accident. That seam was previously held only for
+`90`, `91` and `92` — `21` had never been asserted there, which is why the retry's dependence on it went
+unseen.
+
+`tests/test_settle.sh` gains the rule itself, and it was red before it was green: reintroducing the
+fall-through in `lib/account.sh` fails it by name. It asks the LAST `printf` in each body rather than the
+whole of it, because a mapping may print a variable higher up — `$mapped` from `zro_zimbra_error_code`, the
+caller's own missing code — and those are answers it recognised. The final arm is the one that runs when it
+recognised nothing.
 
 The text `'unable to open file'` becomes a declared constant, `ZRO_TRACE_TXT_UNOPENABLE`, following
 `ZRO_STORE_TXT_NO_FOLDER` and `ZRO_SEARCH_TXT_NO_FOLDER`. The module's standing note that it comes from the
