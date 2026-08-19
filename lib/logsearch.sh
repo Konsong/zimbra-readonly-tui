@@ -406,8 +406,20 @@ zro_logsearch_scan_verdict() {
 #
 # NONE OF THOSE IS A LOG THAT CANNOT BE READ, and flattening them into one would
 # send an operator to repair a file permission because ionice was missing. So they
-# are passed through as themselves, the way the delivery trace passes through
-# everything that is not a file it could not open.
+# are passed through as themselves.
+#
+# THIS NAMES THE READERS' STATUSES AND NOT THE GATE'S, which is the inverse of the
+# list every other module wrote down, and the reason zro_exec_own_code cannot just
+# replace it. The predicate answers `is this the gate's own'; the list below asks
+# `is this a reader's', and the two are not complements — a status belonging to
+# neither leaves here reported as a gate code it never was. Folding this in is a
+# redesign rather than a substitution, and it has a ticket of its own (#79).
+#
+# It used to give its reason as `the way the delivery trace passes through
+# everything that is not a file it could not open'. That no longer describes
+# anything: ADR-0012 deleted the delivery trace's fall-through, where this same
+# shape had been turning the tracer's own errno into one of the codes this program
+# defines.
 zro_logsearch_gate_code() {
   local statuses=${1-} s
   case $statuses in

@@ -192,10 +192,20 @@ zro_logview_read() {
 
   if [ "$rc" -ne 0 ]; then
     [ -z "$said" ] || zro_set_error "$said"
-    case $rc in
-      "$ZRO_E_DENIED"|"$ZRO_E_BADUSER"|"$ZRO_E_NOCAP"|"$ZRO_E_TIMEOUT"|"$ZRO_E_UNAVAILABLE")
-        return "$rc" ;;
-    esac
+    # ASKED OF THE GATE rather than listed here. What stood here was a case naming
+    # the gate's five codes, and it was COMPLETE — so nothing an operator sees
+    # changes by asking instead. What it lacked was a reason to stay complete: the
+    # membership is a fact about zro_exec's return set, and a copy of that fact kept
+    # in this file would go stale silently the day the gate gains a sixth code.
+    # Six modules that each decided this for themselves arrived at three different
+    # answers; ADR-0012 records why this one was folded in and the queue and service
+    # lists were not.
+    #
+    # THE SINK BELOW IS UNAFFECTED, which is what made this a substitution rather
+    # than a decision. ZRO_E_NO_LOG is what a log this tool could not read answers
+    # with, and no code the gate produces has ever reached it or can: the list above
+    # named all five, and the predicate answers for the same five.
+    zro_exec_own_code "$rc" && return "$rc"
     zro_log warn "log unreadable: $path (${said:-no message on stderr})"
     return "$ZRO_E_NO_LOG"
   fi
