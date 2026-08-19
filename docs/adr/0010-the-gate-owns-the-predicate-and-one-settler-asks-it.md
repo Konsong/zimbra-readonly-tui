@@ -141,8 +141,9 @@ disclosure with it. Both are named here so that a later reader does not take the
 > **Corrected 2026-08-19 — true of the settler, and read as true of more than that.** Both reasons above
 > still hold: neither module can finish through `lib/settle.sh`, and
 > [ADR-0012](./0012-no-reader-ends-with-the-status-it-was-handed.md) leaves both exclusions standing. What
-> this paragraph does not say, and was read as saying, is that their FAILURE READERS had also been examined.
-> They had not. Both ended with `printf '%s' "$rc"` — the arm *What was considered and rejected* names as
+> this paragraph does not say, and was read as saying, is that the FAILURE MAPPING each of them carries had
+> also been examined. It had not — by either this ADR or the section below it, which renamed both without
+> touching the arm. Both ended with `printf '%s' "$rc"` — the arm *What was considered and rejected* names as
 > the defect, two sections above — and being outside the settler never required it: `zro_msg_head_fetch`
 > asks the predicate inline with no settler at all, in a module this ADR says had moved. The cost was not
 > theoretical. `zmmsgtrace` is Perl, so its status is an `errno`, and `errno` 23 arrived at the trace loop

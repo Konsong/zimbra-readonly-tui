@@ -5,16 +5,20 @@
 - **Affects:** `lib/delivery.sh` and `lib/account.sh` lose their fall-throughs and split one overloaded code
   each, `lib/logview.sh` asks the predicate instead of naming its five codes, `lib/logsearch.sh` loses a
   comment that cited a rationale this removes, `tests/test_gate_passthrough.sh` gains the rule as a static
-  case, and CONTEXT.md's *Failure reader* becomes true of every reader in the tree
+  case beside the two #75 added, and CONTEXT.md's *Outcome reader* is defined by what actually separates the
+  two roles
 - **Evidence:** the errno table below, `tests/test_delivery.sh`, which asserted the leak as a feature, and
   `tests/test_readonly_scan.sh`, which had no rule of this kind at all
 - **Follows:** [ADR-0010](./0010-the-gate-owns-the-predicate-and-one-settler-asks-it.md), which rejected the
-  fall-through by name and left two of them standing
+  fall-through by name and left two of them standing, and #75, which gave those two a name of their own —
+  `zro_prov_outcome_code` and `zro_trace_outcome_code` — one merge before this
 
 ADR-0010 gave the gate a predicate and gave three modules a settler to ask it from. It also listed the
 modules it was leaving alone, with a reason for each. That list is where this one starts: the reasons were
-right about the SETTLER and were read as covering the failure readers too, and two modules kept ending with
-`printf '%s' "$rc"` — the arm ADR-0010's own *What was considered and rejected* calls the defect.
+right about the SETTLER and were read as covering each module's own failure mapping too, and two of those
+kept ending with `printf '%s' "$rc"` — the arm ADR-0010's own *What was considered and rejected* calls the
+defect. Those two are `zro_prov_outcome_code` and `zro_trace_outcome_code`; they wore the settler's suffix
+until #75, which is a separate story told at the end of this one.
 
 Being unable to use the settler never required keeping the fall-through. `zro_msg_head_fetch` asks
 `zro_exec_own_code` inline, with no settler at all, in a module ADR-0010 says had moved. The predicate costs
@@ -59,7 +63,7 @@ separately.** This is the general shape, and both modules had it:
 
 - `lib/delivery.sh` asked `ZRO_E_NO_LOG` to mean both *this file could not be opened* and *this is the answer
   the operator gets*. The per-file outcome becomes its own predicate over the captured stderr;
-  `zro_trace_fail_code` becomes a one-argument failure reader like every other one, and `ZRO_E_NO_LOG` is
+  `zro_trace_outcome_code` becomes a one-argument mapping like every other one, and `ZRO_E_NO_LOG` is
   free to be its sink.
 - `lib/account.sh` asked `ZRO_E_UNAVAILABLE` to mean both *the service is unreachable* and *retry this read
   through LDAP*. The retry asks the text directly — `zro_zimbra_error_code` — instead of comparing the mapped
@@ -70,12 +74,13 @@ separately.** This is the general shape, and both modules had it:
 `ZRO_E_UNAVAILABLE` — no `id`, no `timeout`, no `runuser` — returns instead of triggering a retry that would
 fail on the same missing binary. One fewer command runs, and the code that reaches the operator is the same.
 
-**The rule is held statically, in `tests/test_gate_passthrough.sh`.** No failure reader may end by returning
-the status it was handed. That file already describes the rule and already carries a hand-counted ledger of
-which functions reach the gate; a static case is what stops the ledger from being the only thing that
-notices. It is deliberately NOT in `tests/test_readonly_scan.sh`: CLAUDE.md frames that file as the
-read-only guarantee's enforcement, and a red build there should mean the product's promise is at risk, not
-that an error code was reported badly.
+**The rule is held statically, in [`tests/test_settle.sh`](../../tests/test_settle.sh).** No mapping of a
+failed command — `*_fail_code` or `*_outcome_code` alike — may end by returning the status it was handed.
+It goes beside the two cases #75 put at the foot of that file rather than in
+`tests/test_gate_passthrough.sh`, which was where this was first going to live: #75 established that file as
+the home for claims about a reader's shape read off the source, and gave the reason this ADR would have had
+to give anyway — `tests/test_readonly_scan.sh`'s subject is the read-only claim, and a mapping's shape is not
+a safety property. One file answers for one question, and it is already answering this one.
 
 ## What was considered and rejected
 
@@ -120,10 +125,41 @@ lacked a reason to stay complete.
 
 **The paragraph excluding `lib/account.sh` and `lib/delivery.sh` was true of the settler and read as true of
 more.** Both reasons still hold and neither module finishes through `lib/settle.sh`. What went unexamined is
-that both failure readers still ended with the rejected arm.
+that both mappings still ended with the rejected arm. #75 has since given them a name of their own; it did
+not touch the arm.
 
 ADR-0011's closing line inherits the first correction: `lib/logview.sh` is no longer one of the three modules
 outside all of this.
+
+## What an outcome reader is, once this lands
+
+#75 landed one merge before this and is the reason the two modules here are no longer called failure readers.
+It found that `zro_settle`'s name check cannot ask arity, that `zro_prov_fail_code` and `zro_trace_fail_code`
+matched the shape while taking three arguments and two, and it separated the roles by name. That finding is
+right and the rename stands.
+
+**The property it defined the new term BY does not survive this change.** *Outcome reader* is written as a
+mapping that *"may be holding one of the gate's own codes, because nothing has answered them yet"*, and
+`lib/delivery.sh` gained a comment saying the same: *"the status it is handed can still be one of the gate's."*
+After this ADR neither is true of either function. Both ask `zro_exec_own_code` before anything reads the
+status, so neither ever holds a gate code — which was the defect, not the definition.
+
+**What actually separates the two roles is the thing #75 discovered and then did not put in the term: whether
+the settler can call it.** That is now literal and enforced in both directions —
+[`tests/test_settle.sh`](../../tests/test_settle.sh) holds that the set of `*_fail_code` functions equals the
+set of names handed to `zro_settle`. So the suffix has stopped meaning *maps a failure* and started meaning
+*travels to the settler*, and the term beside it should say so:
+
+> **Outcome reader**: a module's own mapping of a failed command that is NOT handed to the settler. Two
+> things put a mapping here, and neither is about gate codes: it takes an argument the settler cannot supply
+> (`zro_prov_outcome_code` also takes the caller's missing code), or it is read somewhere the settler's order
+> does not describe (`zro_trace_outcome_code` answers in the middle of a loop, before the file it read from
+> is removed).
+
+**This is why `zro_trace_outcome_code` keeps its name even though it ends up a one-argument mapping that never
+sees a gate code** — by the old definition it would be a failure reader. It cannot take that suffix: delivery
+does not use the settler, and #75's second case fails on a `*_fail_code` that is never handed over. The name
+follows the seam, not the signature.
 
 ## Consequences
 
