@@ -100,6 +100,14 @@ not taken here.
 it lacks is a reason to stay complete. It is left for the same reason: the sink is the decision, and this
 change is not about sinks.
 
+> **Corrected 2026-08-19 — the grouping above is wrong; the decision it defers was never in the way.**
+> `lib/logview.sh` was never in queue's and service's position. Their lists name four of the five codes and
+> use the fifth AS the sink, so converting them changes which log line a gate refusal writes — that is what
+> makes their sink a decision. logview's list names all five, so no code the gate produces has reached its
+> sink or can. Converting it is a substitution with nothing an operator can see attached to it, and it was
+> made in [ADR-0012](./0012-no-reader-ends-with-the-status-it-was-handed.md). What this paragraph got right
+> is its second sentence, which is the whole reason to convert: the list lacked a reason to stay complete.
+
 **Three modules move rather than six, because only three have a ceremony to move.** `lib/message.sh`,
 `lib/store.sh` and `lib/search.sh` each carried a `*_settle` routine that was a copy of the other two apart
 from the reader it named — until the message one grew the predicate check the settler now holds for all of
@@ -129,6 +137,23 @@ LDAP — so its reader is not a last step and the settler's order does not descr
 one scratch file across every log file in the window and appends the list of files it could not read to the
 kept message, after the bound; a settler that removed the file and stopped at the bound would take the
 disclosure with it. Both are named here so that a later reader does not take them for work somebody forgot.
+
+> **Corrected 2026-08-19 — true of the settler, and read as true of more than that.** Both reasons above
+> still hold: neither module can finish through `lib/settle.sh`, and
+> [ADR-0012](./0012-no-reader-ends-with-the-status-it-was-handed.md) leaves both exclusions standing. What
+> this paragraph does not say, and was read as saying, is that the FAILURE MAPPING each of them carries had
+> also been examined. It had not — by either this ADR or the section below it, which renamed both without
+> touching the arm. Both ended with `printf '%s' "$rc"` — the arm *What was considered and rejected* names as
+> the defect, two sections above — and being outside the settler never required it: `zro_msg_head_fetch`
+> asks the predicate inline with no settler at all, in a module this ADR says had moved. The cost was not
+> theoretical. `zmmsgtrace` is Perl, so its status is an `errno`, and `errno` 23 arrived at the trace loop
+> as `ZRO_E_NO_LOG` — read there as a file that could not be opened, disclosed with an invented reason, and
+> answered as a partial scan rather than as a failure.
+>
+> **And the passthrough suite was not covering the gap for these two, though it was for the three above.**
+> For `lib/delivery.sh` it holds `zro_trace_exec`, the DISPATCHER, which carries no mapping code and passes
+> a status through trivially; the fetch loop that does the mapping was held to nothing. For `zro_prov_read`
+> it holds `90`, `91` and `92` — never `21`, which is the one code that module's LDAP retry turns on.
 
 ## The existence gate is asked before the command, not read off its status
 

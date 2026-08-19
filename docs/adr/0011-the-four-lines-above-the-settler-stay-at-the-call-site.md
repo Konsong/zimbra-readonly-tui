@@ -123,3 +123,10 @@ seam to the settler's rule. What this ADR adds is the reason a reviewer can give
 **Three modules are still outside all of this** — `lib/queue.sh`, `lib/service.sh` and `lib/logview.sh`
 have no settler and no failure reader. ADR-0010 records why, and their sinks remain a decision of their
 own. Nothing here changes that.
+
+> **Corrected 2026-08-19.** Two, not three. `lib/logview.sh` no longer belongs in this list: its five-code
+> list was a complete copy of the gate's return set, so replacing it with `zro_exec_own_code` was a
+> substitution and never a sink decision
+> ([ADR-0012](./0012-no-reader-ends-with-the-status-it-was-handed.md)). `lib/queue.sh` and `lib/service.sh`
+> are still outside and their sinks are still a decision of their own — #77 and #78, rather than only a
+> paragraph.
