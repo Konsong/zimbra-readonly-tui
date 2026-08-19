@@ -448,17 +448,24 @@ role and nothing else, and the build says so
 A module's own reading of a failed command, **consumed by that module rather than
 handed over**. Its answer decides what the module does next — retry the directory
 read through LDAP, skip this log file or refuse the whole scan — and is therefore
-not necessarily what the operator is told. Two things follow, and both are what a
-failure reader is not: it may be holding one of the gate's own codes, because
-nothing has answered them yet, and it may need more than the scratch file, because
-the caller has something to say about the answer. There are two, in
-`lib/account.sh` and `lib/delivery.sh`, and
+not necessarily what the operator is told. What puts a mapping here is that the
+settler cannot call it: it needs more than the scratch file, because the caller has
+something to say about the answer. There is one, `zro_prov_outcome_code` in
+`lib/account.sh`, which also takes the caller's missing code;
 [ADR-0010](docs/adr/0010-the-gate-owns-the-predicate-and-one-settler-asks-it.md)
-records why each stays outside the settler.
+records why that seam stays outside the settler.
+
+Holding one of the gate's own codes is NOT what makes one, however much it looked
+that way while two of these existed: a mapping that sees a gate code has simply not
+asked `zro_exec_own_code` yet, and every module asks it now
+([ADR-0012](docs/adr/0012-no-reader-ends-with-the-status-it-was-handed.md)).
+`lib/delivery.sh` had the second one until the question it really answered — could
+the tracer open THIS file — became a predicate of its own, `zro_trace_unopenable`,
+at which point the mapping had nothing left to map.
 _Avoid_: failure reader — the two wore one suffix until the settler was found
 accepting a reader it could not call, and telling them apart is what fixed it
 _Avoid_: pre-settler reader — it names when it runs rather than what it answers,
-and one of the two is not on a settled read's path at all
+and this one is not on a settled read's path at all
 
 **Settler**:
 The routine every gated read finishes through: keep a bounded prefix of what the

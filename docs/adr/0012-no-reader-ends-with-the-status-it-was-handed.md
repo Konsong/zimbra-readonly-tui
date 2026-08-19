@@ -150,16 +150,17 @@ the settler can call it.** That is now literal and enforced in both directions �
 set of names handed to `zro_settle`. So the suffix has stopped meaning *maps a failure* and started meaning
 *travels to the settler*, and the term beside it should say so:
 
-> **Outcome reader**: a module's own mapping of a failed command that is NOT handed to the settler. Two
-> things put a mapping here, and neither is about gate codes: it takes an argument the settler cannot supply
-> (`zro_prov_outcome_code` also takes the caller's missing code), or it is read somewhere the settler's order
-> does not describe (`zro_trace_outcome_code` answers in the middle of a loop, before the file it read from
-> is removed).
+> **Outcome reader**: a module's own mapping of a failed command that is NOT handed to the settler, because
+> the settler cannot call it — it takes an argument the settler has no way to supply. There is one,
+> `zro_prov_outcome_code`, which also takes the caller's missing code.
 
-**This is why `zro_trace_outcome_code` keeps its name even though it ends up a one-argument mapping that never
-sees a gate code** — by the old definition it would be a failure reader. It cannot take that suffix: delivery
-does not use the settler, and #75's second case fails on a `*_fail_code` that is never handed over. The name
-follows the seam, not the signature.
+**And there is only one, because splitting the delivery trace dissolved the other.** This was drafted
+expecting `zro_trace_outcome_code` to survive as a one-argument mapping that keeps the outcome name for the
+seam's sake. Writing it showed otherwise: everything that function recognised was the one unopenable text,
+and once that moved to `zro_trace_unopenable` what remained had a single arm and nothing to decide. A
+function that returns a constant is not a mapping, so it is gone rather than kept for the symmetry. The
+category #75 created for two members has one, and the property it was defined by — holding a gate code —
+belonged to neither.
 
 ## Consequences
 
