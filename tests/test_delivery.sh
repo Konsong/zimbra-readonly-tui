@@ -385,7 +385,11 @@ it "a failure that is not an unreadable log still refuses the whole operation"
 # covered. A timeout, or a status nobody here recognises, says nothing about what
 # was covered — so there is no honest partial answer to assemble from it, and the
 # operation is refused as it was before.
-RC=2 assert_status 2 trace 'ahmet.yilmaz@example.com' "$W_28_DAY_FROM" "$W_28_DAY_TO"
+#
+# The CODE it is refused with is the documented one and not the tracer's own status:
+# that status is an errno and collides with codes this program defines. What this
+# case pins is the refusal; tests above pin the code.
+RC=2 assert_status "$ZRO_E_NO_LOG" trace 'ahmet.yilmaz@example.com' "$W_28_DAY_FROM" "$W_28_DAY_TO"
 out=$(RC=2 trace 'ahmet.yilmaz@example.com' "$W_28_DAY_FROM" "$W_28_DAY_TO" 2>/dev/null)
 assert_eq "$out" ""
 ZRO_MOCK_TIMEOUT_FIRE=1 OUT="$ONE" assert_status "$ZRO_E_TIMEOUT" \
@@ -396,7 +400,7 @@ it "but a refusal after a skip still names the file that was skipped"
 # file is skipped, and the one after it fails with a status nobody here recognises:
 # the operation is refused, and what the operator is shown still names the log that
 # was never read. Otherwise this is the one path where a skipped file is silent.
-UNREADABLE="$SYS.2.gz" RC=2 assert_status 2 \
+UNREADABLE="$SYS.2.gz" RC=2 assert_status "$ZRO_E_NO_LOG" \
   trace 'ahmet.yilmaz@example.com' "$W_28_DAY_FROM" "$W_28_DAY_TO"
 assert_contains "$(zro_last_error)" "$SYS.2.gz"
 assert_contains "$(zro_last_error)" "unable to open file"
@@ -416,7 +420,7 @@ it "and it survives a message from the tracer longer than the bound"
 # never reach the refusal this case is about.
 LONG_ERR="$TREE/tracer-stderr-over-the-bound.txt"
 head -c "$(( ZRO_ERROR_KEEP_BYTES * 2 ))" /dev/zero | tr '\0' 'x' >"$LONG_ERR"
-UNREADABLE="$SYS.2.gz" RC=2 ERR="$LONG_ERR" assert_status 2 \
+UNREADABLE="$SYS.2.gz" RC=2 ERR="$LONG_ERR" assert_status "$ZRO_E_NO_LOG" \
   trace 'ahmet.yilmaz@example.com' "$W_28_DAY_FROM" "$W_28_DAY_TO"
 assert_contains "$(zro_last_error)" "Okunamayan log dosyalari"
 assert_contains "$(zro_last_error)" "$SYS.2.gz"
@@ -429,8 +433,25 @@ it "a log it could not open is reported as the documented log failure"
 RC=13 ERR="$FIX/zmmsgtrace_synthetic_unreadable.err" assert_status "$ZRO_E_NO_LOG" \
   trace 'ahmet.yilmaz@example.com' "$W_LIVE_FROM" "$W_LIVE_TO"
 
-it "passes an unrecognised failure status through unchanged"
-RC=2 assert_status 2 trace 'ahmet.yilmaz@example.com' "$W_LIVE_FROM" "$W_LIVE_TO"
+it "refuses the whole trace when it recognises nothing, rather than passing a status out"
+# The tracer is Perl, so a failed trace exits with whatever errno was set, and this
+# program may not hand that number to a screen: it is undocumented here, and where
+# it collides with a code this program DOES define it draws a confidently wrong one.
+RC=2 assert_status "$ZRO_E_NO_LOG"   trace 'ahmet.yilmaz@example.com' "$W_LIVE_FROM" "$W_LIVE_TO"
+
+it "and a status that collides with the skip signal does not disappear into the banner"
+# errno 23 IS ZRO_E_NO_LOG. While one constant answered both 'could this file be
+# opened' and 'what is the operator told', a trace that died of ENFILE was read as a
+# file the tracer could not open: skipped, disclosed with whatever line was on its
+# stderr, and answered as a partial scan. That is a wrong answer about delivery from
+# the screen that exists to answer it, and it is the reason the two questions are
+# asked separately. The stderr carries no recognisable text, so only the split keeps
+# this case honest.
+RC=23 assert_status "$ZRO_E_NO_LOG"   trace 'ahmet.yilmaz@example.com' "$W_LIVE_FROM" "$W_LIVE_TO"
+# The code alone cannot tell the two apart -- a skipped file ends on ZRO_E_NO_LOG
+# too, once nothing was read. What separates them is the disclosure: a file that was
+# really skipped is named, and this one was not skipped at all.
+assert_not_contains "$(zro_last_error)" "Okunamayan log dosyalari"
 
 it "a slow trace is cut off with the documented timeout code"
 ZRO_MOCK_TIMEOUT_FIRE=1 OUT="$ONE" assert_status "$ZRO_E_TIMEOUT" \

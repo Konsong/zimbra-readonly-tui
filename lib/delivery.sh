@@ -33,29 +33,43 @@ zro_trace_message_count() {
   printf '%s' "$n"
 }
 
-# Maps a failed trace to a documented exit code, or passes the tool's own status
-# through when it recognises nothing. Same shape as zro_prov_outcome_code in
-# lib/account.sh, and for the same reason: an operator who is shown a bare status
-# has to reproduce the command by hand to learn what went wrong.
+# WHAT THE TRACER SAYS WHEN IT CANNOT OPEN A LOG FILE. It dies with this on stderr
+# and no exit status of its own, so the message is the only signal there is.
 #
-# AN OUTCOME READER AND NOT A FAILURE READER, for the reason the name carries: its
-# answer decides whether THIS log file is skipped or the whole scan refused, so it
-# is read in the middle of the loop rather than as a read's last step, and the
-# status it is handed can still be one of the gate's. ADR-0010 records why this
-# seam stays outside the settler.
+# RE-VERIFY THIS AGAINST OUTPUT CAPTURED FROM A REAL SERVER (#80). The text comes
+# from the tool's own print statements as documented in
+# docs/research/2026-07-29-zimbra-cli-read-only-reference.md §B.11, read out of the
+# source; no capture exists in this repository yet, and the fixture standing in for
+# one says so in its name. M1 shipped two production bugs from output that had been
+# described rather than captured, and the suite agreed with both descriptions.
 #
-# A log the tool cannot open is the one failure worth naming. It dies with
-# "unable to open file" on stderr and no exit status of its own, so the message is
-# the only signal there is. That text comes from the tool's source as documented
-# in docs/research/2026-07-29-zimbra-cli-read-only-reference.md §B.11 rather than
-# from a capture, which is why the match lives here alone and stays this narrow.
-zro_trace_outcome_code() {
-  local errfile=$1 rc=$2
-  if grep -q 'unable to open file' "$errfile" 2>/dev/null; then
-    printf '%s' "$ZRO_E_NO_LOG"
-    return 0
-  fi
-  printf '%s' "$rc"
+# Declared rather than written inline, the way ZRO_STORE_TXT_NO_FOLDER and
+# ZRO_SEARCH_TXT_NO_FOLDER are: a string this tree has not verified belongs
+# somewhere a reader meets it, not buried in a grep inside a function.
+ZRO_TRACE_TXT_UNOPENABLE='unable to open file'
+
+# WHETHER THE TRACER COULD NOT OPEN THIS PARTICULAR FILE. A question about ONE FILE
+# and not about the trace: the loop below skips a file that answers yes and refuses
+# the whole scan for anything else.
+#
+# THIS USED TO BE ASKED THROUGH A CODE, and that is what ADR-0012 is about.
+# ZRO_E_NO_LOG answered both this question and 'what is the operator told', and a
+# constant doing two jobs could be trusted with neither: the tracer is Perl, so a
+# failed trace exits with errno, and errno 23 IS ZRO_E_NO_LOG. A trace that died of
+# ENFILE was read here as a file that could not be opened, disclosed with whatever
+# line happened to be on its stderr, and answered as a partial scan -- a wrong
+# answer about whether a message was delivered, from the screen that exists to
+# answer that.
+#
+# A PREDICATE AND NOT A MAPPING, which is why the module no longer has an outcome
+# reader at all. Everything zro_trace_outcome_code recognised was this one text; the
+# rest of it was the fall-through. With the text asked here, what was left had one
+# arm and nothing to decide, so it is gone rather than kept as a function that
+# returns a constant.
+#
+#   $1  the file the tracer's error stream was captured to
+zro_trace_unopenable() {
+  grep -q "$ZRO_TRACE_TXT_UNOPENABLE" "${1-}" 2>/dev/null
 }
 
 # The tracer's own time bound, as its POD documents it: YYYYMM[DD[HH[MM[SS]]]],
@@ -330,8 +344,38 @@ zro_trace_run() {
             --time "$from,$to" --year "$year" "$path" \
             2>"$err" </dev/null) || rc=$?
     if [ "$rc" -ne 0 ]; then
-      mapped=$(zro_trace_outcome_code "$err" "$rc")
-      if [ "$mapped" != "$ZRO_E_NO_LOG" ]; then
+      # THE GATE'S OWN CODES ARE ANSWERED FIRST and travel out as themselves: they
+      # describe this program or the host it is pointed at, and the screens for them
+      # already say the right thing. Asked of lib/exec.sh rather than listed here,
+      # because the membership is a fact about zro_exec's return set -- ADR-0010.
+      #
+      # Everything below this line is therefore a failure of a command that RAN, and
+      # that is what lets the two questions below be asked without a status in
+      # either of them.
+      mapped=''
+      if zro_exec_own_code "$rc"; then
+        mapped=$rc
+      elif ! zro_trace_unopenable "$err"; then
+        # A FAILURE OF THE TRACER THAT NOTHING RECOGNISES, and the trace is refused
+        # whole rather than continued. It is reported as a log this tool could not
+        # read -- not as ZRO_E_UNAVAILABLE, the sink lib/store.sh and lib/search.sh
+        # use, because that code's screen opens by explaining that zmprov connects to
+        # mailboxd over SOAP and this tool reaches no service at all. Borrowing it
+        # would name a service the command never talks to, which is the defect
+        # ADR-0010 was written about.
+        #
+        # What this arm may NOT do is return $rc. The tracer is Perl and its status
+        # is errno, so that number collides with codes this program defines: 11 drew
+        # 'Hesap bulunamadi' where no account was read, 12 drew 'Mailbox bulunamadi'
+        # from a module that opens no mailbox, and 23 was not drawn at all -- it was
+        # read as a skipped file. ADR-0012 carries the table.
+        mapped=$ZRO_E_NO_LOG
+      fi
+      # AN EMPTY ANSWER IS THE SKIP, and it is the only way to say so: every code
+      # this arm can produce is one the operator might also be shown, which is the
+      # conflation the split above removed. Nothing may be read back out of the
+      # number.
+      if [ -n "$mapped" ]; then
         # Not a file the tracer could not open, so nothing is known about what was
         # covered. Refused whole, with whatever the tool said, so the failure
         # reaches the operator as its own cause rather than as a bare exit code.
