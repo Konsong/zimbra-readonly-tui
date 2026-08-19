@@ -13,6 +13,16 @@
 - **Companion:** [`2026-08-18-architecture-review.html`](2026-08-18-architecture-review.html) — the same
   seven candidates with before/after diagrams. It needs a network connection to render (Tailwind and Mermaid
   come from CDNs), which is why the findings are also written out here in full.
+- **⚠ ONE CLAIM HERE IS WRONG AND ONE IS OVERSTATED; both are marked at the point they are made.** The
+  [2026-08-19 survey](2026-08-19-architecture-review.md) re-ran every number in this file rather than
+  inheriting it. §4's *"the load order encodes a dependency"* is **wrong** — bash resolves function names at
+  call time — although the count it rests on holds and the move it argues for is still worth making. §3's
+  *"the first was never corrected"* is **overstated**. Everything else re-measured clean, including §7's
+  coverage figures, which were exact at this commit; the newer survey disagrees with §7 only about the CAUSE,
+  which is an argument rather than a correction. **§1 has since shipped** as `lib/settle.sh` plus
+  [ADR-0010](../adr/0010-the-gate-owns-the-predicate-and-one-settler-asks-it.md) and
+  [ADR-0011](../adr/0011-the-four-lines-above-the-settler-stay-at-the-call-site.md); the rest of the ranking
+  is carried forward in the newer file.
 
 ## 0. Where the change keeps landing
 
@@ -139,6 +149,15 @@ both the answer and the banner the module worked to write.
 `read_n + skipped_n`; `logsearch.sh:435-439` takes `selected_n` directly, because a cap leaves files that are
 neither read nor skipped. The second is the corrected version of the first, and the first was never corrected.
 
+> **⚠ CORRECTION, 2026-08-19 — overstated.** The divergence is real and the delivery banner really was never
+> changed. What does not follow is the implication that it is therefore wrong. The tracer has **no match
+> cap** — `ZRO_LOGSEARCH_MATCHES` (`lib/logsearch.sh:52`) has no counterpart in `lib/delivery.sh`, and
+> `zro_trace_run`'s loop has no break — so every selected file is either read or skipped and
+> `read_n + skipped_n` equals `selected_n`. Its banner is right today. The finding is that one rule has two
+> derivations and only one of them survives a cap being added, with nothing holding the two equal — an
+> argument about the two engines rather than a defect in this banner.
+> See [2026-08-19 §6](2026-08-19-architecture-review.md).
+
 ## 4. The card vocabulary is not an account concept
 
 **VERIFIED.** `zro_card_line`, `zro_card_head`, `zro_card_more`, `zro_card_list`, `ZRO_CARD_LABEL_W` and the
@@ -146,6 +165,18 @@ three absence words `ZRO_TXT_UNSET`/`UNKNOWN`/`NONE` are defined in `lib/account
 — and called **183 times from 11 other modules**. That is why `lib/account.sh` must be sourced tenth in
 `zimbra-ro-tui.sh:30`, ahead of `mailset`, `bulk`, `mailbox`, `store`, `search`, `message`, `identity`,
 `directory`, `queue` and `service`. The load order encodes a dependency on a domain module for rendering.
+
+> **⚠ CORRECTION, 2026-08-19 — the count holds (189 today), the ARGUMENT does not.** Nothing forces the source
+> order: bash resolves function names at call time, no domain module expands the card vocabulary at source
+> time, and sourcing `lib/service.sh` *before* `lib/account.sh` loads clean and renders a full card. The order
+> at `zimbra-ro-tui.sh:32` is a reading convention (`lib/settle.sh` was inserted at `:22` after this survey,
+> which is why the position moved; *tenth* was right when written). The real cost is in the suite:
+> `lib/service.sh` needs exactly one symbol outside core and exec — `zro_card_line`, five uses at `:203-207` —
+> yet `tests/test_service.sh` and `tests/test_queue.sh` must source the whole 3,347-line entry point to reach
+> it. A third module test sources it too, `tests/test_table.sh`, but for a reason of its own written at
+> `:227`: three of the eleven declared tables live in the entry point. The move is still worth making; it
+> needs this reason instead of the load order.
+> See [2026-08-19 §7](2026-08-19-architecture-review.md).
 
 Reaching across already felt wrong to somebody once: `lib/queue.sh:348` forked the unreadable-size fallback,
 printing the raw number where `lib/store.sh:371` prints `bilinmiyor`. Same value, two answers for the same
@@ -196,6 +227,18 @@ export/unset dialect). The median first-assertion line across 51 files is **69**
 four modules at **0% untested** are `selection`, `table`, `validate` and `window` — exactly the four that take
 values and return values, touch no external command and open no screen. `zimbra-ro-tui.sh` sits at 76%
 untested. The coverage gradient tracks depth precisely, which is candidates 1–5 restated as a measurement.
+
+> **Note, 2026-08-19 — re-measured, and these numbers HOLD.** The unit above is *% untested*, so *0% untested*
+> means fully covered, and that is what re-running finds: all 29 functions in the four modules are named in
+> the suite — validate 9/9, window 6/6, selection 7/7, table 7/7. **188 of 461 was exact at this commit.**
+> Today it has drifted to 181 of 461; `zimbra-ro-tui.sh` is unchanged at 76%.
+>
+> Where the [2026-08-19 survey](2026-08-19-architecture-review.md) differs is the CAUSE, and only that. This
+> paragraph reads the gradient as tracking depth. §10 there reads it as tracking **setup cost**: the same four
+> modules are the four whose tests need under 30 lines of preamble, against a median of 66.5 and 3,015 lines
+> summed across the suite. The two readings are confounded here — a module that takes values and returns
+> values is also a module that is cheap to stand up — and nothing in this tree separates them yet. Recorded so
+> the disagreement is not mistaken for an error in either direction.
 
 `tests/lib/cost.sh` is the counterexample and the model: `assert_cost` reads the operation's declared class
 *and its unit* out of the program rather than restating a number, and its header says why —

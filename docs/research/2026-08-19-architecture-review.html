@@ -1,0 +1,1002 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Architecture review — zimbra-readonly-tui</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script type="module">
+      import mermaid from "https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs";
+      mermaid.initialize({ startOnLoad: true, theme: "neutral", securityLevel: "loose", flowchart: { curve: "basis" } });
+    </script>
+    <style>
+      .seam { stroke-dasharray: 4 4; }
+      .deep { background: linear-gradient(135deg, #0f172a, #1e293b); }
+      .mod { border: 1px solid #cbd5e1; background: #fff; border-radius: 4px; }
+      .mod-deep { border: 3px solid #0f172a; background: #f8fafc; border-radius: 4px; }
+      .mod-thin { border: 1px dashed #cbd5e1; background: #fafaf9; border-radius: 4px; }
+      .mod-bad { border: 1px solid #fca5a5; background: #fef2f2; border-radius: 4px; }
+      .lbl { font-size: 10px; letter-spacing: .08em; text-transform: uppercase; color: #64748b; }
+      .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+      .hatch { background-image: repeating-linear-gradient(45deg, #f1f5f9 0 6px, #e2e8f0 6px 12px); }
+      .hatch-red { background-image: repeating-linear-gradient(45deg, #fef2f2 0 6px, #fee2e2 6px 12px); }
+      .dgrid { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
+      @media (max-width: 860px) { .dgrid { grid-template-columns: 1fr; } }
+      .scrollx { overflow-x: auto; }
+      h2, h3, .serif { font-family: ui-serif, Georgia, "Times New Roman", serif; }
+    </style>
+  </head>
+  <body class="bg-stone-50 text-slate-900 font-sans antialiased">
+    <main class="max-w-5xl mx-auto px-6 py-12 space-y-14">
+
+      <!-- ══════════════════════ HEADER ══════════════════════ -->
+      <header class="space-y-5">
+        <div class="flex items-baseline justify-between flex-wrap gap-3">
+          <h1 class="text-4xl serif font-semibold tracking-tight">Architecture review</h1>
+          <div class="text-sm text-slate-500 mono">zimbra-readonly-tui &middot; <span class="text-slate-700">406c9a9</span> &middot; 2026-08-19</div>
+        </div>
+
+        <div class="grid sm:grid-cols-4 gap-3 text-sm">
+          <div class="mod p-3"><div class="lbl">program</div><div class="text-2xl serif">15,261</div><div class="text-slate-500 text-xs">lines, 24 modules</div></div>
+          <div class="mod p-3"><div class="lbl">tests</div><div class="text-2xl serif">17,557</div><div class="text-slate-500 text-xs">52 files, 3,852 assertions</div></div>
+          <div class="mod p-3"><div class="lbl">shared test library</div><div class="text-2xl serif">153</div><div class="text-slate-500 text-xs">lines, against 3,015 of preamble</div></div>
+          <div class="mod p-3"><div class="lbl">hot spots</div><div class="text-2xl serif">2</div><div class="text-slate-500 text-xs">screen file &amp; exec gate</div></div>
+        </div>
+
+        <div class="mod p-4 text-sm text-slate-600 space-y-2">
+          <p><span class="lbl">Method</span> &nbsp;Four sub-agents walked the screen layer, the safety spine, the domain modules and the suite; every count was re-run against the tree rather than taken from the <a class="underline" href="#prior">previous survey</a>, and the headline claims were then re-verified a third time by hand. Nothing here was measured on a server — these are facts about the repository, not about Zimbra.</p>
+          <p><span class="lbl">Legend</span> &nbsp;<span class="inline-block w-3 h-3 align-middle mod"></span> module &nbsp;·&nbsp; <span class="inline-block w-3 h-3 align-middle mod-deep"></span> deep module &nbsp;·&nbsp; <span class="inline-block w-3 h-3 align-middle mod-thin"></span> shallow / pass-through &nbsp;·&nbsp; <span class="text-red-600">red</span> leakage across a seam &nbsp;·&nbsp; dashed line = seam.</p>
+        </div>
+
+        <div class="mod p-4 text-sm bg-emerald-50 border-emerald-200">
+          <span class="lbl text-emerald-700">Since the last survey</span>
+          <p class="mt-1 text-slate-700">Its §1 — the gate's own codes re-decided per module — <strong>has landed</strong>: <span class="mono">lib/settle.sh</span> exists, <span class="mono">zro_exec_own_code</span> owns the predicate, <span class="mono">ZRO_ERROR_KEEP_BYTES</span> replaced the 500-byte literal at all twelve sites, and ADR-0010/0011 record what deliberately did <em>not</em> move. This review does not re-propose it. It reports what the migration left, and what four fresh walks found around it.</p>
+        </div>
+      </header>
+
+      <!-- ══════════════════════ SECTION A ══════════════════════ -->
+      <section class="space-y-3">
+        <h2 class="text-2xl serif font-semibold border-b border-slate-300 pb-2">A &nbsp;·&nbsp; Live consequences</h2>
+        <p class="text-sm text-slate-600">Five findings where something is wrong today, not merely arranged awkwardly. Each is small.</p>
+      </section>
+
+      <!-- ─── A1 ─── -->
+      <article id="c1" class="mod p-6 space-y-5">
+        <div class="flex items-start justify-between gap-4 flex-wrap">
+          <h3 class="text-xl serif font-semibold">1 &nbsp;The settler admits a failure reader it cannot call</h3>
+          <div class="flex gap-2 shrink-0">
+            <span class="px-2 py-1 text-xs rounded bg-emerald-100 text-emerald-800 font-medium">Strong</span>
+            <span class="px-2 py-1 text-xs rounded bg-slate-100 text-slate-600">in-process</span>
+          </div>
+        </div>
+
+        <div class="mono text-sm text-slate-500">lib/settle.sh:47 &middot; lib/settle.sh:131 &middot; lib/account.sh:234 &middot; lib/delivery.sh:47</div>
+
+        <div class="dgrid">
+          <div class="mod p-4 space-y-3">
+            <div class="lbl">Before — one question asked</div>
+            <div class="text-xs mono bg-slate-50 p-2 rounded">zro_settle_reader_ok</div>
+            <div class="space-y-1 text-xs">
+              <div class="flex items-center gap-2"><span class="w-24 shrink-0 lbl">shape</span><span class="flex-1 h-6 mod flex items-center px-2 mono">^zro_.*_fail_code$</span><span class="text-emerald-600">✓</span></div>
+              <div class="flex items-center gap-2"><span class="w-24 shrink-0 lbl">declared</span><span class="flex-1 h-6 mod flex items-center px-2 mono">declare -F</span><span class="text-emerald-600">✓</span></div>
+              <div class="flex items-center gap-2 opacity-40"><span class="w-24 shrink-0 lbl">arity</span><span class="flex-1 h-6 mod-thin flex items-center px-2 mono">— not asked —</span><span>&nbsp;</span></div>
+            </div>
+            <div class="pt-2 lbl">the five readers in this tree</div>
+            <div class="space-y-1 text-xs mono">
+              <div class="mod px-2 py-1">zro_store_fail_code<span class="float-right text-slate-400">1 arg</span></div>
+              <div class="mod px-2 py-1">zro_search_fail_code<span class="float-right text-slate-400">1 arg</span></div>
+              <div class="mod px-2 py-1">zro_msg_fail_code<span class="float-right text-slate-400">1 arg</span></div>
+              <div class="mod-bad px-2 py-1">zro_trace_fail_code<span class="float-right text-red-600">2 args</span></div>
+              <div class="mod-bad px-2 py-1">zro_prov_fail_code<span class="float-right text-red-600">3 args</span></div>
+            </div>
+            <svg viewBox="0 0 300 40" class="w-full h-10"><path d="M10 10 H290" class="leak" stroke="#dc2626" stroke-width="1.5" fill="none" marker-end="url(#ah)"/><defs><marker id="ah" markerWidth="8" markerHeight="8" refX="7" refY="3" orient="auto"><path d="M0,0 L0,6 L7,3 z" fill="#dc2626"/></marker></defs><text x="10" y="28" font-size="9" fill="#dc2626" class="mono">name passes → called with 1 arg → $2 unbound → "islem basarisiz (kod 2)"</text></svg>
+          </div>
+
+          <div class="mod p-4 space-y-3">
+            <div class="lbl">After — the check is complete</div>
+            <div class="text-xs mono bg-slate-50 p-2 rounded">zro_settle_reader_ok</div>
+            <div class="space-y-1 text-xs">
+              <div class="flex items-center gap-2"><span class="w-24 shrink-0 lbl">shape</span><span class="flex-1 h-6 mod flex items-center px-2 mono">^zro_.*_fail_code$</span><span class="text-emerald-600">✓</span></div>
+              <div class="flex items-center gap-2"><span class="w-24 shrink-0 lbl">declared</span><span class="flex-1 h-6 mod flex items-center px-2 mono">declare -F</span><span class="text-emerald-600">✓</span></div>
+              <div class="flex items-center gap-2"><span class="w-24 shrink-0 lbl">arity</span><span class="flex-1 h-6 mod-deep flex items-center px-2 mono text-slate-900">takes exactly the file</span><span class="text-emerald-600">✓</span></div>
+            </div>
+            <div class="pt-2 lbl">outcome</div>
+            <div class="space-y-1 text-xs mono">
+              <div class="mod px-2 py-1">three one-arg readers<span class="float-right text-emerald-600">admitted</span></div>
+              <div class="mod-deep px-2 py-1 text-slate-900">two wider readers<span class="float-right text-slate-700">refused &amp; logged</span></div>
+            </div>
+            <div class="text-xs text-slate-500 pt-2">The refusal already exists and already logs a defect — it simply never fires for the case most likely to occur.</div>
+          </div>
+        </div>
+
+        <div class="grid sm:grid-cols-2 gap-4 text-sm">
+          <div><span class="lbl">Problem</span><p class="mt-1">The settler's name check asks whether a name is <em>shaped like</em> a failure reader and whether a function answers to it, but not whether that function can be called with the one argument the settler passes — and two of the five readers in this tree cannot.</p></div>
+          <div><span class="lbl">Solution</span><p class="mt-1">Add the third question to the same predicate, so a wrong name is refused for the reason that actually breaks the settler rather than only for the reason that is easy to check.</p></div>
+        </div>
+
+        <div class="mod p-3 bg-slate-50 text-sm">
+          <span class="lbl">Evidence — verified</span>
+          <p class="mt-1"><span class="mono">zro_settle</span> calls <span class="mono">"$reader" "$errfile"</span> — one argument (<span class="mono">lib/settle.sh:131</span>). <span class="mono">zro_trace_fail_code</span> reads <span class="mono">$2</span>; <span class="mono">zro_prov_fail_code</span> reads <span class="mono">$3</span>. Both match <span class="mono">ZRO_RE_FAIL_READER</span> and both are sourced by the entry point. Under <span class="mono">set -u</span> with no <span class="mono">errexit</span>, the assignment fails, <span class="mono">zro_settle</span> prints nothing, and the caller's <span class="mono">[ "$rc" -eq 0 ]</span> errors on an empty string — the operator gets a code this program does not define, and <strong>neither refusal is logged, because neither fires</strong>.</p>
+        </div>
+
+        <div class="mod p-3 bg-amber-50 border-amber-200 text-sm">
+          <span class="lbl text-amber-700">ADR note — not a conflict</span>
+          <p class="mt-1">ADR-0010 states the check is “a defence against an edit”. This does not reopen that decision; it reports that the stated property is not achieved, and that the two names an edit is most likely to reach for are exactly the two that slip through.</p>
+        </div>
+
+        <div class="text-sm"><span class="lbl">Wins</span>
+          <ul class="mt-1 grid sm:grid-cols-2 gap-x-6 list-disc list-inside text-slate-700">
+            <li>locality: one predicate, one edit</li>
+            <li>the refusal fires where it was meant to</li>
+            <li>defect reaches the log, not the screen</li>
+            <li>interface unchanged; implementation absorbs it</li>
+          </ul>
+        </div>
+        <div class="text-sm"><span class="lbl">Deletion test</span> <span class="text-slate-700">The check cannot be deleted — it is the module's only test. It is one question short, not surplus.</span></div>
+      </article>
+
+      <!-- ─── A2 ─── -->
+      <article id="c2" class="mod p-6 space-y-5">
+        <div class="flex items-start justify-between gap-4 flex-wrap">
+          <h3 class="text-xl serif font-semibold">2 &nbsp;The message-id rule has two implementations, and they disagree</h3>
+          <div class="flex gap-2 shrink-0">
+            <span class="px-2 py-1 text-xs rounded bg-emerald-100 text-emerald-800 font-medium">Strong</span>
+            <span class="px-2 py-1 text-xs rounded bg-slate-100 text-slate-600">in-process</span>
+          </div>
+        </div>
+
+        <div class="mono text-sm text-slate-500">lib/delivery.sh:139 &middot; zimbra-ro-tui.sh:942 &middot; lib/validate.sh:159 &middot; lib/search.sh:367</div>
+
+        <div class="mod p-4 scrollx">
+          <div class="lbl mb-2">Before — three callers cross the seam, one steps around it</div>
+          <pre class="mermaid">
+flowchart LR
+  A[zro_prompt_msgid]:::ok --> F
+  B[lib/delivery.sh:485]:::ok --> F
+  C[lib/logsearch.sh:815]:::ok --> F
+  F[zro_trace_msgid_bare<br/>matching pair only<br/>7 cases in test_delivery.sh]:::deep --> V[zro_validate_msgid<br/>refuses a leftover bracket]:::ok
+  S["mailbox search screen<br/>zimbra-ro-tui.sh:942<br/>strips each end independently"]:::bad -.->|"bypasses"| V
+  V --> R1[trace / log search<br/>REFUSE &lt;CAabc@example.com]:::ok
+  S --> R2[mailbox search<br/>ACCEPTS, searches CAabc@example.com]:::bad
+  classDef bad stroke:#dc2626,stroke-width:2px,fill:#fef2f2;
+  classDef deep stroke:#0f172a,stroke-width:3px,fill:#f8fafc;
+  classDef ok fill:#ffffff;
+          </pre>
+        </div>
+
+        <div class="dgrid">
+          <div class="mod-bad p-4 space-y-2">
+            <div class="lbl">Before — two rules</div>
+            <pre class="mono text-xs bg-white p-2 rounded border border-red-200">case $id in
+  '&lt;'*'&gt;') id=${id#&lt;}; id=${id%&gt;} ;;
+esac          <span class="text-slate-400"># matching pair</span></pre>
+            <pre class="mono text-xs bg-white p-2 rounded border border-red-200">value=${value#&lt;}
+value=${value%&gt;}   <span class="text-red-600"># each end alone</span></pre>
+            <div class="text-xs text-slate-600">Same input, two answers. One is tested seven ways; the other is tested nowhere.</div>
+          </div>
+          <div class="mod-deep p-4 space-y-2">
+            <div class="lbl">After — one rule, four callers</div>
+            <pre class="mono text-xs bg-white p-2 rounded border border-slate-300">value=$(zro_trace_msgid_bare "$value")</pre>
+            <div class="text-xs text-slate-600 pt-6">The four lines at the screen become one call to the function that already owns the rule, already carries the reason in a comment, and already has the cases — including the two half-bracket ones the screen gets wrong.</div>
+          </div>
+        </div>
+
+        <div class="grid sm:grid-cols-2 gap-4 text-sm">
+          <div><span class="lbl">Problem</span><p class="mt-1">The mailbox-search screen unwraps a message-id by stripping each end independently, so a value the delivery trace and the log search both <em>refuse</em> is silently accepted and searched for.</p></div>
+          <div><span class="lbl">Solution</span><p class="mt-1">Delete the screen's four lines and call <span class="mono">zro_trace_msgid_bare</span>, as the other three callers already do.</p></div>
+        </div>
+
+        <div class="mod p-3 bg-slate-50 text-sm">
+          <span class="lbl">Evidence — verified</span>
+          <p class="mt-1">The owner's comment (<span class="mono">lib/delivery.sh:135</span>) states the rule: “Only a MATCHING PAIR at the two ends is removed, and never more than one … not repairing a value into something nobody typed.” <span class="mono">lib/logsearch.sh:809</span> warns in place that a second implementation “is the kind of pair that drifts.” It drifted at <span class="mono">zimbra-ro-tui.sh:942</span>. <span class="mono">tests/test_delivery.sh:553-554</span> pins the two half-bracket cases on the owner's side; nothing pins the screen's copy.</p>
+        </div>
+
+        <div class="text-sm"><span class="lbl">Wins</span>
+          <ul class="mt-1 grid sm:grid-cols-2 gap-x-6 list-disc list-inside text-slate-700">
+            <li>locality: one rule, one file</li>
+            <li>seven existing cases now cover the screen</li>
+            <li>delete four lines, add one</li>
+            <li>the kind's rule stops being split</li>
+          </ul>
+        </div>
+        <div class="text-sm"><span class="lbl">Deletion test</span> <span class="text-slate-700">Concentrates — the rule moves into the module that already owns it and already tests it.</span></div>
+      </article>
+
+      <!-- ─── A3 ─── -->
+      <article id="c3" class="mod p-6 space-y-5">
+        <div class="flex items-start justify-between gap-4 flex-wrap">
+          <h3 class="text-xl serif font-semibold">3 &nbsp;The alias disclosure is applied by habit, and one screen forgets</h3>
+          <div class="flex gap-2 shrink-0">
+            <span class="px-2 py-1 text-xs rounded bg-emerald-100 text-emerald-800 font-medium">Strong</span>
+            <span class="px-2 py-1 text-xs rounded bg-slate-100 text-slate-600">in-process</span>
+          </div>
+        </div>
+
+        <div class="mono text-sm text-slate-500">zimbra-ro-tui.sh:520 &middot; zimbra-ro-tui.sh:1158 &middot; lib/ui.sh:20 &middot; lib/search.sh:1074</div>
+
+        <div class="dgrid">
+          <div class="mod p-4 space-y-3">
+            <div class="lbl">Before — a habit at eight sites</div>
+            <div class="grid grid-cols-8 gap-1">
+              <div class="h-10 mod flex items-center justify-center text-[9px] mono">501</div>
+              <div class="h-10 mod flex items-center justify-center text-[9px] mono">577</div>
+              <div class="h-10 mod flex items-center justify-center text-[9px] mono">608</div>
+              <div class="h-10 mod flex items-center justify-center text-[9px] mono">611</div>
+              <div class="h-10 mod flex items-center justify-center text-[9px] mono">782</div>
+              <div class="h-10 mod flex items-center justify-center text-[9px] mono">1078</div>
+              <div class="h-10 mod flex items-center justify-center text-[9px] mono">1163</div>
+              <div class="h-10 mod flex items-center justify-center text-[9px] mono">1224</div>
+            </div>
+            <div class="text-center text-xs text-slate-500">↑ eight screens each remember</div>
+            <div class="hatch-red p-3 rounded border border-red-300">
+              <div class="lbl text-red-700">the ninth, four lines away</div>
+              <pre class="mono text-[10px] mt-1 leading-relaxed">:1158  zro_show_text "$title" "$(zro_search_conv_body …)"
+:1162  zro_show_text "$title" "$(zro_screen_alias_note "$(…)")"</pre>
+              <div class="text-[11px] text-red-700 mt-1">Same function's output. One wrapped, one bare.</div>
+            </div>
+            <div class="text-xs text-slate-500">Contrast the sibling: <span class="mono">zro_ui_title</span> applies the selected address at the <em>one</em> path to the screen, and <span class="mono">lib/ui.sh:20</span> says why — “a screen written next month cannot forget to do something it never does.”</div>
+          </div>
+
+          <div class="mod p-4 space-y-3">
+            <div class="lbl">After — structural, like its sibling</div>
+            <svg viewBox="0 0 320 200" class="w-full">
+              <rect x="10" y="10" width="80" height="24" rx="3" fill="#fff" stroke="#cbd5e1"/><text x="50" y="26" font-size="9" text-anchor="middle" class="mono">screen A</text>
+              <rect x="10" y="44" width="80" height="24" rx="3" fill="#fff" stroke="#cbd5e1"/><text x="50" y="60" font-size="9" text-anchor="middle" class="mono">screen B</text>
+              <rect x="10" y="78" width="80" height="24" rx="3" fill="#fff" stroke="#cbd5e1"/><text x="50" y="94" font-size="9" text-anchor="middle" class="mono">…</text>
+              <rect x="10" y="112" width="80" height="24" rx="3" fill="#fff" stroke="#cbd5e1"/><text x="50" y="128" font-size="9" text-anchor="middle" class="mono">screen H</text>
+              <line x1="130" y1="5" x2="130" y2="195" class="seam" stroke="#94a3b8"/>
+              <text x="134" y="14" font-size="8" fill="#64748b" class="mono">seam</text>
+              <path d="M92 22 H128" stroke="#64748b" fill="none"/><path d="M92 56 H128" stroke="#64748b" fill="none"/><path d="M92 90 H128" stroke="#64748b" fill="none"/><path d="M92 124 H128" stroke="#64748b" fill="none"/>
+              <rect x="150" y="40" width="160" height="90" rx="4" fill="#f8fafc" stroke="#0f172a" stroke-width="3"/>
+              <text x="230" y="70" font-size="10" text-anchor="middle" class="mono" fill="#0f172a">the one path</text>
+              <text x="230" y="88" font-size="9" text-anchor="middle" fill="#475569">selected address</text>
+              <text x="230" y="102" font-size="9" text-anchor="middle" fill="#475569">alias disclosure</text>
+              <text x="230" y="120" font-size="8" text-anchor="middle" fill="#94a3b8">applied once, never forgotten</text>
+              <text x="160" y="160" font-size="8" fill="#b45309">server-scoped screens still opt out —</text>
+              <text x="160" y="172" font-size="8" fill="#b45309">that is the design question, not a bug</text>
+            </svg>
+          </div>
+        </div>
+
+        <div class="grid sm:grid-cols-2 gap-4 text-sm">
+          <div><span class="lbl">Problem</span><p class="mt-1">A card headed with the canonical address after the operator typed an alias reads as an answer about the wrong address — which is exactly what <span class="mono">zro_screen_alias_note</span> exists to prevent, and the conversation screen's empty-answer path omits it.</p></div>
+          <div><span class="lbl">Solution</span><p class="mt-1">Close <span class="mono">:1158</span> now; separately decide whether the disclosure belongs at the one path to the screen, as its sibling does, with an opt-out for server-scoped screens.</p></div>
+        </div>
+
+        <div class="mod p-3 bg-slate-50 text-sm">
+          <span class="lbl">Evidence — verified</span>
+          <p class="mt-1">Eight call sites. <span class="mono">lib/search.sh:1074</span> prints <span class="mono">zro_card_line 'Hesap' "$acct"</span>, so the <span class="mono">:1158</span> path shows the alias on the frame and the account in the body with nothing joining them. The note is asserted in <strong>one</strong> test in the whole suite (<span class="mono">tests/test_mailbox_screen.sh:256</span>) against those eight sites. The neighbouring exemption at <span class="mono">:1144</span> is defensible — that body prints no <span class="mono">Hesap</span> line.</p>
+        </div>
+
+        <div class="text-sm"><span class="lbl">Wins</span>
+          <ul class="mt-1 grid sm:grid-cols-2 gap-x-6 list-disc list-inside text-slate-700">
+            <li>closes a live disclosure gap</li>
+            <li>locality: the rule stops being a habit</li>
+            <li>a ninth screen cannot forget</li>
+            <li>one seam to test, not eight</li>
+          </ul>
+        </div>
+        <div class="text-sm"><span class="lbl">Deletion test</span> <span class="text-slate-700">The function earns its keep — deleting it grows the identity check plus the wording at eight sites. Its <em>application</em> is what is shallow.</span></div>
+      </article>
+
+      <!-- ─── A4 ─── -->
+      <article id="c4" class="mod p-6 space-y-5">
+        <div class="flex items-start justify-between gap-4 flex-wrap">
+          <h3 class="text-xl serif font-semibold">4 &nbsp;The queue capability's cache can never fill</h3>
+          <div class="flex gap-2 shrink-0">
+            <span class="px-2 py-1 text-xs rounded bg-emerald-100 text-emerald-800 font-medium">Strong</span>
+            <span class="px-2 py-1 text-xs rounded bg-slate-100 text-slate-600">in-process</span>
+          </div>
+        </div>
+
+        <div class="mono text-sm text-slate-500">lib/capability.sh:398 &middot; lib/capability.sh:351 &middot; lib/capability.sh:39 &middot; lib/capability.sh:445</div>
+
+        <div class="dgrid">
+          <div class="mod p-4 space-y-3">
+            <div class="lbl">Before — the assignment dies in the subshell</div>
+            <svg viewBox="0 0 320 210" class="w-full">
+              <rect x="8" y="8" width="304" height="30" rx="3" fill="#fff" stroke="#cbd5e1"/>
+              <text x="16" y="27" font-size="9" class="mono" fill="#334155">5 call sites — :2400 :2429 :2460 :2484 :3059</text>
+              <path d="M160 38 V56" stroke="#64748b" marker-end="url(#ah2)"/>
+              <defs><marker id="ah2" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0,0 L0,6 L6,3 z" fill="#64748b"/></marker></defs>
+              <rect x="30" y="56" width="260" height="120" rx="4" class="hatch-red" stroke="#dc2626" stroke-dasharray="5 3"/>
+              <text x="40" y="72" font-size="9" fill="#dc2626" class="mono">$( … )  ← a subshell</text>
+              <rect x="50" y="82" width="220" height="26" rx="3" fill="#fff" stroke="#cbd5e1"/><text x="60" y="99" font-size="9" class="mono">zro_cap_queue_reason</text>
+              <rect x="50" y="114" width="220" height="26" rx="3" fill="#fff" stroke="#cbd5e1"/><text x="60" y="131" font-size="9" class="mono">zro_cap_queue_bin — probes the host</text>
+              <rect x="50" y="146" width="220" height="22" rx="3" fill="#fee2e2" stroke="#dc2626"/><text x="60" y="161" font-size="9" class="mono" fill="#dc2626">ZRO_CAP_QUEUE_BIN_CACHE=no  ✗ discarded</text>
+              <text x="16" y="196" font-size="9" fill="#dc2626">re-probes and re-warns once per main-menu redraw, all session</text>
+            </svg>
+          </div>
+          <div class="mod p-4 space-y-3">
+            <div class="lbl">After — the convention that already works</div>
+            <svg viewBox="0 0 320 210" class="w-full">
+              <rect x="8" y="8" width="304" height="30" rx="3" fill="#fff" stroke="#cbd5e1"/>
+              <text x="16" y="27" font-size="9" class="mono" fill="#334155">5 call sites — unchanged</text>
+              <path d="M160 38 V56" stroke="#64748b" marker-end="url(#ah2)"/>
+              <rect x="30" y="56" width="260" height="120" rx="4" fill="#f8fafc" stroke="#0f172a" stroke-width="3"/>
+              <text x="40" y="74" font-size="9" class="mono" fill="#0f172a">a bare &amp;&amp; chain — same frame</text>
+              <rect x="50" y="84" width="220" height="26" rx="3" fill="#fff" stroke="#cbd5e1"/><text x="60" y="101" font-size="9" class="mono">zro_cap_queue_bin || return 1</text>
+              <rect x="50" y="116" width="220" height="26" rx="3" fill="#fff" stroke="#cbd5e1"/><text x="60" y="133" font-size="9" class="mono">zro_cap_queue_denied &amp;&amp; return 1</text>
+              <rect x="50" y="148" width="220" height="22" rx="3" fill="#ecfdf5" stroke="#059669"/><text x="60" y="163" font-size="9" class="mono" fill="#047857">ZRO_CAP_QUEUE_BIN_CACHE=no  ✓ kept</text>
+              <text x="16" y="196" font-size="9" fill="#047857">probes once, warns once — the tracer's behaviour, exactly</text>
+            </svg>
+          </div>
+        </div>
+
+        <div class="grid sm:grid-cols-2 gap-4 text-sm">
+          <div><span class="lbl">Problem</span><p class="mt-1"><span class="mono">zro_cap_queue_available</span> is written <span class="mono">[ "$(zro_cap_queue_reason)" = ok ]</span>, so the cache its probe fills is assigned inside a command substitution and lost — on every path, every time.</p></div>
+          <div><span class="lbl">Solution</span><p class="mt-1">Write it as the bare <span class="mono">||</span> chain <span class="mono">zro_cap_trace_available</span> already uses, four functions below, for exactly this reason.</p></div>
+        </div>
+
+        <div class="mod p-3 bg-slate-50 text-sm">
+          <span class="lbl">Evidence — verified, and measured</span>
+          <p class="mt-1">All five callers reach the probe through a command substitution: <span class="mono">:2400</span> and <span class="mono">:2429</span> call <span class="mono">$(zro_cap_queue_reason)</span> directly, the other three go through <span class="mono">zro_cap_queue_available</span>, which is itself a substitution. So <span class="mono">ZRO_CAP_QUEUE_BIN_CACHE</span> is empty on every program path and <span class="mono">zro_cap_reset</span> (<span class="mono">:39</span>) clears a variable that is always empty. Measured under WSL: <strong>3 warn lines after 3 calls</strong> for the queue against <strong>1 after 3</strong> for the tracer, and <strong>5 warn lines after 5 main-menu redraws</strong>. <span class="mono">zimbra-ro-tui.sh:3040</span> names this hazard by name — “an assignment made inside <span class="mono">$( )</span> dies with the subshell, which is the exact bug <span class="mono">lib/capability.sh</span> records having already been fixed once.” The fix landed on the tracer and not on the queue.</p>
+        </div>
+
+        <div class="text-sm"><span class="lbl">Wins</span>
+          <ul class="mt-1 grid sm:grid-cols-2 gap-x-6 list-disc list-inside text-slate-700">
+            <li>deletes a pass-through cache, or makes it real</li>
+            <li>one calling convention, not two</li>
+            <li>the log stops repeating itself</li>
+            <li>cheapest change in this report</li>
+          </ul>
+        </div>
+        <div class="text-sm"><span class="lbl">Deletion test</span> <span class="text-slate-700">Delete the cache and its reset line and <em>nothing changes</em> — it is already inert on every path. That is the definition of a pass-through.</span></div>
+        <div class="text-xs text-slate-500"><span class="lbl">Note</span> <span class="mono">zro_cap_search_available</span> uses the same substitution shape but costs nothing — its reason function reads two variables and runs no probe.</div>
+      </article>
+
+      <!-- ─── A5 ─── -->
+      <article id="c5" class="mod p-6 space-y-5">
+        <div class="flex items-start justify-between gap-4 flex-wrap">
+          <h3 class="text-xl serif font-semibold">5 &nbsp;The mock transcript is a declared table read by hand</h3>
+          <div class="flex gap-2 shrink-0">
+            <span class="px-2 py-1 text-xs rounded bg-emerald-100 text-emerald-800 font-medium">Strong</span>
+            <span class="px-2 py-1 text-xs rounded bg-slate-100 text-slate-600">mock</span>
+          </div>
+        </div>
+
+        <div class="mono text-sm text-slate-500">tests/mocks/mock_common.sh:7 &middot; tests/test_main_menu.sh:798 &middot; tests/test_store.sh:572 &middot; lib/exec.sh:433</div>
+
+        <div class="dgrid">
+          <div class="mod p-4 space-y-3">
+            <div class="lbl">Before — one format, 188 readers</div>
+            <div class="mod-deep p-2 text-center"><div class="mono text-xs">zro_mock_record</div><div class="text-[10px] text-slate-500">one TAB-separated line: binary, then each argument</div></div>
+            <svg viewBox="0 0 320 30" class="w-full h-8"><path d="M160 0 V26" stroke="#94a3b8" class="seam"/><path d="M20 26 H300" stroke="#94a3b8"/><path d="M20 26 V20 M60 26 V20 M100 26 V20 M140 26 V20 M180 26 V20 M220 26 V20 M260 26 V20 M300 26 V20" stroke="#94a3b8"/></svg>
+            <div class="grid grid-cols-6 gap-1">
+              <div class="h-5 mod-thin"></div><div class="h-5 mod-thin"></div><div class="h-5 mod-thin"></div><div class="h-5 mod-thin"></div><div class="h-5 mod-thin"></div><div class="h-5 mod-thin"></div>
+              <div class="h-5 mod-thin"></div><div class="h-5 mod-thin"></div><div class="h-5 mod-thin"></div><div class="h-5 mod-thin"></div><div class="h-5 mod-thin"></div><div class="h-5 mod-thin"></div>
+              <div class="h-5 mod-thin"></div><div class="h-5 mod-thin"></div><div class="h-5 mod-bad"></div><div class="h-5 mod-thin"></div><div class="h-5 mod-bad"></div><div class="h-5 mod-thin"></div>
+            </div>
+            <div class="text-xs text-slate-500 text-center">188 expressions, ≥25 idioms, across 35 files</div>
+            <div class="hatch-red p-2 rounded border border-red-300 text-[11px]">
+              <span class="mono">^zmprov\tga</span> — no trailing tab — at <span class="mono">test_main_menu.sh:798</span> and <span class="mono">test_store.sh:572</span>. <span class="mono">zmprov:gam</span> is an allowlist entry. <strong>Those two bounds hold by accident.</strong>
+            </div>
+          </div>
+
+          <div class="mod p-4 space-y-3">
+            <div class="lbl">After — one reader for the shape</div>
+            <div class="mod-deep p-2 text-center"><div class="mono text-xs">zro_mock_record</div><div class="text-[10px] text-slate-500">unchanged</div></div>
+            <svg viewBox="0 0 320 30" class="w-full h-8"><path d="M160 0 V26" stroke="#94a3b8" class="seam"/><path d="M160 26 H160" stroke="#94a3b8"/></svg>
+            <div class="mod-deep p-3 text-center"><div class="mono text-xs text-slate-900">ran / ran_count &lt;binary&gt; &lt;token&gt;</div><div class="text-[10px] text-slate-500 mt-1">the tab is the record boundary, written once</div></div>
+            <div class="grid grid-cols-6 gap-1 opacity-40">
+              <div class="h-5 mod-thin"></div><div class="h-5 mod-thin"></div><div class="h-5 mod-thin"></div><div class="h-5 mod-thin"></div><div class="h-5 mod-thin"></div><div class="h-5 mod-thin"></div>
+            </div>
+            <div class="text-xs text-slate-500 text-center">call sites keep asking the question, not spelling the format</div>
+            <div class="text-xs text-slate-600">A subcommand that is a prefix of another cannot be miscounted, because no call site writes the delimiter.</div>
+          </div>
+        </div>
+
+        <div class="grid sm:grid-cols-2 gap-4 text-sm">
+          <div><span class="lbl">Problem</span><p class="mt-1">The mock declares one output format and 35 test files read it by hand in 188 expressions, so the suite has reintroduced in its own reader the prefix-collision bug the program is tested against.</p></div>
+          <div><span class="lbl">Solution</span><p class="mt-1">One reader in <span class="mono">tests/lib/</span> that takes the binary and the subcommand and owns the tab, the way <span class="mono">lib/table.sh</span> owns a declared table in the program.</p></div>
+        </div>
+
+        <div class="mod p-3 bg-slate-50 text-sm">
+          <span class="lbl">Evidence — verified</span>
+          <p class="mt-1">188 non-setup references to <span class="mono">$ZRO_MOCK_LOG</span>. The tab is re-derived as <span class="mono">$(printf '^zmprov\tga\t')</span> at 13 sites in 9 files, drifted into an exact form (trailing tab) and a prefix form (none). <span class="mono">lib/exec.sh:430-433</span> allowlists <span class="mono">zmprov:ga</span>, <span class="mono">zmprov:ga:-e</span> <em>and</em> <span class="mono">zmprov:gam</span>, so the two prefix-form counts include a sibling subcommand. This is the same collision <span class="mono">tests/test_account.sh:32</span> exists to prove the program does <strong>not</strong> have.</p>
+        </div>
+
+        <div class="text-sm"><span class="lbl">Wins</span>
+          <ul class="mt-1 grid sm:grid-cols-2 gap-x-6 list-disc list-inside text-slate-700">
+            <li>two accidental bounds become real</li>
+            <li>leverage: one reader, 188 call sites</li>
+            <li>the format stops being copied</li>
+            <li>CLAUDE.md's own rule, applied to the suite</li>
+          </ul>
+        </div>
+        <div class="text-sm"><span class="lbl">Deletion test</span> <span class="text-slate-700">The reader does not exist yet — that is the finding. The five filtering <span class="mono">ran()</span> variants are its beginnings; the 14 identical <span class="mono">cat</span> copies are not.</span></div>
+      </article>
+
+      <!-- ══════════════════════ SECTION B ══════════════════════ -->
+      <section class="space-y-3 pt-4">
+        <h2 class="text-2xl serif font-semibold border-b border-slate-300 pb-2">B &nbsp;·&nbsp; Concentration available</h2>
+        <p class="text-sm text-slate-600">Nothing is broken here. These are places where one rule has more than one home.</p>
+      </section>
+
+      <!-- ─── B1 ─── -->
+      <article id="c6" class="mod p-6 space-y-5">
+        <div class="flex items-start justify-between gap-4 flex-wrap">
+          <h3 class="text-xl serif font-semibold">6 &nbsp;Two windowed log-scan engines; the correction landed in one</h3>
+          <div class="flex gap-2 shrink-0">
+            <span class="px-2 py-1 text-xs rounded bg-emerald-100 text-emerald-800 font-medium">Strong</span>
+            <span class="px-2 py-1 text-xs rounded bg-slate-100 text-slate-600">in-process</span>
+          </div>
+        </div>
+
+        <div class="mono text-sm text-slate-500">lib/delivery.sh:230 &middot; lib/logsearch.sh:502 &middot; lib/inventory.sh &middot; lib/window.sh</div>
+
+        <div class="dgrid">
+          <div class="mod p-4 space-y-2">
+            <div class="lbl">Before — two stacks, 41 shared lines</div>
+            <div class="grid grid-cols-2 gap-2">
+              <div class="space-y-1">
+                <div class="text-[10px] mono text-center text-slate-500">zro_trace_run</div>
+                <div class="h-6 mod hatch flex items-center justify-center text-[9px]">window guard</div>
+                <div class="h-6 mod hatch flex items-center justify-center text-[9px]">select files</div>
+                <div class="h-6 mod flex items-center justify-center text-[9px]">zmmsgtrace</div>
+                <div class="h-6 mod hatch flex items-center justify-center text-[9px]">skipped block</div>
+                <div class="h-6 mod hatch flex items-center justify-center text-[9px]">NO_LOG / NO_RESULT</div>
+                <div class="h-6 mod-bad flex items-center justify-center text-[9px]">banner: read+skipped</div>
+              </div>
+              <div class="space-y-1">
+                <div class="text-[10px] mono text-center text-slate-500">zro_logsearch_run</div>
+                <div class="h-6 mod hatch flex items-center justify-center text-[9px]">window guard</div>
+                <div class="h-6 mod hatch flex items-center justify-center text-[9px]">select files</div>
+                <div class="h-6 mod flex items-center justify-center text-[9px]">grep + cap</div>
+                <div class="h-6 mod hatch flex items-center justify-center text-[9px]">skipped block</div>
+                <div class="h-6 mod hatch flex items-center justify-center text-[9px]">NO_LOG / NO_RESULT</div>
+                <div class="h-6 mod-deep flex items-center justify-center text-[9px]">banner: selected_n</div>
+              </div>
+            </div>
+            <div class="text-xs text-slate-500 text-center pt-1">hatched = verbatim in both &middot; 41 of 94 code lines</div>
+          </div>
+
+          <div class="mod p-4 space-y-2">
+            <div class="lbl">After — one engine, two per-file commands</div>
+            <div class="mod-deep p-3 space-y-1">
+              <div class="text-[10px] mono text-center text-slate-700">the windowed scan</div>
+              <div class="h-6 bg-white mod flex items-center justify-center text-[9px]">window guard</div>
+              <div class="h-6 bg-white mod flex items-center justify-center text-[9px]">select files from the inventory</div>
+              <div class="h-6 bg-white mod flex items-center justify-center text-[9px]">skipped accumulation + disclosure</div>
+              <div class="h-6 bg-white mod flex items-center justify-center text-[9px]">NO_LOG / NO_RESULT / PARTIAL</div>
+              <div class="h-6 bg-white mod flex items-center justify-center text-[9px]">one banner, one arithmetic</div>
+            </div>
+            <div class="grid grid-cols-2 gap-2 pt-1">
+              <div class="h-8 mod flex items-center justify-center text-[9px] mono">zro_trace_exec</div>
+              <div class="h-8 mod flex items-center justify-center text-[9px] mono">zro_logsearch_grep</div>
+            </div>
+            <div class="text-xs text-amber-700 text-center">the per-file invocation stays written out — see the ADR note</div>
+          </div>
+        </div>
+
+        <div class="grid sm:grid-cols-2 gap-4 text-sm">
+          <div><span class="lbl">Problem</span><p class="mt-1">The delivery trace and the log search are the same engine written twice, and the corrected partial-scan arithmetic exists in only one of them with nothing holding the two equal.</p></div>
+          <div><span class="lbl">Solution</span><p class="mt-1">One windowed-scan module owning selection, skipped-file accumulation, the two exit arms and the banner; each caller supplies its per-file command, written out at its own site.</p></div>
+        </div>
+
+        <div class="mod p-3 bg-slate-50 text-sm">
+          <span class="lbl">Evidence — verified</span>
+          <p class="mt-1">Stripped of comments, <span class="mono">zro_trace_run</span> is 94 code lines and <span class="mono">zro_logsearch_run</span> is 121; <strong>41 of the 94 appear verbatim in the other</strong>, including the whole skipped-file block (<span class="mono">delivery.sh:354-362</span> ≡ <span class="mono">logsearch.sh:633-640</span>), both <span class="mono">zro_win_human</span> guards, both <span class="mono">ZRO_E_NO_LOG</span> arms, the <span class="mono">total == 0 &amp;&amp; skipped_n == 0</span> arm and the <span class="mono">----- $path -----</span> heading. <span class="mono">lib/logsearch.sh</span> names the delivery trace <strong>8 times</strong> in comments; <span class="mono">lib/delivery.sh</span> names log search <strong>0 times</strong> — the rules are documented once and implemented twice. The banner divergence is real but not a defect today: the tracer has no match cap, so its <span class="mono">read_n + skipped_n</span> equals <span class="mono">selected_n</span>. <strong>It stops being equal the day a cap is added.</strong></p>
+        </div>
+
+        <div class="mod p-3 bg-amber-50 border-amber-200 text-sm">
+          <span class="lbl text-amber-700">ADR-0011 bounds this — it does not forbid it</span>
+          <p class="mt-1">ADR-0011 declines a helper that owns a <em>mailbox read's invocation</em>, because <span class="mono">tests/test_readonly_scan.sh</span> reads token positions off <span class="mono">zro_mbox_run</span> lines. The equivalent cases here read call sites of <span class="mono">zro_trace_exec</span> and <span class="mono">zro_logsearch_grep</span>, so <strong>the per-file invocation must stay at each site</strong>, and so must the two caller-frame returns. Neither constraint reaches the window validation, the selection, the skipped accumulation, the exit arms or the banner. <span class="mono">lib/settle.sh</span> plus ADR-0009/0010 already establish the hand-over-a-name shape this would use.</p>
+        </div>
+
+        <div class="text-sm"><span class="lbl">Wins</span>
+          <ul class="mt-1 grid sm:grid-cols-2 gap-x-6 list-disc list-inside text-slate-700">
+            <li>locality: one partial-scan arithmetic</li>
+            <li>largest concentration in the program</li>
+            <li>a cap on the tracer stops being a trap</li>
+            <li>one interface, two adapters — both real</li>
+          </ul>
+        </div>
+        <div class="text-sm"><span class="lbl">Deletion test</span> <span class="text-slate-700">Neither function is a pass-through — deleting either loses a feature. The concentration is in the ~40 shared lines around the invocation, which name no subcommand.</span></div>
+      </article>
+
+      <!-- ─── B2 ─── -->
+      <article id="c7" class="mod p-6 space-y-5">
+        <div class="flex items-start justify-between gap-4 flex-wrap">
+          <h3 class="text-xl serif font-semibold">7 &nbsp;The card vocabulary lives inside a domain module</h3>
+          <div class="flex gap-2 shrink-0">
+            <span class="px-2 py-1 text-xs rounded bg-emerald-100 text-emerald-800 font-medium">Strong</span>
+            <span class="px-2 py-1 text-xs rounded bg-slate-100 text-slate-600">in-process</span>
+          </div>
+        </div>
+
+        <div class="mono text-sm text-slate-500">lib/account.sh:371-418 &middot; lib/account.sh:690 &middot; lib/queue.sh:348 &middot; lib/service.sh:197</div>
+
+        <div class="mod p-4 scrollx">
+          <div class="lbl mb-2">Before — eleven modules reach into the account module to draw a card</div>
+          <pre class="mermaid">
+flowchart LR
+  ST[store 44] --> A
+  MS[message 38] --> A
+  MT[mailset 31] --> A
+  DR[directory 24] --> A
+  SE[search 15] --> A
+  BK[bulk 12] --> A
+  QU[queue 11] --> A
+  SV[service 5] --> A
+  ID[identity 4] --> A
+  MB[mailbox 3] --> A
+  SC[screen file 2] --> A
+  A["lib/account.sh<br/>963 lines · 36 functions · 20 public<br/><b>only 3 are the account domain</b>"]:::bad
+  classDef bad stroke:#dc2626,stroke-width:2px,fill:#fef2f2;
+          </pre>
+        </div>
+
+        <div class="dgrid">
+          <div class="mod p-4 space-y-3">
+            <div class="lbl">Before — one file, three unrelated jobs</div>
+            <div class="mod-bad p-2 space-y-1">
+              <div class="text-[10px] mono text-center text-red-700">lib/account.sh — 20 public functions</div>
+              <div class="h-7 bg-white mod flex items-center px-2 text-[10px]">the account domain <span class="ml-auto mono text-slate-400">3</span></div>
+              <div class="h-7 bg-white mod flex items-center px-2 text-[10px]">the record readers <span class="ml-auto mono text-slate-400">3</span></div>
+              <div class="h-7 bg-white mod flex items-center px-2 text-[10px]">the directory-read adapter <span class="ml-auto mono text-slate-400">4</span></div>
+              <div class="h-7 bg-white mod flex items-center px-2 text-[10px]">the card vocabulary <span class="ml-auto mono text-slate-400">9</span></div>
+            </div>
+            <div class="hatch-red p-2 rounded border border-red-300 text-[11px]">
+              <div class="lbl text-red-700">one absence, three answers</div>
+              <div class="mono mt-1">store.sh:390 → $ZRO_TXT_UNKNOWN</div>
+              <div class="mono">queue.sh:348 → the raw number</div>
+              <div class="mono">service.sh:197 → '(bilinmiyor)' literal</div>
+            </div>
+          </div>
+          <div class="mod p-4 space-y-3">
+            <div class="lbl">After — the vocabulary has its own home</div>
+            <div class="mod-deep p-2 space-y-1">
+              <div class="text-[10px] mono text-center text-slate-700">lib/card.sh</div>
+              <div class="h-7 bg-white mod flex items-center px-2 text-[10px]">zro_card_line / head / more / list</div>
+              <div class="h-7 bg-white mod flex items-center px-2 text-[10px]">the three absence words, decided once</div>
+              <div class="h-7 bg-white mod flex items-center px-2 text-[10px]">zro_mode_banner</div>
+            </div>
+            <div class="mod p-2 space-y-1">
+              <div class="text-[10px] mono text-center text-slate-500">lib/account.sh</div>
+              <div class="h-7 bg-white mod flex items-center px-2 text-[10px]">the account domain — 3 public functions</div>
+            </div>
+            <div class="text-xs text-slate-600">A pure relocation: no call site changes. <span class="mono">tests/test_service.sh</span> and <span class="mono">tests/test_queue.sh</span> stop sourcing 3,345 lines of screen file to reach one <span class="mono">printf</span>.</div>
+          </div>
+        </div>
+
+        <div class="grid sm:grid-cols-2 gap-4 text-sm">
+          <div><span class="lbl">Problem</span><p class="mt-1">The rendering vocabulary is defined in the account module and called 189 times from eleven others, so two module tests load the entire program to reach a three-line <span class="mono">printf</span> — and the absence words it carries have no owner, producing three answers to one unreadable size.</p></div>
+          <div><span class="lbl">Solution</span><p class="mt-1">Move the eight card symbols plus <span class="mono">zro_mode_banner</span> to <span class="mono">lib/card.sh</span> and settle the absence word there, folding the queue and service forks into it.</p></div>
+        </div>
+
+        <div class="mod p-3 bg-slate-50 text-sm">
+          <span class="lbl">Evidence — verified, with one correction to the prior survey</span>
+          <p class="mt-1">189 occurrences across 11 files (was 183). <strong>The prior survey's argument was wrong:</strong> it said the vocabulary “forces the source order”. It does not — Bash resolves function names at call time, no domain module expands the vocabulary at source time, and sourcing <span class="mono">lib/service.sh</span> before <span class="mono">lib/account.sh</span> loads clean and renders a full card. The order at <span class="mono">zimbra-ro-tui.sh:32</span> is a reading convention. The real cost is measurable elsewhere: <span class="mono">lib/service.sh</span> (222 lines) depends on exactly <em>one</em> symbol outside core and exec — <span class="mono">zro_card_line</span> — and <span class="mono">tests/test_queue.sh</span> and <span class="mono">tests/test_service.sh</span> are the only two non-screen module tests that source the whole entry point.</p>
+        </div>
+
+        <div class="text-sm"><span class="lbl">Wins</span>
+          <ul class="mt-1 grid sm:grid-cols-2 gap-x-6 list-disc list-inside text-slate-700">
+            <li>two module tests shed the screen file</li>
+            <li>the absence word gets an owner</li>
+            <li>account module drops to 3 public functions</li>
+            <li>pure relocation — no call site changes</li>
+          </ul>
+        </div>
+        <div class="text-sm"><span class="lbl">Deletion test</span> <span class="text-slate-700">The card functions earn their keep — inlining <span class="mono">printf '%-21s: %s\n'</span> at 189 sites reopens the label width everywhere. Their <em>home</em> is what is wrong.</span></div>
+      </article>
+
+      <!-- ─── B3 ─── -->
+      <article id="c8" class="mod p-6 space-y-5">
+        <div class="flex items-start justify-between gap-4 flex-wrap">
+          <h3 class="text-xl serif font-semibold">8 &nbsp;“A position in a list this program built”, written three times</h3>
+          <div class="flex gap-2 shrink-0">
+            <span class="px-2 py-1 text-xs rounded bg-emerald-100 text-emerald-800 font-medium">Strong</span>
+            <span class="px-2 py-1 text-xs rounded bg-slate-100 text-slate-600">in-process</span>
+          </div>
+        </div>
+
+        <div class="mono text-sm text-slate-500">zimbra-ro-tui.sh:749 &middot; zimbra-ro-tui.sh:1128 &middot; zimbra-ro-tui.sh:1820</div>
+
+        <div class="dgrid">
+          <div class="mod p-4 space-y-2">
+            <div class="lbl">Before — three copies, one comment</div>
+            <div class="space-y-2">
+              <div class="mod p-2"><div class="text-[10px] mono text-slate-700">:749 folder list</div><div class="text-[10px] text-slate-600">“…exactly as the log viewer does it”</div><div class="h-4 hatch mt-1"></div><div class="h-4 hatch mt-1"></div></div>
+              <div class="mod p-2"><div class="text-[10px] mono text-slate-700">:1128 conversation list</div><div class="text-[10px] text-slate-600">“…exactly as the folder menu…”</div><div class="h-4 hatch mt-1"></div><div class="h-4 hatch mt-1"></div></div>
+              <div class="mod p-2 border-slate-400"><div class="text-[10px] mono text-slate-700">:1820 log file list</div><div class="text-[10px] text-slate-600">“A POSITION IN THE LIST, NEVER A PATH.”</div><div class="h-4 hatch mt-1"></div><div class="h-4 hatch mt-1"></div></div>
+            </div>
+            <div class="text-xs text-slate-500">Byte-identical apart from the array name and one noun in the log line — and <strong>all three carry the rule in a comment</strong>, the first two naming the others. Three authors each knew about the other two and copied the code anyway.</div>
+          </div>
+          <div class="mod p-4 space-y-2">
+            <div class="lbl">After — collapsed</div>
+            <div class="mod-deep p-3 space-y-1">
+              <div class="mono text-xs text-center text-slate-800">a position, resolved</div>
+              <div class="text-[10px] text-center text-slate-500">refuse non-digits · refuse out of range · log which list · return the element</div>
+              <div class="pt-2 space-y-1 opacity-50">
+                <div class="h-4 bg-white mod flex items-center px-2 text-[9px] mono">folder list</div>
+                <div class="h-4 bg-white mod flex items-center px-2 text-[9px] mono">conversation list</div>
+                <div class="h-4 bg-white mod flex items-center px-2 text-[9px] mono">log file list</div>
+              </div>
+            </div>
+            <div class="text-xs text-slate-600">The comment becomes the module's, where a fourth list screen will read it.</div>
+            <div class="text-xs text-emerald-700">No static scan reads these call sites — verified. Unlike <span class="mono">zro_mbox_run</span>, a helper here blinds no proof.</div>
+          </div>
+        </div>
+
+        <div class="grid sm:grid-cols-2 gap-4 text-sm">
+          <div><span class="lbl">Problem</span><p class="mt-1">The rule that keeps operator input from becoming a path — the one the read-only guarantee leans on at these screens — exists as three copies, two of them undocumented.</p></div>
+          <div><span class="lbl">Solution</span><p class="mt-1">One reader that takes the choice, the array and the list's name, refuses in both directions and logs which list refused.</p></div>
+        </div>
+
+        <div class="mod p-3 bg-slate-50 text-sm">
+          <span class="lbl">Evidence — verified</span>
+          <p class="mt-1">Each copy is a <span class="mono">case</span> refusing non-digits, an <span class="mono">if</span> refusing out-of-range, two <span class="mono">zro_log error</span> lines, then <span class="mono">${arr[choice - 1]}</span>. No ADR mentions this; <span class="mono">tests/test_readonly_scan.sh</span> does not read these call sites. That is the difference from ADR-0011's declined helper, and it is what makes this one available.</p>
+        </div>
+
+        <div class="text-sm"><span class="lbl">Wins</span>
+          <ul class="mt-1 grid sm:grid-cols-2 gap-x-6 list-disc list-inside text-slate-700">
+            <li>a safety rule gets a home</li>
+            <li>the reason reaches all three screens</li>
+            <li>smallest blast radius in this report</li>
+            <li>a fourth list screen inherits it</li>
+          </ul>
+        </div>
+        <div class="text-sm"><span class="lbl">Deletion test</span> <span class="text-slate-700">Concentrates — today the rule lives nowhere, which is why it lives in three places.</span></div>
+      </article>
+
+      <!-- ─── B4 ─── -->
+      <article id="c9" class="mod p-6 space-y-5">
+        <div class="flex items-start justify-between gap-4 flex-wrap">
+          <h3 class="text-xl serif font-semibold">9 &nbsp;Two seams still decide the gate's codes for themselves</h3>
+          <div class="flex gap-2 shrink-0">
+            <span class="px-2 py-1 text-xs rounded bg-emerald-100 text-emerald-800 font-medium">Strong</span>
+            <span class="px-2 py-1 text-xs rounded bg-slate-100 text-slate-600">in-process</span>
+          </div>
+        </div>
+
+        <div class="mono text-sm text-slate-500">lib/logview.sh:196 &middot; lib/delivery.sh:52 &middot; lib/exec.sh:995 &middot; lib/message.sh:517</div>
+
+        <div class="mod p-4 scrollx">
+          <div class="lbl mb-2">Before — the predicate exists; two seams do not ask it</div>
+          <pre class="mermaid">
+flowchart TB
+  G["zro_exec_own_code<br/>lib/exec.sh:995 — the gate owns the membership"]:::deep
+  M[lib/message.sh:517<br/>asks the predicate]:::ok --> G
+  S[lib/settle.sh:101<br/>asks the predicate]:::ok --> G
+  ST[store · search · message]:::ok --> S
+  L["lib/logview.sh:196<br/>a five-code case list<br/>sinks into NO_LOG"]:::bad
+  D["lib/delivery.sh:52<br/>ends with printf '%s' $rc<br/>the binary's own status"]:::bad
+  D --> OP["operator sees<br/>islem basarisiz (kod N)"]:::bad
+  Q["queue · service<br/>four-code lists"]:::warn
+  Q --> ADR["ADR-0010: their sink IS the fifth code —<br/>converting is a decision, not a substitution"]:::warn
+  classDef bad stroke:#dc2626,stroke-width:2px,fill:#fef2f2;
+  classDef warn stroke:#d97706,stroke-width:1.5px,fill:#fffbeb;
+  classDef deep stroke:#0f172a,stroke-width:3px,fill:#f8fafc;
+  classDef ok fill:#ffffff;
+          </pre>
+        </div>
+
+        <div class="grid sm:grid-cols-2 gap-4 text-sm">
+          <div><span class="lbl">Problem</span><p class="mt-1"><span class="mono">lib/logview.sh</span> still hand-writes the gate's five codes where a one-line predicate now answers, and <span class="mono">zro_trace_fail_code</span> still ends by returning the binary's own exit status — the exact screen ADR-0010 was written to abolish, still reachable through the delivery trace.</p></div>
+          <div><span class="lbl">Solution</span><p class="mt-1">Replace logview's <span class="mono">case</span> with <span class="mono">zro_exec_own_code "$rc" &amp;&amp; return "$rc"</span>, leaving its sink untouched; end <span class="mono">zro_trace_fail_code</span> with a constant, as the three migrated readers do.</p></div>
+        </div>
+
+        <div class="mod p-3 bg-slate-50 text-sm">
+          <span class="lbl">Evidence — verified</span>
+          <p class="mt-1">Three hand-written memberships survive: <span class="mono">logview.sh:196</span> (5 codes), <span class="mono">queue.sh:254</span> (4), <span class="mono">service.sh:150</span> (4). <span class="mono">zro_msg_head_fetch</span> is the worked precedent — it made exactly this edit and kept its own sink, and its comment records what the edit found: <em>the list it replaced carried a code <span class="mono">zro_exec</span> never returns</em>. The fall-through survives at exactly two readers: <span class="mono">lib/account.sh:246</span> and <span class="mono">lib/delivery.sh:52</span>. The delivery path is traceable end to end — <span class="mono">zmmsgtrace</span> fails for any reason other than <em>unable to open file</em> → <span class="mono">delivery.sh:52</span> → <span class="mono">delivery.sh:326</span> → <span class="mono">zimbra-ro-tui.sh:1693</span> → the default arm at <span class="mono">:410</span>.</p>
+        </div>
+
+        <div class="mod p-3 bg-amber-50 border-amber-200 text-sm">
+          <span class="lbl text-amber-700">Read ADR-0010 first — it covers three of the five sites, and correctly</span>
+          <p class="mt-1"><strong>Do not touch <span class="mono">queue</span> or <span class="mono">service</span>:</strong> their fifth code <em>is</em> their sink, so converting them changes what the sink means. <strong>Do not touch <span class="mono">lib/account.sh:246</span>:</strong> the retry at <span class="mono">:333</span> reads the mapped value, so a constant there changes behaviour. Of logview the ADR says only “its list is complete today; what it lacks is a reason to stay complete” — that reason has not arrived, and unlike queue and service its list buys nothing, because it sinks into <span class="mono">ZRO_E_NO_LOG</span>. Delivery was excluded from the <em>settler</em>, never from the fall-through rule.</p>
+        </div>
+
+        <div class="text-sm"><span class="lbl">Wins</span>
+          <ul class="mt-1 grid sm:grid-cols-2 gap-x-6 list-disc list-inside text-slate-700">
+            <li>an undefined code stops reaching the screen</li>
+            <li>one membership, read off the gate</li>
+            <li>two lines, one worked precedent</li>
+            <li>ADR-0010's property actually holds</li>
+          </ul>
+        </div>
+        <div class="text-sm"><span class="lbl">Deletion test</span> <span class="text-slate-700">Delete <span class="mono">logview.sh:195-198</span> — nothing re-derives it; the behaviour is reproduced by one line already written twice elsewhere. Pure copy.</span></div>
+      </article>
+
+      <!-- ══════════════════════ SECTION C ══════════════════════ -->
+      <section class="space-y-3 pt-4">
+        <h2 class="text-2xl serif font-semibold border-b border-slate-300 pb-2">C &nbsp;·&nbsp; The test seam</h2>
+        <p class="text-sm text-slate-600">The interface is the test surface. Here the seam is real and has two adapters — but only one side of it was ever written down.</p>
+        <div class="grid sm:grid-cols-3 gap-3 text-sm">
+          <div class="mod p-3"><div class="lbl">shared test library</div><div class="text-2xl serif">153 lines</div></div>
+          <div class="mod p-3"><div class="lbl">preamble before first assertion</div><div class="text-2xl serif">3,015 lines</div></div>
+          <div class="mod p-3"><div class="lbl">median first assertion</div><div class="text-2xl serif">line 66.5</div></div>
+        </div>
+      </section>
+
+      <!-- ─── C1 ─── -->
+      <article id="c10" class="mod p-6 space-y-5">
+        <div class="flex items-start justify-between gap-4 flex-wrap">
+          <h3 class="text-xl serif font-semibold">10 &nbsp;The screen stub has two adapters and no client library</h3>
+          <div class="flex gap-2 shrink-0">
+            <span class="px-2 py-1 text-xs rounded bg-emerald-100 text-emerald-800 font-medium">Strong</span>
+            <span class="px-2 py-1 text-xs rounded bg-slate-100 text-slate-600">ports &amp; adapters</span>
+          </div>
+        </div>
+
+        <div class="mono text-sm text-slate-500">lib/ui.sh:57 &middot; lib/selection.sh:79 &middot; tests/lib/ &middot; 13 screen suites</div>
+
+        <div class="dgrid">
+          <div class="mod p-4 space-y-3">
+            <div class="lbl">Before — the client side is copied</div>
+            <svg viewBox="0 0 320 60" class="w-full h-16">
+              <rect x="8" y="8" width="120" height="40" rx="4" fill="#f8fafc" stroke="#0f172a" stroke-width="3"/><text x="68" y="26" font-size="9" text-anchor="middle" class="mono">lib/ui.sh</text><text x="68" y="40" font-size="8" text-anchor="middle" fill="#64748b">whiptail · stub</text>
+              <line x1="160" y1="4" x2="160" y2="56" class="seam" stroke="#94a3b8"/><text x="164" y="14" font-size="8" fill="#64748b" class="mono">seam — real, 2 adapters</text>
+              <path d="M130 28 H156" stroke="#64748b"/>
+            </svg>
+            <div class="space-y-1 text-xs mono">
+              <div class="mod-thin px-2 py-1">queue()<span class="float-right text-slate-500">13× byte-identical</span></div>
+              <div class="mod-thin px-2 py-1">transcript()<span class="float-right text-slate-500">10× byte-identical</span></div>
+              <div class="mod-thin px-2 py-1">entries()<span class="float-right text-slate-500">8× byte-identical</span></div>
+              <div class="mod-thin px-2 py-1">ran()<span class="float-right text-slate-500">18 defs, 5 spellings</span></div>
+              <div class="mod-bad px-2 py-1">run()<span class="float-right text-red-600">8 defs, 3 spellings</span></div>
+            </div>
+            <div class="hatch-red p-2 rounded border border-red-300 text-[11px]">
+              <div><span class="mono">run()</span>'s four spellings differ only in <em>which module cache they reset</em> — 4 call <span class="mono">zro_mbox_forget</span>, 1 calls <span class="mono">zro_cap_reset</span>, 3 call neither. A hand-maintained inventory of module state, already diverged.</div>
+            </div>
+            <div class="text-xs text-slate-600">The Turkish UI literal <span class="mono">'MENU Ana menu'</span> is hard-coded in 9 files. Two production functions exist only for this: <span class="mono">zro_ui_reset</span> (0 program callers, 15 test files) and <span class="mono">zro_sel_clear</span> (0, 12).</div>
+          </div>
+
+          <div class="mod p-4 space-y-3">
+            <div class="lbl">After — the stub's vocabulary written once</div>
+            <svg viewBox="0 0 320 60" class="w-full h-16">
+              <rect x="8" y="8" width="120" height="40" rx="4" fill="#f8fafc" stroke="#0f172a" stroke-width="3"/><text x="68" y="26" font-size="9" text-anchor="middle" class="mono">lib/ui.sh</text><text x="68" y="40" font-size="8" text-anchor="middle" fill="#64748b">whiptail · stub</text>
+              <line x1="160" y1="4" x2="160" y2="56" class="seam" stroke="#94a3b8"/>
+              <path d="M130 28 H156" stroke="#64748b"/>
+              <rect x="192" y="8" width="120" height="40" rx="4" fill="#f8fafc" stroke="#0f172a" stroke-width="3"/><text x="252" y="26" font-size="9" text-anchor="middle" class="mono">tests/lib/screen.sh</text><text x="252" y="40" font-size="8" text-anchor="middle" fill="#64748b">the client side</text>
+              <path d="M164 28 H188" stroke="#64748b"/>
+            </svg>
+            <div class="space-y-1 text-xs mono">
+              <div class="mod-deep px-2 py-1 text-slate-900">queue / transcript / entries</div>
+              <div class="mod-deep px-2 py-1 text-slate-900">run — resets every module cache, declared once</div>
+            </div>
+            <div class="text-xs text-slate-600">Of 70 functions in the screen file, tests can name 17. The four helpers <em>are</em> the per-screen interface; today they are written out 39 times instead of once.</div>
+            <div class="text-xs text-emerald-700">The transcript grammar and the menu literal move behind the interface, so a UI string change stops being a 9-file edit.</div>
+          </div>
+        </div>
+
+        <div class="grid sm:grid-cols-2 gap-4 text-sm">
+          <div><span class="lbl">Problem</span><p class="mt-1">Every screen is reached by scripting menu ids into a queue file and running the whole menu loop, and the four helpers that make that possible are copied across 13 files — with the one thing that genuinely varies, which module cache to reset, written down nowhere.</p></div>
+          <div><span class="lbl">Solution</span><p class="mt-1">A client library beside <span class="mono">tests/lib/assert.sh</span> owning the queue, the transcript grammar, the menu literal and one declared reset list.</p></div>
+        </div>
+
+        <div class="mod p-3 bg-slate-50 text-sm">
+          <span class="lbl">Evidence — verified</span>
+          <p class="mt-1">153 lines of shared test library against 3,015 lines of preamble summed across 52 files. <span class="mono">tests/test_exec_allowlist.sh</span> gets 238 assertions out of a 12-line preamble because <span class="mono">zro_allowed</span> takes values and returns a status; <span class="mono">tests/test_mailbox_screen.sh</span> gets 46 out of 84. <strong>Coverage in this tree is a function of setup cost, not of intent</strong> — the four modules with every function named in a test (<span class="mono">selection</span>, <span class="mono">table</span>, <span class="mono">validate</span>, <span class="mono">window</span>) are exactly the four whose tests need under 30 lines of setup.</p>
+        </div>
+
+        <div class="text-sm"><span class="lbl">Wins</span>
+          <ul class="mt-1 grid sm:grid-cols-2 gap-x-6 list-disc list-inside text-slate-700">
+            <li>leverage: one interface, 13 suites</li>
+            <li>the reset list stops drifting</li>
+            <li>a UI string change is one edit</li>
+            <li>lowers the cost of the next screen test</li>
+          </ul>
+        </div>
+        <div class="text-sm"><span class="lbl">Deletion test</span> <span class="text-slate-700"><span class="mono">transcript()</span> and the 14 identical <span class="mono">ran()</span> are shallow — inlining loses nothing. <span class="mono">entries()</span> is deep but misplaced: it encodes a parse of the transcript format that would land at ~60 call sites. <span class="mono">run()</span> is neither — it is an interface whose varying part nobody wrote down.</span></div>
+      </article>
+
+      <!-- ─── C2 ─── -->
+      <article id="c11" class="mod p-6 space-y-5">
+        <div class="flex items-start justify-between gap-4 flex-wrap">
+          <h3 class="text-xl serif font-semibold">11 &nbsp;The existence gate is restated in eight files, in three conventions</h3>
+          <div class="flex gap-2 shrink-0">
+            <span class="px-2 py-1 text-xs rounded bg-emerald-100 text-emerald-800 font-medium">Strong</span>
+            <span class="px-2 py-1 text-xs rounded bg-slate-100 text-slate-600">ports &amp; adapters</span>
+          </div>
+        </div>
+
+        <div class="mono text-sm text-slate-500">tests/test_mailbox_gate.sh:56 &middot; tests/test_search.sh:66 &middot; tests/test_store_screen.sh:63 &middot; tests/test_main_menu.sh:377</div>
+
+        <div class="dgrid">
+          <div class="mod p-4 space-y-2">
+            <div class="lbl">Before — three dialects for one invariant</div>
+            <div class="space-y-2">
+              <div class="mod p-2">
+                <div class="text-[10px] lbl">1 &nbsp;a "$@"-prefixing wrapper</div>
+                <div class="mono text-[10px] text-slate-600 mt-1">answers_exists / answers_no_mailbox / …</div>
+                <div class="mono text-[10px] text-red-600">proven / no_mailbox / … &nbsp;← same bodies, other names</div>
+              </div>
+              <div class="mod p-2">
+                <div class="text-[10px] lbl">2 &nbsp;export/unset "server"</div>
+                <div class="mono text-[10px] text-slate-600 mt-1">exists_server / no_mailbox_server / …</div>
+                <div class="mono text-[10px] text-red-600">store_screen inlines the no-account case</div>
+              </div>
+              <div class="mod p-2">
+                <div class="text-[10px] lbl">3 &nbsp;no helper at all</div>
+                <div class="mono text-[10px] text-slate-600 mt-1">inline env prefix on the assertion</div>
+              </div>
+            </div>
+            <div class="text-xs text-slate-500">Conventions 1 and 2 are not interchangeable: one scopes to a single command, the other mutates the process.</div>
+          </div>
+          <div class="mod p-4 space-y-2">
+            <div class="lbl">After — one declaration, two adapters</div>
+            <div class="mod-deep p-3 space-y-1">
+              <div class="mono text-xs text-center text-slate-800">the four gate outcomes</div>
+              <div class="text-[10px] text-center text-slate-500">exists · nomailbox · noaccount · outage — each with its fixture triple</div>
+            </div>
+            <svg viewBox="0 0 320 40" class="w-full h-10"><path d="M160 0 V12" stroke="#64748b"/><path d="M80 12 H240" stroke="#64748b"/><path d="M80 12 V26" stroke="#64748b"/><path d="M240 12 V26" stroke="#64748b"/></svg>
+            <div class="grid grid-cols-2 gap-2">
+              <div class="mod p-2 text-center"><div class="text-[10px] mono">scoped to one command</div><div class="text-[9px] text-slate-500">module suites</div></div>
+              <div class="mod p-2 text-center"><div class="text-[10px] mono">exported for the session</div><div class="text-[9px] text-slate-500">screen suites</div></div>
+            </div>
+            <div class="text-xs text-emerald-700">Two adapters over one declaration — a real seam, by the two-adapter rule, not a hypothetical one.</div>
+          </div>
+        </div>
+
+        <div class="grid sm:grid-cols-2 gap-4 text-sm">
+          <div><span class="lbl">Problem</span><p class="mt-1">The invariant the product exists to guarantee is set up eight different times in three incompatible dialects, one of which has already drifted into an inlined special case.</p></div>
+          <div><span class="lbl">Solution</span><p class="mt-1">Declare the four gate outcomes once with their fixtures, and give the declaration two adapters — command-scoped and session-scoped — rather than collapsing one into the other.</p></div>
+        </div>
+
+        <div class="mod p-3 bg-slate-50 text-sm">
+          <span class="lbl">Evidence — verified</span>
+          <p class="mt-1">8 files, up from the prior survey's 7; 3 conventions, up from 2. Within convention 1 the same bodies carry two different names (<span class="mono">answers_exists</span> vs <span class="mono">proven</span>). Within convention 2, <span class="mono">tests/test_store_screen.sh:291</span> inlines the no-account case where its sibling <span class="mono">tests/test_mailbox_screen.sh:73</span> defines a helper.</p>
+        </div>
+
+        <div class="text-sm"><span class="lbl">Wins</span>
+          <ul class="mt-1 grid sm:grid-cols-2 gap-x-6 list-disc list-inside text-slate-700">
+            <li>one declaration of the four outcomes</li>
+            <li>the fixture triple stops being retyped</li>
+            <li>two adapters justify the seam</li>
+            <li>a ninth suite inherits it correctly</li>
+          </ul>
+        </div>
+        <div class="text-sm"><span class="lbl">Deletion test</span> <span class="text-slate-700">The helpers are deep — each names a captured server outcome and pins a fixture triple. What is missing is the declaration underneath them.</span></div>
+      </article>
+
+      <!-- ══════════════════════ SECTION D ══════════════════════ -->
+      <section class="space-y-3 pt-4" id="prior">
+        <h2 class="text-2xl serif font-semibold border-b border-slate-300 pb-2">D &nbsp;·&nbsp; Carried over from the last survey, re-verified</h2>
+        <p class="text-sm text-slate-600">Two candidates from 2026-08-18 that were not acted on. Both still hold; the line numbers below are current, not that document's.</p>
+      </section>
+
+      <div class="dgrid">
+        <article id="c12" class="mod p-5 space-y-4">
+          <div class="flex items-start justify-between gap-3 flex-wrap">
+            <h3 class="text-lg serif font-semibold">12 &nbsp;The declared cost class has no reader in the program</h3>
+            <span class="px-2 py-1 text-xs rounded bg-amber-100 text-amber-800 font-medium shrink-0">Worth exploring</span>
+          </div>
+          <div class="mono text-xs text-slate-500">zimbra-ro-tui.sh:3005 &middot; :426 &middot; :632 &middot; tests/lib/cost.sh:33</div>
+
+          <svg viewBox="0 0 320 170" class="w-full">
+            <rect x="8" y="8" width="140" height="60" rx="4" fill="#f8fafc" stroke="#0f172a" stroke-width="3"/>
+            <text x="78" y="26" font-size="9" text-anchor="middle" class="mono">ZRO_MENU_OPS</text>
+            <text x="78" y="40" font-size="8" text-anchor="middle" fill="#64748b">id:scope:class:label</text>
+            <text x="78" y="56" font-size="8" text-anchor="middle" fill="#64748b">ZRO_COST_CLASSES</text>
+            <path d="M78 68 V96" stroke="#059669"/><text x="84" y="86" font-size="8" fill="#047857" class="mono">assert_cost — 29 sites</text>
+            <rect x="8" y="96" width="140" height="28" rx="4" fill="#ecfdf5" stroke="#059669"/>
+            <text x="78" y="114" font-size="9" text-anchor="middle" class="mono" fill="#047857">the suite</text>
+            <text x="78" y="146" font-size="8" text-anchor="middle" fill="#dc2626">zro_menu_cost: 0 program callers</text>
+            <line x1="168" y1="4" x2="168" y2="166" class="seam" stroke="#94a3b8"/>
+            <rect x="186" y="8" width="126" height="150" rx="4" class="hatch-red" stroke="#dc2626" stroke-dasharray="4 3"/>
+            <text x="249" y="24" font-size="8" text-anchor="middle" fill="#dc2626">what the operator reads</text>
+            <text x="249" y="42" font-size="8" text-anchor="middle" class="mono">2 case lists</text>
+            <text x="249" y="58" font-size="8" text-anchor="middle" class="mono">6 inline literals</text>
+            <text x="249" y="74" font-size="8" text-anchor="middle" class="mono">2 ZRO_TXT_ constants</text>
+            <text x="249" y="90" font-size="8" text-anchor="middle" class="mono">1 inline yesno</text>
+            <text x="249" y="106" font-size="8" text-anchor="middle" class="mono">1 builder function</text>
+            <text x="249" y="132" font-size="8" text-anchor="middle" fill="#dc2626">six mechanisms,</text>
+            <text x="249" y="144" font-size="8" text-anchor="middle" fill="#dc2626">no edge to the declaration</text>
+          </svg>
+
+          <div class="text-sm space-y-2">
+            <div><span class="lbl">Problem</span><p class="mt-1">Every operation declares a cost class, and the operator never reads it — the declared cost is hand-written six ways, and nothing fails when a note and its class disagree.</p></div>
+            <div><span class="lbl">Sharper than last time</span><p class="mt-1">The declaration is not dead; it is a <em>test oracle only</em>. <span class="mono">tests/lib/cost.sh</span> is its sole real reader, feeding 29 <span class="mono">assert_cost</span> calls across 11 files. The two case lists still disagree about failure: the mailbox one logs a defect on its default arm, the account one prints silently.</p></div>
+            <div><span class="lbl">Deletion test</span><p class="mt-1">Delete <span class="mono">zro_menu_cost</span> and complexity <em>moves</em> to the suite — 29 assertions would restate numbers, which <span class="mono">cost.sh</span>'s own header forbids. It earns its keep as a test seam and is shallow as a program module. The friction is the missing edge.</p></div>
+          </div>
+        </article>
+
+        <article id="c13" class="mod p-5 space-y-4">
+          <div class="flex items-start justify-between gap-3 flex-wrap">
+            <h3 class="text-lg serif font-semibold">13 &nbsp;A partial scan is a code plus a habit</h3>
+            <span class="px-2 py-1 text-xs rounded bg-amber-100 text-amber-800 font-medium shrink-0">Worth exploring</span>
+          </div>
+          <div class="mono text-xs text-slate-500">zimbra-ro-tui.sh:1691 &middot; :2328 &middot; :2840 &middot; :390</div>
+
+          <svg viewBox="0 0 320 170" class="w-full">
+            <rect x="8" y="8" width="88" height="24" rx="3" fill="#fff" stroke="#cbd5e1"/><text x="52" y="24" font-size="8" text-anchor="middle" class="mono">delivery</text>
+            <rect x="8" y="38" width="88" height="24" rx="3" fill="#fff" stroke="#cbd5e1"/><text x="52" y="54" font-size="8" text-anchor="middle" class="mono">logsearch</text>
+            <rect x="8" y="68" width="88" height="24" rx="3" fill="#fff" stroke="#cbd5e1"/><text x="52" y="84" font-size="8" text-anchor="middle" class="mono">bulk</text>
+            <text x="52" y="108" font-size="8" text-anchor="middle" fill="#64748b">each builds its own banner</text>
+            <path d="M98 20 H140 V50" stroke="#64748b"/><path d="M98 50 H140" stroke="#64748b"/><path d="M98 80 H140 V50" stroke="#64748b"/>
+            <text x="146" y="46" font-size="9" class="mono" fill="#334155">ZRO_E_PARTIAL</text>
+            <path d="M196 50 H236" stroke="#64748b"/>
+            <rect x="236" y="8" width="76" height="22" rx="3" class="hatch-red" stroke="#dc2626"/><text x="274" y="23" font-size="7" text-anchor="middle" class="mono">"EKSIK TARAMA"</text>
+            <rect x="236" y="34" width="76" height="22" rx="3" class="hatch-red" stroke="#dc2626"/><text x="274" y="49" font-size="7" text-anchor="middle" class="mono">"EKSIK TARAMA"</text>
+            <rect x="236" y="60" width="76" height="22" rx="3" class="hatch-red" stroke="#dc2626"/><text x="274" y="75" font-size="7" text-anchor="middle" class="mono">"EKSIK SONUC"</text>
+            <rect x="236" y="94" width="76" height="34" rx="3" fill="#fef2f2" stroke="#dc2626" stroke-dasharray="4 3"/>
+            <text x="274" y="108" font-size="7" text-anchor="middle" fill="#dc2626">the code-30 arm</text>
+            <text x="274" y="119" font-size="7" text-anchor="middle" fill="#dc2626">never handed $out</text>
+            <text x="160" y="152" font-size="8" fill="#dc2626">two hand-written titles · two suffix words · one silent discard</text>
+          </svg>
+
+          <div class="text-sm space-y-2">
+            <div><span class="lbl">Problem</span><p class="mt-1">A partial scan is reported as a code and shown by convention, so two screens hand-write a title instead of reading the declared label, and the shared reporter's arm for the same code discards the answer entirely.</p></div>
+            <div><span class="lbl">The live edge</span><p class="mt-1"><span class="mono">zro_report_error</span> takes only <span class="mono">$1</span>. A screen that returns 30 and forgets the <span class="mono">if</span> throws away both the answer and the banner the module worked to write.</p></div>
+            <div><span class="lbl">Correction to the prior survey</span><p class="mt-1">It called the delivery arithmetic “never corrected”. That overstates it — the tracer has no match cap, so <span class="mono">read_n + skipped_n</span> equals <span class="mono">selected_n</span> today. The finding is that one rule has two derivations and only one survives a cap. See <a class="underline" href="#c6">candidate 6</a>.</p></div>
+          </div>
+        </article>
+      </div>
+
+      <!-- ══════════════════════ ALSO FOUND ══════════════════════ -->
+      <section class="space-y-3 pt-4">
+        <h2 class="text-2xl serif font-semibold border-b border-slate-300 pb-2">Also found</h2>
+        <p class="text-sm text-slate-600">Verified, cheap, and independent of everything above. No diagrams — they would say more than the findings do.</p>
+        <div class="mod scrollx">
+          <table class="w-full text-sm">
+            <thead class="bg-slate-100 text-left"><tr>
+              <th class="p-3 lbl font-normal">what</th><th class="p-3 lbl font-normal">where</th><th class="p-3 lbl font-normal">note</th>
+            </tr></thead>
+            <tbody class="divide-y divide-slate-200">
+              <tr><td class="p-3">36 dead <span class="mono">chmod +x</span> lines in 8 spellings</td><td class="p-3 mono text-xs">tests/*.sh</td><td class="p-3 text-slate-600"><span class="mono">tests/run.sh:12</span> already chmods all four mock roots, and CI only ever invokes the suite through it. The experiment is already run: 16 of the 52 files carry no chmod line, and of those exactly one — <span class="mono">tests/test_table.sh</span> — actually exports a mock root and drives the mocks. It is green. Pure subtraction.</td></tr>
+              <tr><td class="p-3"><span class="mono">zro_menu_entry</span> is dead</td><td class="p-3 mono text-xs">zimbra-ro-tui.sh:2989</td><td class="p-3 text-slate-600">Its definition is still the only occurrence in the repository, and its comment still claims “Every lookup below goes through this”. Its three siblings call <span class="mono">lib/table.sh</span> directly. Two-line change.</td></tr>
+              <tr><td class="p-3">The passthrough suite covers 3 of the gate's 5 codes</td><td class="p-3 mono text-xs">tests/test_gate_passthrough.sh</td><td class="p-3 text-slate-600">And the two it omits — <span class="mono">TIMEOUT</span>, <span class="mono">UNAVAILABLE</span> — are precisely the two the three surviving lists disagree about. A gate-produced <span class="mono">UNAVAILABLE</span> is asserted at no seam in the tree. <span class="mono">lib/exec.sh:987</span> and ADR-0010 both lean on this suite as what makes the exclusions safe.</td></tr>
+              <tr><td class="p-3">The error store has no reset discipline</td><td class="p-3 mono text-xs">lib/core.sh:137</td><td class="p-3 text-slate-600"><span class="mono">zro_reset_mode</span> is called at 18 screen-entry sites; <span class="mono">zro_clear_error</span> at 10, every one on a success path. The rule “detail only when a command ran” is re-derived arm by arm and written out in one comment. Not live today — closed by a coincidence of three unrelated guards in three files.</td></tr>
+              <tr><td class="p-3">The existence gate reads its evidence from a global</td><td class="p-3 mono text-xs">lib/mailbox.sh:130</td><td class="p-3 text-slate-600"><span class="mono">zro_mbox_verdict</span> tells <em>nomailbox</em> from <em>noaccount</em> by reading <span class="mono">zro_last_error</span> — the process-wide store — because <span class="mono">zro_prov_read</span> has no channel for the oracle's stderr. Of that store's four callers it is the only one reading it as data. The verdict is therefore bounded by <span class="mono">ZRO_ERROR_KEEP_BYTES</span>, a number <span class="mono">lib/core.sh:129</span> says was “chosen and never measured”. Margin is comfortable; nothing names the dependency.</td></tr>
+              <tr><td class="p-3">No record reader exists</td><td class="p-3 mono text-xs">lib/mailset.sh:248, :308</td><td class="p-3 text-slate-600">Two readers reimplement the <span class="mono">key: value</span> rule — once in awk with <span class="mono">RS=""</span>, once with attribute names as literal prefixes — because what they need is a <em>record</em> boundary. The “a declared attribute ends a value” rule has three implementations. Also: <span class="mono">zro_dl_card</span> parses the same <span class="mono">#</span> header line twice, with two awk invocations over one <span class="mono">$raw</span>.</td></tr>
+              <tr><td class="p-3">The mock's own interface never refuses</td><td class="p-3 mono text-xs">tests/mocks/mock_common.sh:82</td><td class="p-3 text-slate-600">98 <span class="mono">ZRO_MOCK_*</span> names in use, 82 appearing nowhere under <span class="mono">tests/mocks/</span>. Absence resolves to a default, so a misspelled key produces empty output and exit 0 — a case that passes while scripting nothing. The program's equivalent, <span class="mono">lib/table.sh</span>, refuses an undeclared key on principle.</td></tr>
+              <tr><td class="p-3">A capability answer arriving as a status is re-derived three ways</td><td class="p-3 mono text-xs">zimbra-ro-tui.sh:1882, :2345, :2483</td><td class="p-3 text-slate-600">Three code sets, two polarities, and one of the three ends at a bespoke inline msgbox rather than the module's own screen. The trace screen has no such check at all.</td></tr>
+              <tr><td class="p-3">The CRLF gate does not cover the mocks</td><td class="p-3 mono text-xs">.github/workflows/ci.yml:41</td><td class="p-3 text-slate-600">The grep uses <span class="mono">--include='*.sh'</span> and 16 of the 17 mock files have no extension. The job's own comment says CRLF is “checked rather than trusted to <span class="mono">.gitattributes</span>” — for those 16 it is trusted after all. Clean today.</td></tr>
+              <tr><td class="p-3">The runner has no floor on assertions</td><td class="p-3 mono text-xs">tests/run.sh:38</td><td class="p-3 text-slate-600">A file reporting <span class="mono">0 ok 0 fail</span> passes. With a median preamble of 66.5 lines and no <span class="mono">errexit</span> — correctly, per CLAUDE.md — that is the failure mode the runner cannot see. All 52 files are fine today; the gap is structural.</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- ══════════════════════ LEAVE ALONE ══════════════════════ -->
+      <section class="space-y-3 pt-4">
+        <h2 class="text-2xl serif font-semibold border-b border-slate-300 pb-2">Already deep — leave alone</h2>
+        <p class="text-sm text-slate-600">Recorded so the next survey does not “improve” it. Every entry re-verified at this commit.</p>
+        <div class="grid sm:grid-cols-2 gap-3 text-sm">
+          <div class="mod-deep p-3"><div class="mono text-xs">lib/table.sh</div><div class="text-slate-600 mt-1">95 non-comment lines, 7 functions, 30 call sites, 13 tables. ADR-0009's exclusions intact. Still the deepest module in the tree.</div></div>
+          <div class="mod-deep p-3"><div class="mono text-xs">the allowlist half of lib/exec.sh</div><div class="text-slate-600 mt-1">56 rows and 43 non-comment lines behind 2 predicates, yielding 238 assertions off a 12-line preamble.</div></div>
+          <div class="mod-deep p-3"><div class="mono text-xs">zro_exec itself</div><div class="text-slate-600 mt-1">Not previously named. 57 non-comment lines behind a <span class="mono">(bin, token, args…)</span> interface carrying identity, allowlist, root resolution, timeout, priority and the 124→22 rewrite. Only 2 branches special-case the gated binary.</div></div>
+          <div class="mod-deep p-3"><div class="mono text-xs">lib/message.sh</div><div class="text-slate-600 mt-1">1,057 lines, 31 functions, <strong>one</strong> public function. The deepest domain module, and the model the others are measured against.</div></div>
+          <div class="mod-deep p-3"><div class="mono text-xs">lib/ui.sh · lib/window.sh · lib/selection.sh</div><div class="text-slate-600 mt-1">One seam and two real adapters; a pure/thin split that takes the clock as an argument; a module opaque about the identity record's shape.</div></div>
+          <div class="mod-deep p-3"><div class="mono text-xs">the six column-table readers</div><div class="text-slate-600 mt-1">One reader per output <em>shape</em>, and <span class="mono">lib/search.sh:624</span> still says why: “two tables read by one function are two tables that agree by accident.”</div></div>
+          <div class="mod-deep p-3"><div class="mono text-xs">tests/lib/cost.sh</div><div class="text-slate-600 mt-1">Reads the class <em>and</em> its unit out of the program rather than restating a number. Still the model — see candidate 12 for the caveat.</div></div>
+          <div class="mod-deep p-3"><div class="mono text-xs">tests/test_gate_passthrough.sh</div><div class="text-slate-600 mt-1">New since the last survey and worth naming: a <em>seam</em> test, one interface property across 10 call sites. Its 24-assertions-per-118-preamble-lines looks poor because 100 of those lines are the argument. That is the right trade.</div></div>
+        </div>
+        <div class="mod p-3 bg-amber-50 border-amber-200 text-sm">
+          <span class="lbl text-amber-700">Do not reopen</span>
+          <p class="mt-1">ADR-0011's four lines at the seven mailbox reads; the <span class="mono">queue</span>/<span class="mono">service</span> sink question; <span class="mono">zro_prov_read</span>'s settler exclusion — which has a <em>stronger</em> reason than the ADR gives, a three-argument reader contract; <span class="mono">zro_msg_head_fetch</span>; the validators' repeated one-line refusals, which <span class="mono">lib/exec.sh:533</span> documents as two refusals with two meanings; and the thin table accessors in <span class="mono">logsearch</span>/<span class="mono">search</span>, which carry <em>which declaration is being read</em>.</p>
+        </div>
+      </section>
+
+      <!-- ══════════════════════ CORRECTIONS ══════════════════════ -->
+      <section class="space-y-3 pt-4">
+        <h2 class="text-2xl serif font-semibold border-b border-slate-300 pb-2">Corrections to the 2026-08-18 survey</h2>
+        <div class="grid sm:grid-cols-3 gap-3 text-sm">
+          <div class="mod p-3"><div class="lbl text-red-700">wrong</div><div class="mt-1">“The load order encodes a dependency on a domain module for rendering.”</div><div class="text-slate-600 mt-2">Bash resolves names at call time; no module expands the card vocabulary at source time. Proven by sourcing <span class="mono">lib/service.sh</span> first — it loads clean and renders a full card. Candidate 7 is argued from test coupling instead. The count it rests on holds.</div></div>
+          <div class="mod p-3"><div class="lbl text-amber-700">overstated</div><div class="mt-1">“The delivery banner's arithmetic was never corrected.”</div><div class="text-slate-600 mt-2">The banner really was never changed; that it is therefore wrong does not follow. The tracer has no match cap, so its sum is right today. The finding is one rule with two derivations, only one of which survives a cap.</div></div>
+          <div class="mod p-3"><div class="lbl text-slate-600">not an error</div><div class="mt-1">“The four modules at 0% untested…” — an earlier draft of this page called this wrong. It is not.</div><div class="text-slate-600 mt-2">The unit is <em>% untested</em>, so <em>0% untested</em> means fully covered — which re-running confirms, and <strong>188 of 461 was exact at that commit</strong> (181 today). The disagreement is about the CAUSE: depth, or setup cost. The two are confounded here.</div></div>
+        </div>
+      </section>
+
+      <!-- ══════════════════════ TOP RECOMMENDATION ══════════════════════ -->
+      <section id="top-recommendation" class="pt-4">
+        <div class="deep text-slate-100 rounded-lg p-8 space-y-5">
+          <div class="lbl text-slate-400">Top recommendation</div>
+          <h2 class="text-3xl serif font-semibold"><a href="#c1" class="hover:underline">1 &nbsp;The settler admits a failure reader it cannot call</a></h2>
+          <p class="text-slate-300 max-w-3xl">It is the smallest change in this report and the only one that repairs a property the tree already asserts. ADR-0010 says the name check defends against an edit; two of the five failure readers in this tree defeat it, and both are the kind of name an edit reaches for. The failure is silent in the worst way — the shell's own error text lands in a whiptail screen, the settler prints nothing, and the operator is given a code this program does not define, by the module written to stop exactly that.</p>
+          <div class="grid sm:grid-cols-3 gap-4 pt-2 text-sm">
+            <div><div class="lbl text-slate-400">then</div><p class="mt-1 text-slate-300"><a href="#c4" class="underline">4 — the queue capability cache</a> and <a href="#c2" class="underline">2 — the message-id rule</a>. Both are a handful of lines, both measured, both with the correct version already written elsewhere in the tree.</p></div>
+            <div><div class="lbl text-slate-400">then</div><p class="mt-1 text-slate-300"><a href="#c8" class="underline">8 — a position in a list</a> and <a href="#c9" class="underline">9 — the two remaining gate seams</a>: safety rules with a home available and no ADR or static scan in the way.</p></div>
+            <div><div class="lbl text-slate-400">the large one</div><p class="mt-1 text-slate-300"><a href="#c10" class="underline">10 — the stub's client library</a>. Biggest lever in the tree: coverage here is a function of setup cost, and this is the setup cost. <a href="#c6" class="underline">6</a> is its counterpart in the program.</p></div>
+          </div>
+        </div>
+      </section>
+
+      <footer class="text-xs text-slate-400 pt-6 border-t border-slate-200">
+        Four sub-agent walks, cross-checked by grep; headline claims re-verified by hand. Nothing measured on a server. Companion to <span class="mono">docs/research/2026-08-18-architecture-review.md</span>, whose §1 has since landed as <span class="mono">lib/settle.sh</span> + ADR-0010/0011.
+      </footer>
+
+    </main>
+  </body>
+</html>
