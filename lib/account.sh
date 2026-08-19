@@ -240,7 +240,7 @@ zro_zimbra_error_code() {
 # address handed to it in place of a domain. Without this line the domain screen
 # would report "islem basarisiz (kod 2)" for the one answer that ends the search.
 zro_prov_outcome_code() {
-  local errfile=$1 missing_code=$2 rc=$3
+  local errfile=$1 missing_code=$2
   if grep -qE 'NO_SUCH_ACCOUNT|NO_SUCH_MAILBOX|NO_SUCH_COS|NO_SUCH_DISTRIBUTION_LIST|NO_SUCH_DOMAIN' \
        "$errfile" 2>/dev/null; then
     printf '%s' "$missing_code"
@@ -252,7 +252,14 @@ zro_prov_outcome_code() {
     printf '%s' "$mapped"
     return 0
   fi
-  printf '%s' "$rc"
+  # ANYTHING ELSE IS THE SERVICE THIS READ GOES THROUGH, NOT A NUMBER. This used to
+  # end by returning the status it was handed, which was a pass-through by accident:
+  # right for a code the gate produced, and wrong for everything else, because
+  # zmprov's own exit status then reached the operator as a number this program does
+  # not define. Nothing arrives here now but a failure of a command that RAN and that
+  # nothing above recognised, and zmprov really does connect to mailboxd over SOAP --
+  # so the screen for this code names the service that was actually asked. ADR-0012.
+  printf '%s' "$ZRO_E_UNAVAILABLE"
 }
 
 # Subcommands LDAP mode can answer. gmi is deliberately absent: Zimbra replies
@@ -330,7 +337,24 @@ zro_prov_read() {
 
   local first_msg mapped
   first_msg=$(head -c "$ZRO_ERROR_KEEP_BYTES" -- "$err" 2>/dev/null)
-  mapped=$(zro_prov_outcome_code "$err" "$missing_code" "$rc")
+
+  # THE GATE'S OWN CODES ARE ANSWERED HERE AND TRAVEL OUT AS THEMSELVES, before
+  # anything below reads the status. No mapping of what zmprov PRINTED can say
+  # anything about them: the gate refuses before the command runs, so there is
+  # nothing on that stream to read.
+  #
+  # It also means the retry below is never reached by one. A host with no `timeout`
+  # binary fails the LDAP attempt for the reason it failed the first, so the second
+  # invocation buys nothing -- and while the fall-through was here, a host-level
+  # ZRO_E_UNAVAILABLE was indistinguishable from an unreachable mailboxd and ran it
+  # anyway. ADR-0012.
+  if zro_exec_own_code "$rc"; then
+    zro_set_error "$first_msg"
+    rm -f -- "$err"
+    return "$rc"
+  fi
+
+  mapped=$(zro_prov_outcome_code "$err" "$missing_code")
 
   # TWO QUESTIONS, AND THEY ARE DIFFERENT ONES. The first is whether Zimbra can
   # answer this read from LDAP at all — `gmi` cannot, because mailbox usage does
@@ -339,7 +363,14 @@ zro_prov_read() {
   # through mailboxd and in no other spelling, so a retry made without asking
   # would be refused — and an allowlist denial is logged as a defect. Asking
   # first is what keeps an ordinary outage from being reported as one.
-  if [ "$mapped" = "$ZRO_E_UNAVAILABLE" ] && zro_prov_ldap_capable "$sub" \
+  #
+  # AND THE FIRST IS ASKED OF THE TEXT, NOT OF THE CODE. zro_zimbra_error_code is
+  # what says the service was unreachable; ZRO_E_UNAVAILABLE is ALSO what the mapping
+  # above answers with when it recognises nothing, and those are different facts.
+  # Comparing the code conflates them and retries every unrecognised zmprov failure
+  # through LDAP -- one constant answering two questions, which is the shape ADR-0012
+  # is about.
+  if [ "$(zro_zimbra_error_code "$err")" = "$ZRO_E_UNAVAILABLE" ] && zro_prov_ldap_capable "$sub" \
      && zro_ldap_form_allowed "$sub" "$@"; then
     : >"$err"
     rc=0
@@ -351,7 +382,11 @@ zro_prov_read() {
       printf '%s' "$out"
       return 0
     fi
-    mapped=$(zro_prov_outcome_code "$err" "$missing_code" "$rc")
+    if zro_exec_own_code "$rc"; then
+      mapped=$rc
+    else
+      mapped=$(zro_prov_outcome_code "$err" "$missing_code")
+    fi
   fi
 
   # The SOAP message is the informative one; a retry failure just repeats it.

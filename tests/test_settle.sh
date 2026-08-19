@@ -208,5 +208,51 @@ handed=$(printf '%s\n' "$stripped" \
          | awk '{print $NF}' | sort -u)
 assert_eq "$readers" "$handed"
 
+it "no mapping of a failed command ends by returning the status it was handed"
+# THE DEFECT ADR-0012 IS ABOUT, held where it can no longer be written by accident.
+# A mapping whose last arm returns the status it was given is a pass-through: right
+# for a code the gate produced, and wrong for everything else, because the binary's
+# own exit status then reaches the operator as a number this program does not
+# define. It survived ADR-0010 in two modules, and cost a wrong SCREEN in one of
+# them and a wrong ANSWER in the other -- the delivery tracer is Perl, so its status
+# is an errno, and errno 23 IS ZRO_E_NO_LOG.
+#
+# BOTH SUFFIXES, because the two roles differ in who calls them and not in this: a
+# failure reader travels to the settler and an outcome reader cannot, but neither
+# may end on something it was handed. The set is built from the suffixes rather than
+# from a list of names, so a module written tomorrow is covered by existing.
+#
+# WHAT IT ASKS IS THE LAST printf. A mapping may print a variable higher up --
+# $mapped from zro_zimbra_error_code, or the caller's own missing code -- and those
+# are answers it RECOGNISED. The final arm is the one that runs when it recognised
+# nothing, and that arm has to name a code this program defines.
+mappings=$(printf '%s\n' "$stripped" \
+           | sed -n 's/^\(zro_[a-z0-9_]*_\(fail\|outcome\)_code\)() {$/\1/p' | sort -u)
+assert_contains "$mappings" "zro_prov_outcome_code"
+leaky=""
+noprintf=""
+while IFS= read -r fn; do
+  [ -n "$fn" ] || continue
+  body=$(printf '%s\n' "$stripped" \
+         | awk -v fn="$fn" '$0 == fn "() {" { inside = 1; next }
+                            inside && $0 == "}" { inside = 0 }
+                            inside')
+  last=$(printf '%s\n' "$body" | grep 'printf' | tail -n 1)
+  # Collected apart from the leak, for the reason the cases above separate them: a
+  # mapping this loop read nothing of would pass for having no final printf rather
+  # than for ending on a good one.
+  [ -n "$last" ] || { noprintf="$noprintf [$fn]"; continue; }
+  case $last in
+    *ZRO_E_*) ;;
+    *) leaky="$leaky [$fn]" ;;
+  esac
+done <<EOF
+$mappings
+EOF
+assert_eq "$leaky" ""
+
+it "and each of their bodies carried one, so the case above judged text rather than silence"
+assert_eq "$noprintf" ""
+
 rm -f -- "$ZRO_T_SPY" "$ZRO_ERROR_FILE" "$LOG"
 zro_t_report
