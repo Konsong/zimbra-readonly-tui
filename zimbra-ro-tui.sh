@@ -173,7 +173,7 @@ zro_prompt_msgid() {
   [ "$rc" -eq 0 ] || return "$ZRO_E_CANCEL"
   # Unwrapped before it is judged, so that what is validated, what is shown on
   # the report and what is searched for are all the same value.
-  id=$(zro_trace_msgid_bare "$value")
+  id=$(zro_msgid_bare "$value")
   if ! zro_validate_msgid "$id"; then
     zro_ui_msgbox "Gecersiz girdi" \
 "Gecersiz ileti kimligi.
@@ -937,12 +937,18 @@ EOF
   [ "$rc" -eq 0 ] || return "$ZRO_E_CANCEL"
 
   # A message-id arrives wearing the angle brackets a header puts on it, and they
-  # come off here for the same reason the delivery trace takes them off: measured
-  # on the lab server, the bracketed form matches nothing.
-  if [ "$kind" = msgid ]; then
-    value=${value#<}
-    value=${value%>}
-  fi
+  # come off here because measured on the lab server the bracketed form matches
+  # nothing — ZRO_SEARCH_PROMPTS promises the operator this in so many words.
+  #
+  # HERE rather than inside zro_search_term, and through the one rule rather than
+  # a second copy of it. Here, because the value below is what zro_menu_search_put
+  # stores and zro_search_value_label draws back onto this menu: an unwrapping
+  # that happened later would show one string and search another. Through
+  # zro_msgid_bare, because a copy of "take off a matching pair, and only one" is
+  # what this line used to be, and it stripped each end independently — so a
+  # truncated '<CAabc123@example.com' was refused by the delivery trace and
+  # repaired by this screen. See docs/adr/0014.
+  [ "$kind" = msgid ] && value=$(zro_msgid_bare "$value")
 
   # Validated by the one function that will have to build a term out of it. A
   # second copy of the rules here is a second set to get wrong, and the term

@@ -123,6 +123,39 @@ zro_validate_domain() {
 # they are holding.
 ZRO_MSGID_MAX=512
 
+# A message-id with the angle brackets a mail header wraps it in taken off — the
+# BARE MESSAGE-ID, which is the only form this program validates, displays or
+# searches for.
+#
+# HERE RATHER THAN IN THE MODULE THAT FIRST NEEDED IT. zro_validate_msgid below
+# opens by stating a precondition — that the brackets are already off — and a
+# validator cannot establish its own precondition: it answers a status, and
+# taking the brackets off produces a value. This function is the other half of
+# that contract, and the two halves are only ever read together. It sits with
+# zro_regex_quote and zro_query_quote, which are the same shape: an operator's
+# string turned into the form something downstream will accept.
+#
+# WHY IT COMES OFF AT ALL: every reader that ends up with this value searches for
+# what is INSIDE the brackets. The tracer captures a message-id from
+# 'message-id=<([^>]+)>' and stores the inside; the mailbox server answers
+# msgid:"<id>" with nothing while the bare identifier matches. What an operator
+# has in hand is the header line, brackets and all — and on every one of those
+# screens a filter that cannot match reads as proof the message never arrived.
+#
+# ONLY A MATCHING PAIR at the two ends is removed, and never more than one: that
+# is unwrapping a delimiter the syntax defines, not repairing a value into
+# something nobody typed. Half a pair is left ON, so that the validator refuses
+# it — the damage in a truncated paste is unbounded, and a value repaired here
+# would be searched for, printed, and believed. See
+# docs/adr/0014-the-validator-establishes-its-own-precondition.md.
+zro_msgid_bare() {
+  local id=${1-}
+  case $id in
+    '<'*'>') id=${id#<}; id=${id%>} ;;
+  esac
+  printf '%s' "$id"
+}
+
 # A message-id, as an operator holds it: copied out of a bounce report, a
 # forwarded header or a log line.
 #

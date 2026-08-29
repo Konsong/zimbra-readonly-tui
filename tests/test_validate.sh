@@ -172,11 +172,28 @@ it "rejects an empty message-id"
 assert_status "$ZRO_E_INPUT" zro_validate_msgid ''
 assert_status "$ZRO_E_INPUT" zro_validate_msgid
 
+# THE OTHER HALF OF THE CONTRACT, and it is read with the block below rather than
+# apart from it: zro_msgid_bare takes the brackets off, and zro_validate_msgid
+# refuses whatever is still wearing one. Either block read alone makes both look
+# arbitrary — the refusal only makes sense once you can see which values the
+# unwrapping deliberately does NOT repair.
+it "strips only a matching pair, and only from the ends"
+assert_out_eq 'CAabc123@example.com' zro_msgid_bare '<CAabc123@example.com>'
+assert_out_eq 'CAabc123@example.com' zro_msgid_bare 'CAabc123@example.com'
+assert_out_eq 'a<b>c@example.com' zro_msgid_bare 'a<b>c@example.com'
+assert_out_eq '<CAabc123@example.com' zro_msgid_bare '<CAabc123@example.com'
+assert_out_eq 'CAabc123@example.com>' zro_msgid_bare 'CAabc123@example.com>'
+assert_out_eq '' zro_msgid_bare '<>'
+assert_out_eq '' zro_msgid_bare ''
+# One pair, never two: the outer pair comes off and the inner one is left to be
+# refused, because a value nobody typed is not what an unwrapping produces.
+assert_out_eq '<CAabc123@example.com>' zro_msgid_bare '<<CAabc123@example.com>>'
+
 it "judges the identifier itself, never one still in its delimiters"
 # A header's angle brackets are taken off before this function sees the value —
-# see zro_trace_msgid_bare, and the cases for it in tests/test_delivery.sh. So a
-# value still wearing one is either a second wrapper or half of one, and
-# accepting it would mean searching for one string while printing another.
+# see zro_msgid_bare and its cases directly above. So a value still wearing one
+# is either a second wrapper or half of one, and accepting it would mean
+# searching for one string while printing another.
 assert_status "$ZRO_E_INPUT" zro_validate_msgid '<CAabc123@example.com>'
 assert_status "$ZRO_E_INPUT" zro_validate_msgid '<CAabc123@example.com'
 assert_status "$ZRO_E_INPUT" zro_validate_msgid 'CAabc123@example.com>'

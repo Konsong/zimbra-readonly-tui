@@ -567,15 +567,6 @@ OUT="$ONE" trace_msgid '<CAabc123@example.com>' "$W_LIVE_FROM" "$W_LIVE_TO" >/de
 assert_contains "$(traced)" "$(printf '\t--id\tCAabc123@example\\.com\t')"
 assert_not_contains "$(traced)" '<'
 
-it "strips only a matching pair, and only from the ends"
-assert_out_eq 'CAabc123@example.com' zro_trace_msgid_bare '<CAabc123@example.com>'
-assert_out_eq 'CAabc123@example.com' zro_trace_msgid_bare 'CAabc123@example.com'
-assert_out_eq 'a<b>c@example.com' zro_trace_msgid_bare 'a<b>c@example.com'
-assert_out_eq '<CAabc123@example.com' zro_trace_msgid_bare '<CAabc123@example.com'
-assert_out_eq 'CAabc123@example.com>' zro_trace_msgid_bare 'CAabc123@example.com>'
-assert_out_eq '' zro_trace_msgid_bare '<>'
-assert_out_eq '' zro_trace_msgid_bare ''
-
 it "refuses an invalid sender without running anything"
 : >"$ZRO_MOCK_LOG"
 assert_status "$ZRO_E_INPUT" zro_trace_sender 'ahmet@example.com; id' "$W_LIVE_FROM" "$W_LIVE_TO"

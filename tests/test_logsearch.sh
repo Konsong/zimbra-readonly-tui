@@ -48,10 +48,6 @@ export ZRO_LOG_DIR="$TREE/zimbra/log"
 . "$ZRO_SRC/lib/window.sh"
 # shellcheck source=../lib/logview.sh
 . "$ZRO_SRC/lib/logview.sh"
-# The message-id lookup unwraps a pasted identifier through the delivery trace's
-# own function rather than through a second copy of that rule.
-# shellcheck source=../lib/delivery.sh
-. "$ZRO_SRC/lib/delivery.sh"
 # shellcheck source=../lib/logsearch.sh
 . "$ZRO_SRC/lib/logsearch.sh"
 

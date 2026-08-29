@@ -1046,6 +1046,36 @@ for f in "${SOURCES[@]}"; do
   assert_not_contains "$body" 'zmmsgtrace '
 done
 
+it "the angle brackets come off a message-id in exactly one place"
+# THE RULE THAT ALREADY DRIFTED ONCE. zro_msgid_bare takes off one matching pair
+# and leaves half a pair ON, so the validator refuses a truncated paste rather
+# than repairing it. The mailbox-search screen carried a second implementation
+# that stripped the two ends independently — so '<CAabc123@example.com' was
+# refused by the delivery trace, refused by the log search, and accepted by the
+# search screen, which then searched for a value the other two would not show.
+#
+# A COMMENT IS WHAT FAILED TO STOP IT: lib/logsearch.sh warned in place that a
+# second implementation "is the kind of pair that drifts", and the screen was
+# written anyway. So the rule gets a build behind it instead. A '#' inside a
+# parameter expansion is not a comment to this scanner (see zro_strip_comments),
+# which is what lets these two be counted at all.
+#
+# If this case fails, the fix is to call zro_msgid_bare, not to add a second
+# stripper here. See docs/adr/0014-the-validator-establishes-its-own-precondition.md.
+strip_open=$(printf '%s
+' "$code" | grep -c '#<}')
+strip_close=$(printf '%s
+' "$code" | grep -c '%>}')
+assert_eq "$strip_open" "1"
+assert_eq "$strip_close" "1"
+assert_contains "$(zro_scan_file "$ZRO_SRC/lib/validate.sh")" "zro_msgid_bare()"
+
+it "and no module keeps a copy of it under the trace's old name"
+# The rule moved out of lib/delivery.sh when it stopped being the trace's. A
+# surviving zro_trace_msgid_bare would be a second implementation wearing the
+# name three call sites used to reach for.
+assert_not_contains "$code" "zro_trace_msgid_bare"
+
 it "every library guards against being loaded twice"
 for f in "$ZRO_SRC"/lib/*.sh; do
   header=$(head -n 15 "$f")
