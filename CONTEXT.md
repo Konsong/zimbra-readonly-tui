@@ -55,9 +55,9 @@ _Avoid_: arguments, options, the rest of the command
 A menu whose entries are the keys of a declared table or of a declared id set, so
 what comes back is a **key** and the module that declares it is what refuses one
 nobody declared — the main menu asks `zro_menu_scope`, the log viewer asks
-`zro_logview_label`, the criteria screen asks `zro_search_label`. Ten of this
-program's thirteen menus are one, and three more offer two or three literal words
-and answer them with a `case`.
+`zro_logview_label`, the criteria screen asks `zro_search_label`. Seven of this
+program's thirteen menus are one; three more offer two literal words and answer
+them by name, and the remaining three are **built lists**.
 _Avoid_: static list, fixed list, drawn list
 
 **Built list**:

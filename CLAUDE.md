@@ -38,6 +38,19 @@ on every change.
   with the reason on it. Two lists are deliberately NOT read this way — `ZRO_ALLOW`
   and `ZRO_LOW_PRIORITY` answer their own membership question; see
   [ADR-0009](docs/adr/0009-what-is-not-a-declared-table.md) before folding them in.
+- **A declared list is judged by its declaring module; a built list's position
+  goes through `zro_list_position`.** A menu whose entries are the keys of a
+  declaration hands back a **key**, and the module that declares it refuses one
+  nobody declared. A menu this program built at run time out of the server's or
+  the file system's answer hands back a **position** — and `lib/list.sh` is the
+  only thing in this tree that reads one. The `- 1` and all three refusals — two
+  about the answer, one about a count no list could have — travel with it; the
+  array does not. Each of the thirteen
+  `zro_ui_menu` call sites is declared in `tests/test_readonly_scan.sh` by its
+  enclosing function and its family (`declared`, `built`, `fixed`), the two sets
+  are held equal in both directions, and the family is proved from the source, so
+  a fourteenth menu fails the build until it says which kind of list it drew. See
+  [ADR-0015](docs/adr/0015-a-built-list-is-judged-by-position.md).
 - **A gated read never ends by returning the status it was handed.** Ask
   `zro_exec_own_code`; the last arm of a `*_fail_code` or `*_outcome_code` names a
   code this program defines. And a code that also answers a second question at the
