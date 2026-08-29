@@ -240,6 +240,21 @@ _Avoid_: truncated result, and **page** as a name for it — a page is the thing
 Zimbra prints, whose column widths it computes from the rows on that one page, and
 that meaning is the reason the word may not also mean this one
 
+**Untabulated hit**:
+Something the server **counted and did not print**: it stands in the count the
+answer opens with, and no row of the table carries it. The near neighbour of a
+[bounded result](#searching-a-mailbox) and its opposite in what is missing — there
+the rows exist and the list was cut, here the count is whole and the row was never
+written. **A screen may not tell one from a row this tool failed to read**: a line
+whose identifier is not a number, whose type column is empty, or that lost its
+index prefix is dropped by the reader, and what reaches the screen looks the same
+either way. So the difference is disclosed with **both** causes named and neither
+claimed, and an empty table under a count that is not zero is never drawn as the
+mailbox holding nothing — that would be a claim about the mailbox laid over the
+server's own count, which is the one thing a search screen may never do.
+_Avoid_: missing row, lost hit, dropped result — all three name a cause the
+screen is precisely unable to establish
+
 **Display sender**:
 What the result table prints in its sender column: a **display name**, cut at
 twenty characters with nothing marking the cut. It is not an address and no

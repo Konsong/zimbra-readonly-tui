@@ -881,6 +881,26 @@ zro_search_conv_messages() {
 ZRO_TXT_SEARCH_NO_HITS='Bu sorguya uyan ileti bulunamadi.'
 ZRO_TXT_SEARCH_NO_CONV='Bu konusma sunucuda bulunamadi.'
 
+# AN EMPTY TABLE UNDER A COUNT THAT IS NOT ZERO IS NOT THE SENTENCE ABOVE IT.
+# The two above are claims about the mailbox — nothing matched, the conversation
+# is gone — and a screen that made either of them over a count the server itself
+# printed would be contradicting its own evidence two lines up. These say what
+# happened instead: the server counted, and the table this program read holds
+# nothing.
+#
+# THEY SAY WHAT THE SCREEN IS NOT SAYING, because that is the half an operator
+# would otherwise supply themselves: an empty table looks like an empty mailbox,
+# and the counts standing above it are easy to read past. The counts themselves
+# are the next line's job, so these do not repeat them.
+ZRO_TXT_SEARCH_NO_ROWS='Tabloda satir yok; bu, uyan ileti YOK demek degildir.'
+ZRO_TXT_SEARCH_CONV_NO_ROWS='Tabloda satir yok; bu, konusma YOK demek degildir.'
+
+# AND A COUNT THAT REALLY IS ZERO IS A THIRD ANSWER AGAIN, for the conversation
+# listing only: the listing ran, the conversation is there, and `is:anywhere`
+# found nothing in it. Not the same as a conversation the server no longer has,
+# which is what the caller passes an empty answer for.
+ZRO_TXT_SEARCH_CONV_EMPTY='Bu konusmada listelenecek ileti yok.'
+
 # WHAT THE COLUMNS ARE AND WHAT THEY ARE NOT, said on every screen that shows one.
 #
 # THE SENDER COLUMN IS THE ONE THAT MISLEADS. What the server prints there is a
@@ -957,6 +977,42 @@ zro_search_value_label() {
   esac
 }
 
+# WHAT THE SERVER COUNTED AND THE TABLE DOES NOT HOLD.
+#
+#   $1  the count the server printed   $2  the rows this program read
+#   $3  what the server was counting, in the operator's language
+#
+# ONE PLACE, because two cards and two arms of one card say it, and three copies
+# of a sentence are free to disagree — the rule this file already states about its
+# two row readers. The noun is the caller's, for the reason zro_error_detail gives
+# about its heading: a search counts matches and a conversation listing counts
+# messages, and neither may be called by the other's name.
+#
+# IT NAMES TWO CAUSES AND PICKS NEITHER, which is the whole of what this program
+# knows. `dumpSearch` handles conversation, contact, message, appointment and
+# document hits; ZWikiHit, ZVoiceMailItemHit, ZCallHit and ZIdHit count toward
+# `num:` and produce no row — so a difference can be the server's own ordinary
+# behaviour. It can equally be a table this reader failed to parse: every row
+# whose id is not digits, whose type column is empty, or that lost its index
+# prefix is dropped, and the output that reaches this function looks the same
+# either way. Reference §B.5; the conversation form is measured on neither.
+#
+# THIS IS WHY THE SENTENCE SAYS `gelebilir` AND NOT `gelir`. The version that
+# stood here named the record kind as THE cause, which is a claim about the
+# server this program has never been in a position to make.
+zro_search_untabulated_body() {
+  local num=${1-} count=${2-} noun=${3-}
+  if [ "$count" -eq 0 ]; then
+    printf 'Sunucu %s %s bildirdi, tabloya hicbir satir yazilmadi.\n' "$num" "$noun"
+  else
+    printf 'Sunucu %s %s bildirdi, tabloda %s satir var.\n' "$num" "$noun" "$count"
+  fi
+  printf 'Fark iki sebepten gelebilir ve ciktidan ayirt edilemez: sunucu, bu tabloya\n'
+  printf 'satir yazmadigi bir kayit turunu saymis olabilir; ya da tablo bu aracin\n'
+  printf 'okuyamadigi bir bicimde gelmis olabilir. Bu ekran hangisi oldugunu SOYLEMEZ.\n'
+  printf 'Ayrinti icin arac gunlugune bakin.\n'
+}
+
 # THE RESULT, WITH THE QUESTION ABOVE IT.
 #
 #   $1  the account   $2  the query as sent   $3  the raw output   $@  the criteria
@@ -1006,7 +1062,30 @@ EOF
   zro_card_line 'Ekranda gosterilen' "$count"
   zro_card_line 'Ust sinir' "$ZRO_SEARCH_LIMIT"
 
+  # AN EMPTY TABLE IS TWO ANSWERS, AND `num:` IS THE ONLY THING THAT TELLS THEM
+  # APART. A count of zero is the mailbox answering the question that was asked,
+  # and the screen below says so in those words. A count greater than zero is the
+  # server saying it found something this table does not carry — and answering
+  # that with `nothing matched` would put a claim about the mailbox on top of the
+  # server's own count, which is the one thing this file's opening comment says a
+  # search screen may never do.
+  #
+  # THE TRASH-AND-SPAM ADVICE BELONGS TO THE FIRST ARM ONLY. It sends the operator
+  # to widen a search that found nothing; under a count that is not zero it would
+  # send them looking elsewhere for messages the server just said it has.
   if [ "$count" -eq 0 ]; then
+    if [ -n "$num" ] && [ "$num" -gt 0 ]; then
+      # WARN AND NOT ERROR, and no defect reported. One of the two causes is the
+      # server behaving ordinarily, so a log line calling this a defect would
+      # contradict the screen it was written beside. It is logged at all because
+      # the other cause is this program failing to read a table, and the operator's
+      # screen is the one place that cannot show which it was.
+      zro_log warn "search: $num hits counted, no row in the table"
+      printf '\n%s\n\n' "$ZRO_TXT_SEARCH_NO_ROWS"
+      zro_search_untabulated_body "$num" "$count" eslesme
+      printf '\n%s\n' "$ZRO_TXT_SEARCH_READONLY"
+      return 0
+    fi
     printf '\n%s\n\n' "$ZRO_TXT_SEARCH_NO_HITS"
     printf 'Sorgu calisti ve yanit verdi: bu mailboxta bu olcutlere uyan ileti yok.\n'
     printf 'Bu bir hata degil, bir sonuc.\n'
@@ -1029,13 +1108,16 @@ EOF
     printf 'ekleyerek daralttiginizda liste tamamlanir.\n'
     printf '\n'
   fi
-  # Said only when the two really differ, because on a message search they cannot:
-  # the hit kinds the server drops from this table are wiki, voice and call hits,
-  # and none of them can answer a message search. It costs nothing to ask, and the
-  # day it happens is a day this screen would otherwise be quietly short a row.
+  # Said only when the two really differ. The hit kinds the server drops from this
+  # table are wiki, voicemail, call and id hits, and the reasoning that used to
+  # stand here — that none of them can answer a message search, so the two cannot
+  # differ — covered only ONE of this function's two callers. It draws the
+  # conversation search too, and nobody has measured what that form can return:
+  # the open question is written for `-t message` in the reference's §18 and in
+  # §10.3 of the message-search research, and the conversation form is in neither.
+  # So the comparison is made for both, and the sentence claims no cause.
   if [ -n "$num" ] && [ "$num" -ne "$count" ]; then
-    printf 'Sunucu %s eslesme bildirdi, tabloda %s satir var. Fark, sunucunun bu\n' "$num" "$count"
-    printf 'tabloya yazmadigi bir kayit turunden gelir.\n'
+    zro_search_untabulated_body "$num" "$count" eslesme
     printf '\n'
   fi
   printf '%s\n' "$ZRO_TXT_SEARCH_COLUMNS"
@@ -1087,7 +1169,27 @@ EOF
   zro_card_line 'Sunucunun bildirdigi' "${num:-$ZRO_TXT_UNKNOWN}"
   zro_card_line 'Ekranda gosterilen' "$count"
 
+  # THREE ANSWERS, NOT ONE, and `num:` is what separates them. The caller hands an
+  # empty answer for a conversation the server no longer has — that is the arm at
+  # the bottom, and it is deliberate. But an answer that DID arrive carries a
+  # count, and the two values that count can take mean different things: zero is a
+  # conversation that is there and holds nothing this listing found, and anything
+  # else is the server naming messages this table does not carry. Told apart here
+  # because the card that answered all three with one sentence told an operator a
+  # conversation was gone while printing the server's count of three above it.
   if [ "$count" -eq 0 ]; then
+    if [ -n "$num" ] && [ "$num" -gt 0 ]; then
+      zro_log warn "conversation listing: $num messages counted, no row in the table"
+      printf '\n%s\n\n' "$ZRO_TXT_SEARCH_CONV_NO_ROWS"
+      zro_search_untabulated_body "$num" "$count" ileti
+      return 0
+    fi
+    if [ -n "$num" ]; then
+      printf '\n%s\n\n' "$ZRO_TXT_SEARCH_CONV_EMPTY"
+      printf 'Konusma sunucuda var ve listeleme calisti; icinde listelenecek ileti\n'
+      printf 'bulunamadi. Bu, konusmanin YOK oldugu anlamina gelmez.\n'
+      return 0
+    fi
     printf '\n%s\n\n' "$ZRO_TXT_SEARCH_NO_CONV"
     printf 'Konusma listelendikten sonra silinmis veya iletileri baska bir yere\n'
     printf 'tasinmis olabilir.\n'
