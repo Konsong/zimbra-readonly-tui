@@ -746,11 +746,10 @@ EOF
     choice=$(zro_ui_menu "$title" "$ZRO_TXT_FOLDER_PICK" "${items[@]}") || rc=$?
     [ "$rc" -eq 0 ] || return 0
 
-    # NINE CHARACTERS, [1-9] AND AT MOST EIGHT MORE DIGITS. What survives this is
-    # a decimal integer this shell can evaluate, and that is what makes the range
-    # check below it total: a leading zero would reach the subscript as octal, and
-    # an integer wider than 64 bits leaves `[` unable to compare it at all — both
-    # comparisons come back false and the guard falls through instead of refusing.
+    # NINE CHARACTERS, [1-9] AND AT MOST EIGHT MORE DIGITS: the last arm is ten
+    # question marks, so a tenth is refused. What survives is a decimal integer
+    # this shell can evaluate, which is what makes the range check below it total
+    # — and what 0 now meets one arm earlier. ADR-0015 measures what got through.
     case $choice in
       ''|*[!0-9]*|0*|??????????*)
         zro_log error "denied, not a position in the folder list: $choice"
@@ -1136,11 +1135,10 @@ EOF
     choice=$(zro_ui_menu "$title" "$ZRO_TXT_CONV_PICK" "${items[@]}") || rc=$?
     [ "$rc" -eq 0 ] || return 0
 
-    # NINE CHARACTERS, [1-9] AND AT MOST EIGHT MORE DIGITS. What survives this is
-    # a decimal integer this shell can evaluate, and that is what makes the range
-    # check below it total: a leading zero would reach the subscript as octal, and
-    # an integer wider than 64 bits leaves `[` unable to compare it at all — both
-    # comparisons come back false and the guard falls through instead of refusing.
+    # NINE CHARACTERS, [1-9] AND AT MOST EIGHT MORE DIGITS: the last arm is ten
+    # question marks, so a tenth is refused. What survives is a decimal integer
+    # this shell can evaluate, which is what makes the range check below it total
+    # — and what 0 now meets one arm earlier. ADR-0015 measures what got through.
     case $choice in
       ''|*[!0-9]*|0*|??????????*)
         zro_log error "denied, not a position in the conversation list: $choice"
@@ -1833,11 +1831,11 @@ EOF
     # viewer bounded to the inventory: whatever comes back is looked up in the
     # list this program drew, so a value that is not one of those positions names
     # nothing at all and is refused rather than read.
-    # NINE CHARACTERS, [1-9] AND AT MOST EIGHT MORE DIGITS. What survives this is
-    # a decimal integer this shell can evaluate, and that is what makes the range
-    # check below it total: a leading zero would reach the subscript as octal, and
-    # an integer wider than 64 bits leaves `[` unable to compare it at all — both
-    # comparisons come back false and the guard falls through instead of refusing.
+
+    # NINE CHARACTERS, [1-9] AND AT MOST EIGHT MORE DIGITS: the last arm is ten
+    # question marks, so a tenth is refused. What survives is a decimal integer
+    # this shell can evaluate, which is what makes the range check below it total
+    # — and what 0 now meets one arm earlier. ADR-0015 measures what got through.
     case $choice in
       ''|*[!0-9]*|0*|??????????*)
         zro_log error "denied, not a position in the log file list: $choice"

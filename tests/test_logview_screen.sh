@@ -156,6 +156,13 @@ it "no screen hands a path to a reader, whatever the operator's answer is"
 # like an answer if a path were ever what came back.
 assert_list_refuses logview_answer "$SYS"
 
+it "and no log body reached the screen while it was refusing"
+# The vector above says nothing was READ, judged on the commands the run spent.
+# This says nothing was SHOWN, which is the same claim only while the body can
+# come from nowhere else — and it is the one an operator would be looking at.
+logview_answer "$SYS"
+assert_not_contains "$(transcript)" "TEXT Log:"
+
 it "and every path that did reach a reader came from the inventory"
 queue "syslog" "1" "__CANCEL__" "__CANCEL__" "__CANCEL__"
 : >"$ZRO_MOCK_LOG"
