@@ -155,6 +155,21 @@ runs no probe.
 **Deletion test:** delete the cache and its reset line and *nothing changes* — it is already inert on every
 path. That is the definition of a pass-through. **Strong**, and the cheapest change in this report.
 
+> **⚠ CORRECTION, 2026-08-29 — the measurement holds, the RECOMMENDATION does not, and it was settled the
+> other way.** The deletion test is true and proves the variable inert; the argument then reads inert as
+> harmless. What deletion does not change is the measured cost directly above it: an operator on a host
+> without `zimbra-mta` keeps meeting the same warning once per return to the main menu, all session, and
+> `CONTEXT.md`'s written promise that a capability is observed once per session becomes quietly false for
+> this one. The probe being nearly free is what makes this read as low-stakes and is not the question — what
+> is remembered is the answer, not the price of getting it. The cache was made to work instead, by the bare
+> `||` chain this section itself names.
+> [ADR-0013](../adr/0013-a-probing-predicate-runs-in-its-callers-shell.md) carries the decision and the three
+> other shapes it rejected; issue [#87](https://github.com/Konsong/zimbra-readonly-tui/issues/87) carries the
+> work. Two further things this section did not reach: the same fragility holds the tracer's `:1504` path,
+> where it guards `stat` and `groups` rather than a log line, and the obvious test for this — the mirror of
+> the tracer's, written on `zro_cap_queue_bin` — **passes against the defect**, because only the predicate
+> reaches the probe through a substitution.
+
 ## 5. The mock transcript is a declared table read by hand
 
 **Files:** `tests/mocks/mock_common.sh:7`, `tests/test_main_menu.sh:798`, `tests/test_store.sh:572`,

@@ -10,10 +10,12 @@ set -uo pipefail
 export ZRO_MOCK_LIB="$ZRO_TEST_ROOT/mocks"
 export ZRO_ZIMBRA_BIN="$ZRO_TEST_ROOT/mocks/bin"
 export ZRO_ZIMBRA_LIBEXEC="$ZRO_TEST_ROOT/mocks/libexec"
+export ZRO_POSTFIX_SBIN="$ZRO_TEST_ROOT/mocks/sbin"
 export ZRO_ID_BIN="$ZRO_TEST_ROOT/mocks/bin/id"
 export ZRO_RUNUSER="$ZRO_TEST_ROOT/mocks/bin/runuser"
 export ZRO_TIMEOUT_BIN="$ZRO_TEST_ROOT/mocks/bin/timeout"
-chmod +x "$ZRO_TEST_ROOT"/mocks/bin/* "$ZRO_TEST_ROOT"/mocks/libexec/* 2>/dev/null || true
+chmod +x "$ZRO_TEST_ROOT"/mocks/bin/* "$ZRO_TEST_ROOT"/mocks/libexec/* \
+         "$ZRO_TEST_ROOT"/mocks/sbin/* 2>/dev/null || true
 
 # The primary mail log, as the readability probe will find it. A real file with a
 # real mode, because that is what the probe reads — and its MODE is set explicitly
@@ -291,6 +293,68 @@ it "and it is not cached, because the fact it reads cannot go stale"
 zro_cap_reset
 ZRO_NICE_BIN='' assert_out_eq "noprio" zro_cap_search_reason
 assert_out_eq "ok" zro_cap_search_reason
+
+# --- the mail queue, and the shape that lets a probe be remembered ------------
+#
+# ADR-0013. Every case here goes through the PREDICATE rather than through
+# zro_cap_queue_bin, and that is the finding rather than a preference: the probe
+# called directly fills its cache under either shape, so the mirror of the
+# tracer's case above passes against the very defect it would exist to catch.
+
+it "the queue predicate asks this host once and remembers for the session"
+zro_cap_reset
+assert_ok zro_cap_queue_available
+# The answer stands for the session. Pointing the root at nothing cannot change an
+# answer already given — it can only be noticed by a predicate that asks again.
+ZRO_POSTFIX_SBIN=/nonexistent assert_ok zro_cap_queue_available
+zro_cap_reset
+ZRO_POSTFIX_SBIN=/nonexistent assert_fail zro_cap_queue_available
+
+it "and a host without the tool is warned about once, not once per redraw"
+# THE MEASURED COST, held directly rather than inferred from the state above. A
+# cache that fills while the warning stays outside it would satisfy that case and
+# none of this one, and the warning is what an operator on a host without
+# zimbra-mta actually meets: once per return to the main menu, all session.
+zro_cap_reset
+QLOG=$(mktemp)
+ZRO_LOG_FILE=$QLOG
+ZRO_POSTFIX_SBIN=/nonexistent zro_cap_queue_available 2>/dev/null
+ZRO_POSTFIX_SBIN=/nonexistent zro_cap_queue_available 2>/dev/null
+ZRO_POSTFIX_SBIN=/nonexistent zro_cap_queue_available 2>/dev/null
+ZRO_LOG_FILE=""
+assert_eq "$(grep -c 'the queue tool is not on this build' "$QLOG")" "1"
+rm -f -- "$QLOG"
+
+it "and the delivery trace's predicate remembers too, which nothing held before"
+# The tracer was already a bare chain and its cache already worked. What was
+# missing is anything that would notice if it stopped: the case at the top of this
+# file pins zro_cap_trace_bin, and the defect ADR-0013 is about lives one level up
+# from it, where the probe is reached rather than where it is written.
+chmod 644 -- "$SYS"
+zro_cap_reset
+assert_ok zro_cap_trace_available
+ZRO_ZIMBRA_LIBEXEC=/nonexistent assert_ok zro_cap_trace_available
+zro_cap_reset
+ZRO_ZIMBRA_LIBEXEC=/nonexistent assert_fail zro_cap_trace_available
+
+it "the queue predicate and the queue reason cannot disagree about this host"
+# THE PRICE OF THE BARE CHAIN, held here because the structure no longer holds it.
+# The predicate restates the ranking zro_cap_queue_reason owns, so a third reason
+# added to one and not the other would leave the menu entry unmarked while the
+# screen behind it named the cause.
+zro_cap_reset
+assert_out_eq "ok" zro_cap_queue_reason
+assert_ok zro_cap_queue_available
+zro_cap_reset
+ZRO_CAP_FORCE_QUEUE_BIN=no assert_out_eq "nobin" zro_cap_queue_reason
+ZRO_CAP_FORCE_QUEUE_BIN=no assert_fail zro_cap_queue_available
+# The host's own refusal, which has no forced form because it is not a probe: it
+# is made to happen, exactly as the queue screen's own suite makes it happen.
+zro_cap_reset
+zro_cap_queue_deny_record
+assert_out_eq "denied" zro_cap_queue_reason
+assert_fail zro_cap_queue_available
+zro_cap_reset
 
 rm -f -- "$ZRO_MOCK_LOG"
 rm -rf -- "$LOGTREE"

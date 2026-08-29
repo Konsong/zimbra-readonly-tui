@@ -3038,10 +3038,13 @@ zro_menu_label() {
 #
 # THE ANSWER COMES BACK IN A GLOBAL, not on stdout, and that is not a style
 # choice. This asks the capability module, whose probes fill a session cache —
-# and an assignment made inside $( ) dies with the subshell, which is the exact
-# bug lib/capability.sh records having already been fixed once. A caller that
-# read this through a command substitution would re-probe the host for every
-# entry of every redraw. Bash 4.2 has no namerefs, so a global is how a value
+# and an assignment made inside $( ) dies with the subshell, which is the bug
+# lib/capability.sh records having now been fixed twice: once for the version
+# cache, and once for the queue's predicate, which wore the shape this block
+# warns against until ADR-0013 made the rule general rather than a habit two
+# functions happened to keep. A caller that read this through a command
+# substitution would re-probe the host for every entry of every redraw.
+# Bash 4.2 has no namerefs, so a global is how a value
 # comes back from a function that must run in its caller's shell, the same way
 # ZRO_UI_ARGV does.
 ZRO_MENU_REASON=""
