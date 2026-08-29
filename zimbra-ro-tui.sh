@@ -12,6 +12,8 @@ ZRO_ROOT=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 . "$ZRO_ROOT/lib/core.sh"
 # shellcheck source=lib/table.sh
 . "$ZRO_ROOT/lib/table.sh"
+# shellcheck source=lib/list.sh
+. "$ZRO_ROOT/lib/list.sh"
 # shellcheck source=lib/validate.sh
 . "$ZRO_ROOT/lib/validate.sh"
 # shellcheck source=lib/selection.sh
@@ -697,7 +699,7 @@ okunmamis oge sayisidir.'
 # server's own answer, so no value from the screen becomes an argument — and a
 # value that is not one of those positions names nothing and is refused.
 zro_menu_folder() {
-  local id=${1-} acct title rows rc=0 choice line i=0 path out
+  local id=${1-} acct title rows rc=0 choice line i=0 idx path out
   local -a paths=() items=()
 
   if ! title=$(zro_menu_label "$id"); then
@@ -746,20 +748,8 @@ EOF
     choice=$(zro_ui_menu "$title" "$ZRO_TXT_FOLDER_PICK" "${items[@]}") || rc=$?
     [ "$rc" -eq 0 ] || return 0
 
-    # NINE CHARACTERS, [1-9] AND AT MOST EIGHT MORE DIGITS: the last arm is ten
-    # question marks, so a tenth is refused. What survives is a decimal integer
-    # this shell can evaluate, which is what makes the range check below it total
-    # — and what 0 now meets one arm earlier. ADR-0015 measures what got through.
-    case $choice in
-      ''|*[!0-9]*|0*|??????????*)
-        zro_log error "denied, not a position in the folder list: $choice"
-        continue ;;
-    esac
-    if [ "$choice" -lt 1 ] || [ "$choice" -gt "${#paths[@]}" ]; then
-      zro_log error "denied, position outside the folder list: $choice"
-      continue
-    fi
-    path=${paths[choice - 1]}
+    idx=$(zro_list_position "$choice" "${#paths[@]}" "folder list") || continue
+    path=${paths[idx]}
 
     zro_ui_notice "Calisiyor" "Klasor okunuyor, lutfen bekleyin.
 
@@ -1110,7 +1100,7 @@ bir konusmayi gosterir.'
 # program built out of the server's own answer, so no value from the screen becomes
 # an argument.
 zro_menu_conversation() {
-  local acct=${1-} title=${2-} raw=${3-} choice rc=0 conv line i=0 out rows
+  local acct=${1-} title=${2-} raw=${3-} choice rc=0 conv line i=0 idx out rows
   local -a ids=() items=()
 
   # The rows are taken apart by the module that decides what a row is, and read
@@ -1135,20 +1125,8 @@ EOF
     choice=$(zro_ui_menu "$title" "$ZRO_TXT_CONV_PICK" "${items[@]}") || rc=$?
     [ "$rc" -eq 0 ] || return 0
 
-    # NINE CHARACTERS, [1-9] AND AT MOST EIGHT MORE DIGITS: the last arm is ten
-    # question marks, so a tenth is refused. What survives is a decimal integer
-    # this shell can evaluate, which is what makes the range check below it total
-    # — and what 0 now meets one arm earlier. ADR-0015 measures what got through.
-    case $choice in
-      ''|*[!0-9]*|0*|??????????*)
-        zro_log error "denied, not a position in the conversation list: $choice"
-        continue ;;
-    esac
-    if [ "$choice" -lt 1 ] || [ "$choice" -gt "${#ids[@]}" ]; then
-      zro_log error "denied, position outside the conversation list: $choice"
-      continue
-    fi
-    conv=${ids[choice - 1]}
+    idx=$(zro_list_position "$choice" "${#ids[@]}" "conversation list") || continue
+    conv=${ids[idx]}
 
     # ANSWERED WITHOUT ASKING ANYTHING when the conversation holds one message:
     # its id is the negation of that message's, and a value beginning with a dash
@@ -1783,7 +1761,7 @@ EOF
 # operator was reading is visible when they come back rather than leaving them
 # pointed at a file that has just been renamed.
 zro_menu_logview_file() {
-  local key=${1-} files rc choice out detail line mtime path i
+  local key=${1-} files rc choice out detail line mtime path idx i
   local -a paths items
   while :; do
     rc=0
@@ -1829,23 +1807,11 @@ EOF
 
     # A POSITION IN THE LIST, NEVER A PATH. This is the line that keeps the
     # viewer bounded to the inventory: whatever comes back is looked up in the
-    # list this program drew, so a value that is not one of those positions names
-    # nothing at all and is refused rather than read.
-
-    # NINE CHARACTERS, [1-9] AND AT MOST EIGHT MORE DIGITS: the last arm is ten
-    # question marks, so a tenth is refused. What survives is a decimal integer
-    # this shell can evaluate, which is what makes the range check below it total
-    # — and what 0 now meets one arm earlier. ADR-0015 measures what got through.
-    case $choice in
-      ''|*[!0-9]*|0*|??????????*)
-        zro_log error "denied, not a position in the log file list: $choice"
-        continue ;;
-    esac
-    if [ "$choice" -lt 1 ] || [ "$choice" -gt "${#paths[@]}" ]; then
-      zro_log error "denied, position outside the log file list: $choice"
-      continue
-    fi
-    path=${paths[choice - 1]}
+    # list this program BUILT out of this host's own answer, so a value that is
+    # not one of those positions names nothing at all and is refused rather than
+    # read. Drawn is what both kinds of list are; built is what only this one is.
+    idx=$(zro_list_position "$choice" "${#paths[@]}" "log file list") || continue
+    path=${paths[idx]}
 
     # A compressed file is decompressed whole before its last lines can be, and
     # a rotated mail log is large. Without this the terminal sits blank.

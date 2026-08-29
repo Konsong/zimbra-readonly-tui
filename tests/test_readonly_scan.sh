@@ -1076,6 +1076,203 @@ it "and no module keeps a copy of it under the trace's old name"
 # name three call sites used to reach for.
 assert_not_contains "$code" "zro_trace_msgid_bare"
 
+# ------------------------------------------------------------- menus and lists --
+#
+# WHICH KIND OF LIST EACH MENU DRAWS. A menu whose entries are the keys of a
+# declaration hands back a KEY, and the module that declares it refuses one nobody
+# declared. A menu this program built at run time out of the server's or the file
+# system's answer has no declaration to judge against, so it hands back a POSITION
+# and the position is judged instead — by zro_list_position, and by nothing else.
+#
+# THE RULE IS HERE BECAUSE STATING IT DID NOT WORK. One eight-line guard stood at
+# three screens, all three documented and the first two naming the others by name,
+# and the third copy was written anyway. A helper does not stop the fourth author
+# from writing their own; a build that fails does. See
+# docs/adr/0015-a-built-list-is-judged-by-position.md.
+
+# The thirteen, written out. A list derived from the source would agree with the
+# source by construction and say nothing; this is the list a maintainer adds the
+# fourteenth to, and the equality below is what makes them add it.
+# SC2034: read by NAME through lib/table.sh, never expanded here — the same
+# terms every declared table in the program is read on.
+# shellcheck disable=SC2034
+ZRO_T_MENU_SITES='
+zro_prompt_window:declared
+zro_menu_folder:built
+zro_menu_search_value:declared
+zro_menu_search:declared
+zro_menu_conversation:built
+zro_menu_logview:declared
+zro_menu_logview_file:built
+zro_menu_logsearch:declared
+zro_screen_logsearch_named:fixed
+zro_screen_logsearch_text:declared
+zro_menu_queue:fixed
+zro_menu_bulk:fixed
+zro_menu_main:declared
+'
+
+# The same thirteen, found in the source, with the family PROVED rather than
+# asserted — which is the hole a hand-written classification would otherwise
+# leave. Three facts decide it:
+#
+#   a site that passes "${items[@]}" built its entries into an array, so it is a
+#   declared or a built list; one that does not is offering literal word pairs;
+#   and a built list is the one that calls zro_list_position.
+#
+# THE FIRST TWO FACTS ARE ASKED OF THE ENCLOSING FUNCTION. Thirteen call sites
+# sit in thirteen distinct functions, so the function name is a valid key, and
+# neither an array nor a call to the reader can hide anywhere else in the body.
+#
+# THE THIRD IS ASKED OF THE CALL ITSELF, because `return "$ZRO_E_INPUT"` is also a
+# lowercase word followed by a quoted string: counted over a whole body, the word
+# pairs would be found in every function in this tree and the case would pass
+# without measuring anything. So the call's line span is found first, below.
+#
+# Comments are stripped first, for the reason the whole tree is read that way:
+# every one of these call sites is documented, and a rule that counted its own
+# documentation would pass on a screen that only talks about calling the reader.
+
+# The first and last line of every zro_ui_menu CALL, found in the view with
+# quoted spans removed — so a parenthesis inside an operator-facing message is
+# not counted as one, and neither is the `$(` of a nested command substitution
+# that sits inside a label. One of these calls carries four lines of Turkish
+# through its argument list, and the closing parenthesis in the middle of that
+# text is exactly what a reader without the quote tracker would stop at.
+#
+# THE TRACKER IS NOT WRITTEN AGAIN HERE. zro_scan_file is the tree's own reader,
+# and both views are line-for-line aligned, so a span found in one indexes the
+# other by line number.
+zro_menu_call_spans() {
+  zro_scan_file "$1" | awk '
+    # A definition is not a call. lib/ui.sh declares zro_ui_menu, and its header
+    # line carries the only parentheses it will ever have.
+    /^[a-z_][a-z_0-9]*\(\)/ { next }
+    {
+      if (!inc && index($0, "zro_ui_menu")) { inc = 1; depth = 0; first = NR }
+      if (!inc) next
+      n = length($0)
+      for (i = 1; i <= n; i++) {
+        c = substr($0, i, 1)
+        if (c == "(") { depth++; continue }
+        if (c != ")") continue
+        depth--
+        if (depth <= 0) { print first ":" NR; inc = 0; break }
+      }
+    }
+  '
+}
+
+zro_menu_facts() {
+  local f spans
+  for f in "${SOURCES[@]}"; do
+    # One line per call, flattened to one WORD per call. A separator awk can
+    # be handed without an escape is a separator nothing can mangle on its way
+    # into the program text.
+    spans=$(zro_menu_call_spans "$f")
+    spans=${spans//$'\n'/ }
+    zro_strip_comments "$f" | awk -v spans="$spans" '
+      BEGIN {
+        rows = split(spans, span, " ")
+        for (r = 1; r <= rows; r++) {
+          if (span[r] == "") continue
+          split(span[r], se, ":")
+          for (l = se[1]; l <= se[2]; l++) incall[l] = 1
+        }
+      }
+      /^[a-z_][a-z_0-9]*\(\)[[:space:]]*\{/ {
+        fn = $1
+        sub(/\(\).*/, "", fn)
+        inf = 1; menu = 0; items = 0; pos = 0; pairs = 0
+        next
+      }
+      /^\}/ && inf {
+        if (menu) {
+          fam = "fixed"
+          if (items) { if (pos) fam = "built"; else fam = "declared" }
+          print fn, fam, pairs
+        }
+        inf = 0
+        next
+      }
+      inf {
+        # The DEFINITION is never one of these: its header line is consumed by the
+        # rule above, so lib/ui.sh contributes a function whose body names nothing.
+        if (index($0, "zro_ui_menu")) menu = 1
+        if (index($0, "\"${items[@]}\"")) items = 1
+        if (index($0, "zro_list_position")) pos = 1
+        if (incall[NR] && $0 ~ /^[[:space:]]*[a-z][a-z]+[[:space:]]+"/) pairs++
+      }
+    '
+  done
+}
+
+menu_facts=$(zro_menu_facts)
+
+it "every menu this program draws is declared, and every declared menu is drawn"
+# THE TWO SETS ARE HELD EQUAL IN BOTH DIRECTIONS, exactly as the zmmailbox
+# allowlist is. A menu missing from the list is one nobody classified; a line here
+# with no menu behind it is a rule about a screen that no longer exists.
+declared_sites=""
+while IFS= read -r fn; do
+  [ -n "$fn" ] || continue
+  family=$(zro_table_field ZRO_T_MENU_SITES "$fn" 1) || family="(undeclared)"
+  declared_sites="$declared_sites$fn:$family
+"
+done <<EOF
+$(zro_table_keys ZRO_T_MENU_SITES)
+EOF
+assert_eq "$(printf '%s\n' "$menu_facts" | awk '{print $1 ":" $2}' | sort)" \
+          "$(printf '%s' "$declared_sites" | sort)"
+
+it "and there are thirteen of them, one per function, so the function name is a key"
+# The key only works while no function draws two menus. One that did would be a
+# single line above standing for two screens with two different answers, and the
+# equality would go on passing.
+assert_eq "$(printf '%s\n' "$menu_facts" | wc -l)" "13"
+assert_eq "$(printf '%s\n' "$menu_facts" | awk '{print $1}' | sort -u | wc -l)" "13"
+
+it "and the definition of the menu itself is not one of them"
+# lib/ui.sh declares zro_ui_menu; it does not draw a list. Naming a function is
+# not calling one, and a scan that could not tell would classify the UI layer.
+assert_eq "$(printf '%s\n' "$menu_facts" | awk '$1 == "zro_ui_menu"' | wc -l)" "0"
+
+it "a menu that offers literal words really passes them literally"
+# The third source fact, and the only one asserted positively: a fixed site is
+# recognised by the ABSENCE of an array, so without this a site that built no
+# array and passed nothing at all would read as one of these.
+#
+# NOT `IFS= read`, which is the idiom every other loop in this suite uses and the
+# wrong one here. It disables field splitting, so the whole line lands in $fn,
+# $fam is empty, `[ "$fam" = fixed ]` never matches, and this case passes having
+# judged nothing at all. Three fields want splitting; a path or a label does not.
+bad=""
+seen_fixed=0
+while read -r fn fam pairs; do
+  [ -n "$fn" ] || continue
+  [ "$fam" = fixed ] || continue
+  seen_fixed=$((seen_fixed + 1))
+  [ "$pairs" -ge 2 ] || bad="$bad [$fn: $pairs]"
+done <<EOF
+$menu_facts
+EOF
+assert_eq "$bad" ""
+# The loop above judged something. Without this, the defect it was just fixed for
+# would come back silently the next time the field order or the reader changes.
+assert_eq "$seen_fixed" "3"
+
+it "a built list's position is read by zro_list_position, and nothing else reads one"
+# The two messages the three screens used to write, now written once. If a count
+# here is not one, a fourth screen has copied the guard instead of calling the
+# reader, and the concentration this scan exists to keep has already been lost.
+assert_eq "$(printf '%s\n' "$raw_code" | grep -c 'denied, not a position in the')" "1"
+assert_eq "$(printf '%s\n' "$raw_code" | grep -c 'denied, position outside the')" "1"
+assert_contains "$(zro_scan_file "$ZRO_SRC/lib/list.sh")" "zro_list_position()"
+
+it "and it has exactly three call sites, one per built list"
+assert_eq "$(printf '%s\n' "$raw_code" | grep 'zro_list_position' \
+            | grep -vc 'zro_list_position()')" "3"
+
 it "every library guards against being loaded twice"
 for f in "$ZRO_SRC"/lib/*.sh; do
   header=$(head -n 15 "$f")

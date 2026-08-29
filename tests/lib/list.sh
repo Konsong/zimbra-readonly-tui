@@ -8,12 +8,20 @@
 # front of that lookup carries the whole of the screen's claim that no value from
 # the screen becomes an argument.
 #
-# THE VECTOR IS DECLARED HERE RATHER THAN AT THE CALL SITES, because the guard is
-# written out once per screen. Three copies of one rule judged by three different
-# vectors are three rules, and the value that gets through is the one the author
-# of that copy did not think to try.
-[ -n "${ZRO_LIB_LIST_LOADED:-}" ] && return 0
-ZRO_LIB_LIST_LOADED=1
+# THE VECTOR IS DECLARED HERE RATHER THAN AT THE CALL SITES. The guard no longer
+# is: lib/list.sh holds it and the three screens call zro_list_position. What
+# still stands at three screens is the WIRING, and this vector is what proves each
+# of them reaches the reader rather than a copy of it — which is the one thing a
+# unit test of a pure function cannot see. tests/test_list.sh runs these same
+# values against the reader alone; two vectors judging one rule would be two
+# rules, and the value that gets through is the one the author of the second copy
+# did not think to try.
+#
+# THE RELOAD GUARD IS NOT ZRO_LIB_LIST_LOADED: lib/list.sh in the program owns that
+# name, and a screen test sources both this file and the program. Whichever
+# loaded first would silently blank the other.
+[ -n "${ZRO_T_LIST_LOADED:-}" ] && return 0
+ZRO_T_LIST_LOADED=1
 
 # NONE OF THESE IS REACHABLE THROUGH WHIPTAIL TODAY, because this program writes
 # the menu tags itself. That is the point rather than the defence: the guard
