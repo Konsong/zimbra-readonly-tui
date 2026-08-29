@@ -398,7 +398,10 @@ _Avoid_: feature flag, precondition, support check
 
 **Probe**:
 The act of asking the host one capability question. A probe asks about the host;
-evidence about a mailbox is an oracle's. The two words do not cross.
+evidence about a mailbox is an oracle's. The two words do not cross. A probe is
+asked once a session, and asking it again is a defect whether the second ask costs
+the host anything or only repeats its warning — what is remembered is the answer,
+not the price of getting it.
 _Avoid_: check, detection
 
 **Refusal reason**:

@@ -384,19 +384,42 @@ zro_cap_queue_denied() {
 
 # WHY the queue cannot be read, in one word: 'ok', 'nobin' or 'denied'.
 #
-# The one place the two are ranked, exactly as the trace's are, so the mark on the
-# menu entry and the screen behind it cannot name different causes. A missing tool
-# is reported first because it is the repair that has to happen first: on a host
-# with no transfer agent, the access-control setting is a setting on a program
-# that is not installed.
+# The one place the two are ranked INTO A WORD, exactly as the trace's are, so the
+# mark on the menu entry and the screen behind it cannot name different causes. A
+# missing tool is reported first because it is the repair that has to happen first:
+# on a host with no transfer agent, the access-control setting is a setting on a
+# program that is not installed.
+#
+# THE PREDICATE BELOW RANKS THEM AGAIN, into a yes-or-no, and that is the price
+# ADR-0013 accepts for a cache that can fill. A third reason added here and not
+# there would leave the menu entry unmarked while this screen named the cause, so
+# what holds the two together is a test rather than the structure: the case in
+# tests/test_capability.sh asserting they agree across ok, nobin and denied.
+#
+# A PRINTER, so every caller of it is a command substitution, and the cache it
+# reaches is one the CALLER already filled. zro_menu_refusal and zro_menu_queue
+# both run the predicate in their own shell before any screen asks why; this
+# inherits what they filled rather than probing again in a subshell that would
+# lose the answer. No path may make a reason function the first thing it calls.
 zro_cap_queue_reason() {
   zro_cap_queue_bin || { printf 'nobin'; return 0; }
   zro_cap_queue_denied && { printf 'denied'; return 0; }
   printf 'ok'
 }
 
+# A BARE CHAIN RATHER THAN A TEST AGAINST THE REASON, which is ADR-0013 and not a
+# style choice: zro_cap_queue_bin fills a session cache, and an assignment made
+# inside $( ) dies with the subshell. Written the other way this probed the host
+# again on every redraw of the main menu and warned about it every time, on exactly
+# the host least able to do anything about it.
+#
+# The trace's predicate is a bare chain for the same reason. The search's is not,
+# and needs not be: its reason function reads two variables and probes nothing, so
+# the shape is what says which of these three touches the host.
 zro_cap_queue_available() {
-  [ "$(zro_cap_queue_reason)" = ok ]
+  zro_cap_queue_bin || return 1
+  zro_cap_queue_denied && return 1
+  return 0
 }
 
 # --- the log search, and the promise it cannot keep without two commands ------
@@ -458,6 +481,14 @@ zro_cap_trace_available() {
 # A missing binary is reported first because it is the repair that has to happen
 # first: on a host with neither, repairing the log permission changes nothing until
 # the binary is there.
+#
+# A PRINTER, so every caller is a command substitution and the caches behind it are
+# ones the CALLER filled — zro_menu_refusal and the trace screen both run
+# zro_cap_trace_available in their own shell first. ADR-0013, and it matters more
+# here than it does for the queue: zro_cap_probe_log spawns stat and groups, and
+# zro_cap_trace_log_reason primes the cache by calling zro_cap_trace_log for its
+# effect, which dies in the subshell too if nothing ran the predicate ahead of it.
+# What that buys on the queue is one warn line; what it buys here is processes.
 zro_cap_trace_reason() {
   zro_cap_trace_bin || { printf 'nobin'; return 0; }
   zro_cap_trace_log_reason
