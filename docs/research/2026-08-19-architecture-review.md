@@ -16,7 +16,18 @@
   repository.
 - **Companion:** [`2026-08-19-architecture-review.html`](2026-08-19-architecture-review.html) — the same
   thirteen with before/after diagrams. It needs a network connection to render (Tailwind and Mermaid come
-  from CDNs), which is why the findings are written out here in full.
+  from CDNs), which is why the findings are written out here in full. **It has not been touched since
+  2026-08-19 and no longer agrees with this file:** §2, §4 and §8 carry corrections here that its diagrams
+  do not — §4's still shows a cache being deleted where ADR-0013 made it work. It is kept as the snapshot it
+  was rather than corrected, because a correction that has to be true in two formats is the shape §2 itself
+  reports. **This file is the authority.**
+- **A pattern in this document's own reasoning, found 2026-08-29:** §2, §4 and §8 each measured correctly and
+  then reasoned from the arrangement they had just measured, as though its being the present arrangement were
+  an argument for it — *the module that already owns it*, *the variable is inert so it is harmless*, *the
+  scan does not read these sites so nothing is in the way*. All three recommendations were settled against
+  what this file said, twice by rejecting them and once by finding the thing they proposed to preserve was
+  broken. **Every measurement in this file has held on re-run; the inferences drawn from them are the part to
+  read sceptically.**
 - **Already acted on:** **§1 shipped the same day**, as
   [PR #75](https://github.com/Konsong/zimbra-readonly-tui/pull/75) — the two mappers renamed, three static
   cases added, `CONTEXT.md` given the **outcome reader** term and ADR-0010 a correction section. The finding
@@ -316,6 +327,50 @@ available.
 
 **Deletion test:** concentrates — three copies of one safety rule become one, and the three comments that
 point at each other become the module's own. **Strong**, and the smallest blast radius in this report.
+
+> **⚠ CORRECTION, 2026-08-29 — the measurement holds, the RECOMMENDATION holds, and neither the argument
+> nor the ranking does.** This is the inverse of §2 and §4: there the recommendation was too eager; here it
+> was too timid, and this section reached it for reasons that do not survive.
+>
+> **The line numbers are stale by nine and by six.** `:749`/`:1128`/`:1820` are `:758`/`:1143`/`:1835` at
+> `7f7d77a`; the comment citations `:1098` and `:1816` are `:1104` and `:1822`. Only `:695` is right.
+>
+> **The rule this section proposes to concentrate is wrong, identically, in all three copies. MEASURED.**
+> `08` passes the digit `case`, passes both range comparisons as decimal 8, and then dies in the subscript,
+> where a leading zero means octal — `zimbra-ro-tui.sh: line 758: 08: value too great for base`, the folder
+> never read, three cases in `tests/test_store_screen.sh` red. It needs a list of eight or more entries, and
+> Zimbra's default folder set is twelve. An integer wider than 64 bits is worse: `[` fails *twice* and both
+> comparisons come back false, so the guard falls through, and `set -u` exits the shell — the runner reports
+> CRASHED. Neither is reachable through whiptail, because this program writes the tags itself; the guard
+> exists because the screen's answer is not trusted, so it is correct only by virtue of the assumption it
+> exists in order not to make. This belongs in **A. Live consequences**, not in B.
+>
+> **"Nothing is in the way" is true and is not an argument.** No measurement goes red because this rule has
+> never been measured — a gap, not a licence, and §2's failure in a third key: an observation about the
+> present arrangement doing duty as its justification. What actually separates this from ADR-0011's declined
+> helper is that ADR-0011's *return* constraint does not reach a refusal that is a `continue`.
+>
+> **The dependency is backwards.** This section offers the scan's silence as evidence the change is cheap,
+> two paragraphs after writing why that silence is fatal — the fourth author *"will still write the fourth
+> copy."* A helper does not stop them; a failing build does. The scan's rule is the precondition, not the
+> bonus.
+>
+> **Two facts this section did not reach.** The three sites are not three of a kind among many: of thirteen
+> `zro_ui_menu` call sites, ten are judged against a declaration and these three are the only ones with no
+> declaration to judge against — which is the actual finding, and a term `CONTEXT.md` was missing. And
+> **coverage was not absent, it was uneven**: `test_logview_screen.sh:139` already drives eight hostile
+> answers, `test_search_screen.sh:365` drives one, the folder screen drives none. None of the three contained
+> `08`.
+>
+> **The concentration is smaller than claimed.** The three comments are three different promises to three
+> different operators and they stay; eight lines of code move, not eight lines and three comments.
+>
+> [ADR-0015](../adr/0015-a-built-list-is-judged-by-position.md) carries the decision, the six shapes it
+> rejected, and the terms **declared list** and **built list**. Issue
+> [#91](https://github.com/Konsong/zimbra-readonly-tui/issues/91) carries the defect and ships first;
+> [#92](https://github.com/Konsong/zimbra-readonly-tui/issues/92) carries the reader and the scan's rule;
+> [#93](https://github.com/Konsong/zimbra-readonly-tui/issues/93) carries the empty conversation list, which
+> is a decision nobody made rather than part of this finding.
 
 ## 9. Two seams still decide the gate's codes for themselves
 

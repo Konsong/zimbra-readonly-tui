@@ -9,6 +9,12 @@
 - **Follows:** [ADR-0010](./0010-the-gate-owns-the-predicate-and-one-settler-asks-it.md), which moved
   everything one level down from here, and [ADR-0009](./0009-what-is-not-a-declared-table.md) for the
   shape of a decision about what is deliberately NOT folded in
+- **Followed by:** [ADR-0015](./0015-a-built-list-is-judged-by-position.md), which builds a reader of very
+  nearly this shape one layer up, in the screens. This is where a reader asking *why is there no helper*
+  lands, and the honest answer is now two answers: the static proof below is what forbids one here, and it
+  has nothing to say there — but the *reason* it has nothing to say is that nobody had written the case,
+  which is a gap rather than a licence. What actually permits the reader there is the return constraint
+  below, which does not reach a refusal that is a `continue`
 
 Seven functions read a mailbox — four in `lib/store.sh`, three in `lib/search.sh` — and each ends the same
 four lines:
