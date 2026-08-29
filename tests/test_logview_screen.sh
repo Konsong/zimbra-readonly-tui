@@ -3,6 +3,10 @@
 set -uo pipefail
 # shellcheck source=lib/assert.sh
 . "$ZRO_TEST_ROOT/lib/assert.sh"
+# The answers a screen offering a built list has to refuse, shared by every file
+# that drives one.
+# shellcheck source=lib/list.sh
+. "$ZRO_TEST_ROOT/lib/list.sh"
 
 export ZRO_MOCK_LIB="$ZRO_TEST_ROOT/mocks"
 export ZRO_ZIMBRA_BIN="$ZRO_TEST_ROOT/mocks/bin"
@@ -136,17 +140,21 @@ assert_contains "$(ran)" "$(printf 'gzip\t-dc\t%s' "$SYS.1.gz")"
 # The in-place forms are refused by the gate; this is the file still being there.
 assert_ok test -f "$SYS.1.gz"
 
+# ONE ANSWER, THE WHOLE WAY IN: the log this file is about, that answer, and the
+# cancels it takes to leave. The shared driver runs it once per hostile value.
+logview_answer() {
+  queue "syslog" "$1" "__CANCEL__" "__CANCEL__"
+  : >"$ZRO_UI_OUT"; : >"$ZRO_MOCK_LOG"
+  zro_menu_logview
+}
+
 it "no screen hands a path to a reader, whatever the operator's answer is"
 # The list is offered by position and the position is what comes back, so a value
-# that is not one of them cannot name a file. A path typed where a position was
-# expected is refused, and nothing is read.
-: >"$ZRO_UI_OUT"; : >"$ZRO_MOCK_LOG"
-for answer in "/etc/passwd" "$SYS" "0" "99" "-1" "1 2" "1;id" ""; do
-  queue "syslog" "$answer" "__CANCEL__" "__CANCEL__"
-  zro_menu_logview
-done
-assert_eq "$(ran)" ""
-assert_not_contains "$(transcript)" "TEXT Log:"
+# that is not one of them cannot name a file. The vector is the one every screen
+# drawing a built list is judged by; the extra answer is this screen's own hazard,
+# a path out of the inventory it has just drawn — the value that would look most
+# like an answer if a path were ever what came back.
+assert_list_refuses logview_answer "$SYS"
 
 it "and every path that did reach a reader came from the inventory"
 queue "syslog" "1" "__CANCEL__" "__CANCEL__" "__CANCEL__"
