@@ -51,6 +51,25 @@ flag as the whole operation — the tracer's filters, the bounded read — appro
 that operation entire, and the data behind it is read by nobody.
 _Avoid_: arguments, options, the rest of the command
 
+**Declared list**:
+A menu whose entries are the keys of a declared table or of a declared id set, so
+what comes back is a **key** and the module that declares it is what refuses one
+nobody declared — the main menu asks `zro_menu_scope`, the log viewer asks
+`zro_logview_label`, the criteria screen asks `zro_search_label`. Ten of this
+program's thirteen menus are one, and three more offer two or three literal words
+and answer them with a `case`.
+_Avoid_: static list, fixed list, drawn list
+
+**Built list**:
+A menu whose entries this program built at run time out of the server's or the
+file system's answer — a mailbox's folders, a search's conversations, a log's
+files. There is no declaration to judge the answer against, so what comes back is
+a **position** in the list and the position is what is judged. Three menus are
+one, and they are the only places in this program where the operator's answer
+indexes an array. A position is read by `zro_list_position` and nowhere else: it
+is what stands in for the refusal a declaration would have given.
+_Avoid_: dynamic list, fetched list, drawn list
+
 ## Accounts and mailboxes
 
 **Account**:
