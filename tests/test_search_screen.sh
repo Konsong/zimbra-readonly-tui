@@ -4,6 +4,10 @@
 set -uo pipefail
 # shellcheck source=lib/assert.sh
 . "$ZRO_TEST_ROOT/lib/assert.sh"
+# The answers a screen offering a built list has to refuse, shared by every file
+# that drives one.
+# shellcheck source=lib/list.sh
+. "$ZRO_TEST_ROOT/lib/list.sh"
 
 export ZRO_MOCK_LIB="$ZRO_TEST_ROOT/mocks"
 export ZRO_ZIMBRA_BIN="$ZRO_TEST_ROOT/mocks/bin"
@@ -361,12 +365,22 @@ assert_contains "$out" "Ileti id             : 263"
 assert_not_contains "$(ran)" "$(printf 'sc\t')"
 assert_cost mailbox-conversation "$(opened)" 1
 
-it "and a position that is not on the list names nothing"
-exists_server
-zro_sel_set "$ADDR"
-queue "mailbox-conversation" "subject" "fatura" "__run__" "99" "__CANCEL__" "__CANCEL__" "__CANCEL__"
-run
-assert_not_contains "$(ran)" "$(printf 'sc\t')"
+# ONE ANSWER, THE WHOLE WAY IN: the query that finds the conversations, that
+# answer, and the cancels it takes to leave. The shared driver runs it once per
+# hostile value.
+conv_answer() {
+  exists_server
+  zro_sel_set "$ADDR"
+  queue "mailbox-conversation" "subject" "fatura" "__run__" "$1" \
+        "__CANCEL__" "__CANCEL__" "__CANCEL__"
+  run
+}
+
+it "and an answer that is not a position on the list names no conversation"
+# The list came back from the server and is offered BY POSITION, so a value that
+# is not one of those positions opens nothing — and leaves the operator in front
+# of the list rather than dropping them out of the screen.
+assert_list_refuses conv_answer
 
 it "and a conversation the server no longer has is an answer rather than a failure"
 exists_server

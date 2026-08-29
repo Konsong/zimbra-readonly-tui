@@ -5,6 +5,10 @@
 set -uo pipefail
 # shellcheck source=lib/assert.sh
 . "$ZRO_TEST_ROOT/lib/assert.sh"
+# The answers a screen offering a built list has to refuse, shared by every file
+# that drives one.
+# shellcheck source=lib/list.sh
+. "$ZRO_TEST_ROOT/lib/list.sh"
 
 export ZRO_MOCK_LIB="$ZRO_TEST_ROOT/mocks"
 export ZRO_ZIMBRA_BIN="$ZRO_TEST_ROOT/mocks/bin"
@@ -263,6 +267,23 @@ assert_contains "$out" "mountpoint"
 # Returned to the folder list rather than to the main menu: the operator picked a
 # folder, not an operation.
 assert_contains "$out" "MENU Klasor detayi"
+
+# ONE ANSWER, THE WHOLE WAY IN: the folder screen, that answer, and the cancels it
+# takes to leave. The shared driver runs it once per hostile value.
+folder_answer() {
+  exists_server
+  zro_sel_set "$ADDR"
+  queue "mailbox-folder" "$1" "__CANCEL__" "__CANCEL__"
+  run
+}
+
+it "and an answer that is not a position on the list names no folder at all"
+# The listing was built out of the server's own answer and is offered BY POSITION,
+# so a value that is not one of those positions names nothing and has to come back
+# refused — with the operator still in front of the list. Both halves are asserted:
+# a screen abandoned mid-answer also reads no folder, and to the operator that is
+# the screen vanishing under them rather than a refusal.
+assert_list_refuses folder_answer
 
 # ------------------------------------------ an account with no mailbox --
 
