@@ -350,6 +350,15 @@ character set and strict about being a single value. A header wraps it in angle
 brackets; the tracer records it without them.
 _Avoid_: message id (as two words), header id
 
+**Bare message-id**:
+The identifier with one matching pair of angle brackets taken off. It is the
+only form this tool validates, displays or searches for, so what an operator
+reads on a screen and what was sent to the server are the same string. Half a
+pair is **refused, not repaired**: a lone bracket means the paste is damaged,
+and what else the damage took is unknowable — a value mended here would be
+searched for and believed.
+_Avoid_: unwrapped id, stripped id, clean id
+
 **Arrival window**:
 The time range a trace is restricted to, compared against when a message
 **arrived**. A message that arrived before the window and was delivered inside it

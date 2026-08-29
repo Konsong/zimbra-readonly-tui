@@ -101,6 +101,30 @@ copy.
 **Deletion test:** concentrates — the rule moves into the module that already owns it and already tests it.
 Four lines deleted, one added. **Strong.**
 
+> **⚠ CORRECTION, 2026-08-29 — the measurement holds, the RECOMMENDATION does not, and it was settled
+> elsewhere.** The drift is real and was re-verified at `041d311`. The deletion test then reasons from
+> *"the module that already owns it"* — which is the premise under dispute, used as the argument for keeping
+> it. **Present is not owner**, and this section's own evidence says so: `zro_trace_msgid_bare` was the only
+> thing `lib/logsearch.sh` borrowed from `lib/delivery.sh`, and `tests/test_logsearch.sh` sourced the whole
+> delivery module to reach six lines. `lib/search.sh` is sourced before `lib/delivery.sh` and
+> `tests/test_search.sh` does not source it at all, so while the rule lived there the module with the most
+> direct claim on the value was locked out of it. This is §4's failure in a different key: there, a deletion
+> test proved a variable inert and the argument read inert as *harmless*; here, an observation about the
+> current arrangement does duty as a justification for it.
+>
+> Two facts this section also missed. `zimbra-ro-tui.sh:176` already called the function, so the screen file
+> already carried the dependency and `:942` was the sole deviation from it — not a new edge the fix would
+> create. And unwrapping inside `zro_search_term` is unavailable on grounds this section never reaches:
+> `zimbra-ro-tui.sh:1036` stores the pre-term value and `zro_search_value_label` draws it back onto the
+> criteria menu, so a later unwrapping would display one string and search another.
+>
+> The rule moved to `lib/validate.sh` as `zro_msgid_bare`, beside the validator that states its result as a
+> precondition it cannot establish itself.
+> [ADR-0014](../adr/0014-the-validator-establishes-its-own-precondition.md) carries the decision and the five
+> shapes it rejected; issue [#89](https://github.com/Konsong/zimbra-readonly-tui/issues/89) carries the work.
+> The line numbers this section cites for the function are stale by twenty lines in both places — `:139` in
+> the Files line and `:135` in the prose, against `lib/delivery.sh:158` and `:155` as committed.
+
 ## 3. The alias disclosure is applied by habit, and one screen forgets
 
 **Files:** `zimbra-ro-tui.sh:520`, `:1158`, `lib/ui.sh:20`, `lib/search.sh:1074`

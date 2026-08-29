@@ -818,13 +818,16 @@ zro_logsearch_lookup_label() {
 # on a host with no tracing binary, and it answers about lines the tracer does not
 # parse.
 #
-# The unwrapping is the delivery trace's, called rather than copied. What an
-# operator has in hand is a header line either way, and a second implementation of
-# "take off the brackets, but only a matching pair, and only one" is the kind of
-# pair that drifts — one screen searching for a value the other would have shown.
+# The unwrapping is zro_msgid_bare's, called rather than copied. What an operator
+# has in hand is a header line either way, and a second implementation of "take
+# off the brackets, but only a matching pair, and only one" is the kind of pair
+# that drifts — one screen searching for a value the other would have shown. It
+# did drift once, on the mailbox-search screen, which is why the rule now lives
+# beside the validator that states it as a precondition rather than in whichever
+# module reached for it first.
 zro_logsearch_msgid() {
   local id
-  id=$(zro_trace_msgid_bare "${1-}")
+  id=$(zro_msgid_bare "${1-}")
   zro_validate_msgid "$id" || return "$ZRO_E_INPUT"
   zro_logsearch_run syslog -F "$id" '' "${2-}" "${3-}" \
     "$(zro_logsearch_lookup_subject msgid "$id")"

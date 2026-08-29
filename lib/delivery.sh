@@ -144,25 +144,6 @@ zro_trace_label() {
   esac
 }
 
-# The identifier as the tracer holds it, with the angle brackets a mail header
-# wraps it in taken off.
-#
-# The tracer captures a message-id from 'message-id=<([^>]+)>' and stores what is
-# INSIDE the brackets, so a pattern carrying them matches nothing at all. What an
-# operator has in hand is the header line, brackets and all — and on this screen
-# a filter that cannot match reads as proof the message never arrived.
-#
-# Only a MATCHING PAIR at the two ends is removed, and never more than one: that
-# is unwrapping a delimiter the syntax defines, not repairing a value into
-# something nobody typed.
-zro_trace_msgid_bare() {
-  local id=${1-}
-  case $id in
-    '<'*'>') id=${id#<}; id=${id%>} ;;
-  esac
-  printf '%s' "$id"
-}
-
 # Printed above a report assembled from fewer log files than the arrival window
 # selected — a PARTIAL SCAN.
 #
@@ -532,7 +513,7 @@ zro_trace_sender() {
 # get an empty result that reads as a definitive answer.
 zro_trace_msgid() {
   local id
-  id=$(zro_trace_msgid_bare "${1-}")
+  id=$(zro_msgid_bare "${1-}")
   zro_validate_msgid "$id" || return "$ZRO_E_INPUT"
   zro_trace_run --id "$id" "${2-}" "${3-}"
 }

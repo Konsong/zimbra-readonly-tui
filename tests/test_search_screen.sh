@@ -177,6 +177,39 @@ assert_eq "$(opened)" "0"
 it "and a rejected value leaves the criterion unset rather than half set"
 assert_not_contains "$(transcript)" "Konu = temmuz"
 
+# ------------------------------------------------- the message-id criterion --
+# THIS SCREEN ONCE HAD ITS OWN UNWRAPPING and it disagreed with every other
+# reader's: it stripped the two ends independently, so a truncated paste that the
+# delivery trace and the log search both REFUSED was repaired here and searched
+# for. The three cases below are the same three tests/test_validate.sh runs
+# against zro_msgid_bare, asked of the screen instead — because what drifted was
+# never the rule, it was one screen's copy of it.
+
+it "takes a matching pair of brackets off a pasted message-id"
+exists_server
+zro_sel_set "$ADDR"
+queue "mailbox-search" "msgid" '<CAabc123@example.com>' "__run__" "__CANCEL__" "__CANCEL__"
+run
+out=$(transcript)
+assert_contains "$(ran)" 'msgid:"CAabc123@example.com"'
+assert_not_contains "$(ran)" '<'
+# The value the criteria menu offers back is the value that was searched for.
+assert_contains "$out" "Ileti kimligi (Message-ID) = CAabc123@example.com"
+
+it "and refuses half a pair rather than repairing it into a value nobody typed"
+for damaged in '<CAabc123@example.com' 'CAabc123@example.com>'; do
+  exists_server
+  zro_sel_set "$ADDR"
+  queue "mailbox-search" "msgid" "$damaged" "__CANCEL__" "__CANCEL__"
+  run
+  out=$(transcript)
+  assert_contains "$out" "Gecersiz girdi"
+  assert_eq "$(opened)" "0"
+  # Not stored either: a refused value that stayed on the menu would be offered
+  # back as though it had been accepted.
+  assert_not_contains "$out" "Ileti kimligi (Message-ID) = "
+done
+
 it "warns about the envelope criteria before the value is asked for"
 # Their empty answer is not evidence: on the laboratory server they matched
 # nothing even for messages whose envelope was exactly the address searched for.
