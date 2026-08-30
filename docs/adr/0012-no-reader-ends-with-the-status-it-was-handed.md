@@ -102,6 +102,22 @@ from the skip signal by a reader downstream, which is the same fragility one con
 each now has a ticket — #77, #78 and #79. The queue and service lists name four of the five codes and use
 the fifth AS the sink, so converting them changes which log line a gate refusal writes — a decision about
 what the sink means.
+
+> **Corrected 2026-08-30 — the queue and service half of this entry rests on a path that cannot be taken.**
+> `zro_exec` cannot return `ZRO_E_UNAVAILABLE` to either module: the startup preflight refuses the session
+> without `id`, `timeout` or `runuser`, the identity helper's status is discarded and surfaces as
+> `ZRO_E_BADUSER`, and the low-priority arm is reached only for `grep` and `gzip`. No gate refusal writes a
+> log line in those sinks, so converting them is a substitution — the same one this ADR made for
+> `lib/logview.sh` — and the sink decision it defers is not the one that needed making. What did need making
+> is what the constant MEANS, which is settled in
+> [ADR-0016](./0016-unavailable-names-a-service-that-did-not-answer.md); the reachability runs are in
+> [docs/research/2026-08-30](../research/2026-08-30-the-gate-cannot-reach-these-two-sinks.md). The
+> `lib/logsearch.sh` half of this entry is a separate construction and is untouched by the correction — #79
+> stands as written.
+>
+> The entry above it, rejecting `ZRO_E_UNAVAILABLE` as a sink for the delivery tracer because that code's
+> screen names a service the command never talks to, is the one that turned out to matter most here:
+> `lib/queue.sh` and `lib/service.sh` were already doing exactly what it refused.
 `zro_logsearch_gate_code` is the inverse construction: it lists the READERS' statuses and treats everything
 else as the gate's, so the predicate is not a drop-in for it and a status belonging to neither still leaves
 as a gate code it never was. Folding it in is a redesign.
