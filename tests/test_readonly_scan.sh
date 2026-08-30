@@ -1346,7 +1346,7 @@ assert_eq "$(printf '%s\n' "$tmpfile_sites" | grep -vc '[$][?]')" "0"
 ZRO_T_CODE_NO_SCREEN='
 ZRO_E_OK:not a failure
 ZRO_E_CANCEL:not a failure, and never becomes a process exit status
-ZRO_E_BADUSER:reaches an operator as a bare number today, and has issue 102
+ZRO_E_BADUSER:never reaches a screen — its one reachable site is zro_startup_check, which logs and whose code becomes a process exit status, the channel ADR-0016 puts out of scope
 '
 
 # Every case arm that names a code this program defines, kept only when the arm
