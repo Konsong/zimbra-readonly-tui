@@ -304,7 +304,7 @@ zro_trace_run() {
   # for one fact, and no third: what the error file needs is this same list, so it
   # is derived below rather than accumulated a second way that could disagree.
   local skipped='' skipped_n=0
-  err=$(zro_tmpfile) || return "$ZRO_E_UNAVAILABLE"
+  err=$(zro_tmpfile) || return $?
   while IFS= read -r line; do
     [ -n "$line" ] || continue
     # The shape zro_inv_select emits: the year it derived, then the path.

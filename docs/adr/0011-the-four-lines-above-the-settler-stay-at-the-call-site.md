@@ -20,7 +20,7 @@ Seven functions read a mailbox — four in `lib/store.sh`, three in `lib/search.
 four lines:
 
 ```bash
-err=$(zro_tmpfile) || return "$ZRO_E_UNAVAILABLE"
+err=$(zro_tmpfile) || return $?
 
 out=$(zro_mbox_run "$acct" gaf 2>"$err") || rc=$?
 rc=$(zro_settle "$err" "$rc" zro_store_fail_code)
@@ -31,6 +31,16 @@ Twenty-eight lines that say one thing. Both reviews on #71 raised it independent
 as Shotgun Surgery, and it was declined there as a decision rather than a substitution. **This is that
 decision.** It is written down because the duplication is real and the helper that removes it is the
 obvious next move — so a reader who does not know what it costs will propose it again.
+
+**The first line is corrected in place**, here rather than two files away, for the reason
+[ADR-0012](./0012-no-reader-ends-with-the-status-it-was-handed.md) gives: a reader should meet the
+correction with the claim. It read `|| return "$ZRO_E_UNAVAILABLE"` when this was written, in all seven
+functions and at ten more sites besides.
+[ADR-0016](./0016-unavailable-names-a-service-that-did-not-answer.md) and
+[#99](https://github.com/Konsong/zimbra-readonly-tui/issues/99) moved that decision into `zro_tmpfile`,
+which answers `ZRO_E_NO_SCRATCH` itself — and `tests/test_readonly_scan.sh` now fails the build for any
+site that translates it. **Nothing about the decision below changes:** the line is still a return in the
+caller's frame, which is the whole reason it cannot move into a helper.
 
 ## The decision
 
@@ -77,7 +87,7 @@ the call site still writes `zro_mbox_run` itself. Then the run line stays litera
 for a helper to absorb are the other three:
 
 ```bash
-err=$(zro_tmpfile) || return "$ZRO_E_UNAVAILABLE"   # a return in the CALLER's frame
+err=$(zro_tmpfile) || return $?                     # a return in the CALLER's frame
 rc=$(zro_settle "$err" "$rc" zro_store_fail_code)   # already the extracted helper
 [ "$rc" -eq 0 ] || return "$rc"                     # a return in the CALLER's frame
 ```

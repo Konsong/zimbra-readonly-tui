@@ -33,10 +33,11 @@ ZRO_E_PERM=20
 # NOT A COMMAND THAT RAN AND FAILED for a reason nothing recognised. That reading
 # is how an operator whose zmcontrol status had just failed was told to go and run
 # zmcontrol status, and it is why the two sinks have codes of their own. The sites
-# that still borrow this one for something the command never reached — a scratch
-# file, a binary the gate's own plumbing needs, a system tool that answered
-# nonsense — are violations with tickets rather than readings of it. ADR-0016
-# binds the term and CONTEXT.md carries it under 'Unavailable'.
+# that still borrow this one for something the command never reached — a binary
+# the gate's own plumbing needs, a system tool that answered nonsense — are
+# violations with tickets rather than readings of it. The scratch file was the
+# third and has ZRO_E_NO_SCRATCH below. ADR-0016 binds the term and CONTEXT.md
+# carries it under 'Unavailable'.
 ZRO_E_UNAVAILABLE=21
 ZRO_E_TIMEOUT=22
 ZRO_E_NO_LOG=23
@@ -69,6 +70,30 @@ ZRO_E_NO_STATUS=25
 # It is not ZRO_E_UNAVAILABLE for the same reason that one is not: no Zimbra
 # service was asked, so none of them is what failed to answer.
 ZRO_E_NO_QUEUE=26
+# What a step ends on when THIS TOOL COULD NOT CREATE THE WORKING FILE it needed,
+# so the operation was never started. A scratch file is where a command's error
+# stream is captured to, and one is taken before anything is run: the exec gate is
+# not reached, no binary is invoked, and there is nothing on the server to have
+# changed. The repair is on THIS host — space and permissions under TMPDIR, /tmp
+# by default — which is what makes it an ANSWER an operator acts on.
+# It is not ZRO_E_UNAVAILABLE for the same reason the two sinks above are not: no
+# Zimbra service was asked, so none of them is what failed to answer. That reading
+# is how an operator whose /tmp was full came to be told to check mailboxd and the
+# admin certificate.
+# It is not one of the three the gate keeps for a defect in this tool either — 90,
+# 91 and 92 each name a refusal that did not happen here: no list refused this, no
+# user was wrong, no binary was missing. lib/settle.sh states that rule in full.
+# IT DOES NOT COVER THE SYSTEM TOOLS, which are the other condition that borrows
+# the constant above and are issue 101's to decide. The two are kept apart because
+# THE REPAIRS DIFFER AND THE SCREEN IS THE REPAIR: a scratch file sends an
+# operator to TMPDIR on this host, where they add space or fix a permission; a
+# clock or a formatter that answered nonsense sends them to the tool itself, which
+# is installed rather than provisioned and is a different afternoon's work. A code
+# broad enough for both would name neither, which is the disease ADR-0016 treats.
+# THE ONE BORROWER OF THE OLD CONSTANT THAT NO PREFLIGHT CAN RETIRE: TMPDIR fills
+# or goes read-only at minute forty of a session, and a check at startup would
+# prove nothing about the read that follows. ADR-0016 and issue 99.
+ZRO_E_NO_SCRATCH=27
 # Partial. The operation ran and answered, but not from everything it was meant to
 # read: a delivery trace whose arrival window selected a log file it could not open,
 # or a bulk read that could not reach every account. Never returned without saying
@@ -235,9 +260,25 @@ zro_session_file() {
 
 ZRO_TMPFILES=()
 
+# THE CODE FOR A SCRATCH FILE LIVES HERE, not at the seventeen places that ask for
+# one. A bare 1 made each of those translate for itself, which is seventeen copies
+# of one decision and was the wrong copy in every case — the reason is on the
+# constant above. One place owns the meaning, it cannot drift per site, and the
+# eighteenth site inherits it for free. Every caller reads this function through
+# $( ), so $? carries the status through. ADR-0016.
+#
+# AND IT WRITES A LINE, as lib/service.sh and lib/queue.sh do before answering with
+# codes of their own. mktemp's own words go to stderr, behind whiptail, so without
+# this the screen would be the only account of the failure anywhere. The line
+# carries what the screen deliberately does not: the directory mktemp was actually
+# given. The screen names TMPDIR, which is where an operator looks; the log names
+# what TMPDIR held, which is what a session that set it for itself needs.
 zro_tmpfile() {
   local f
-  f=$(umask 077; mktemp "${TMPDIR:-/tmp}/zro.XXXXXXXX") || return 1
+  if ! f=$(umask 077; mktemp "${TMPDIR:-/tmp}/zro.XXXXXXXX"); then
+    zro_log warn "scratch file could not be created under ${TMPDIR:-/tmp}"
+    return "$ZRO_E_NO_SCRATCH"
+  fi
   ZRO_TMPFILES+=("$f")
   printf '%s' "$f"
 }

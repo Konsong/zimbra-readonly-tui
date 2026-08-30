@@ -810,7 +810,7 @@ zro_search_fetch() {
   case $query in -*) return "$ZRO_E_INPUT" ;; esac
   zro_reset_mode
   zro_mbox_require "$acct" || return $?
-  err=$(zro_tmpfile) || return "$ZRO_E_UNAVAILABLE"
+  err=$(zro_tmpfile) || return $?
 
   out=$(zro_mbox_run "$acct" s -t message -l "$ZRO_SEARCH_LIMIT" "$query" 2>"$err") || rc=$?
   rc=$(zro_settle "$err" "$rc" zro_search_fail_code)
@@ -840,7 +840,7 @@ zro_search_conv_fetch() {
   case $query in -*) return "$ZRO_E_INPUT" ;; esac
   zro_reset_mode
   zro_mbox_require "$acct" || return $?
-  err=$(zro_tmpfile) || return "$ZRO_E_UNAVAILABLE"
+  err=$(zro_tmpfile) || return $?
 
   out=$(zro_mbox_run "$acct" s -l "$ZRO_SEARCH_LIMIT" "$query" 2>"$err") || rc=$?
   rc=$(zro_settle "$err" "$rc" zro_search_fail_code)
@@ -864,7 +864,7 @@ zro_search_conv_messages() {
   zro_validate_item_id "$conv" || return "$ZRO_E_INPUT"
   zro_reset_mode
   zro_mbox_require "$acct" || return $?
-  err=$(zro_tmpfile) || return "$ZRO_E_UNAVAILABLE"
+  err=$(zro_tmpfile) || return $?
 
   out=$(zro_mbox_run "$acct" sc -l "$ZRO_SEARCH_LIMIT" "$conv" "$ZRO_SEARCH_CONV_QUERY" 2>"$err") || rc=$?
   rc=$(zro_settle "$err" "$rc" zro_search_fail_code)

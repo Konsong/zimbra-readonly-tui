@@ -575,8 +575,8 @@ zro_logsearch_run() {
   # below is a fraction of this number, and none of them may derive it by adding
   # up the files it happens to know about.
   selected_n=$(printf '%s\n' "$files" | grep -c .)
-  err=$(zro_tmpfile) || return "$ZRO_E_UNAVAILABLE"
-  st=$(zro_tmpfile) || return "$ZRO_E_UNAVAILABLE"
+  err=$(zro_tmpfile) || return $?
+  st=$(zro_tmpfile) || return $?
 
   while IFS= read -r line; do
     [ -n "$line" ] || continue

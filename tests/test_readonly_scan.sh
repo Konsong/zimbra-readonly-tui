@@ -1280,6 +1280,44 @@ it "and it has exactly three call sites, one per built list"
 assert_eq "$(printf '%s\n' "$raw_code" | grep 'zro_list_position' \
             | grep -vc 'zro_list_position()')" "3"
 
+# --------------------------------------------- a scratch file nobody translates --
+#
+# THE FUNCTION OWNS THE CODE AND NO CALL SITE TRANSLATES IT. Seventeen sites each
+# turned a bare 1 from zro_tmpfile into $ZRO_E_UNAVAILABLE — the code for a Zimbra
+# service a read needed and that did not answer — so a TMPDIR that was full or
+# unwritable reached the operator as a screen about mailboxd, SOAP and the admin
+# certificate, on a path where no service had been asked anything at all. ADR-0016
+# binds the term; issue 99 moved the meaning into zro_tmpfile itself.
+#
+# READ OFF raw_code AND NOT code, which is the opposite of what most cases here do
+# and the only view that can see this at all: a translation is written
+# `return "$ZRO_E_UNAVAILABLE"`, and the view with quoted spans removed has the
+# constant cut out of it, leaving every site looking innocent.
+#
+# NOT A COUNT HELD EQUAL, deliberately, and in neither direction. An eighteenth
+# site is welcome and inherits the meaning for free; a site that goes away is an
+# ordinary refactor. What the build refuses is a site that decides for itself what
+# a scratch file it could not create means.
+
+tmpfile_sites=$(printf '%s\n' "$raw_code" | grep 'zro_tmpfile' | grep -v 'zro_tmpfile()')
+
+it "the scan found the scratch-file call sites rather than agreeing with an empty answer"
+# A FLOOR WITH HEADROOM UNDER IT, not the count. There were seventeen when this was
+# written and the two cases below are vacuously true on nothing at all, so the
+# number has to be far enough above zero to prove the scan still sees the tree and
+# far enough below seventeen that removing a read does not fail the build for it.
+tmpfile_n=$(printf '%s\n' "$tmpfile_sites" | grep -c .)
+assert_eq "$([ "$tmpfile_n" -ge 10 ] && printf yes || printf no)" "yes"
+
+it "and no site turns a scratch file it could not create into a code of its own"
+assert_eq "$(printf '%s\n' "$tmpfile_sites" | grep -c 'ZRO_E_')" "0"
+
+it "and every one of them carries the code the function answered with"
+# The other half of the same rule, and not implied by the case above: a site that
+# named no constant and returned a number written out would pass that one while
+# meaning exactly what it forbids.
+assert_eq "$(printf '%s\n' "$tmpfile_sites" | grep -vc '[$][?]')" "0"
+
 # ------------------------------------------------- a code and the screen for it --
 #
 # EVERY CODE THIS PROGRAM DEFINES HAS AN ARM OF ITS OWN, or is declared below as
@@ -1400,9 +1438,9 @@ assert_eq "$bare_reason" ""
 it "and the scan found arms rather than agreeing with an empty answer"
 # Without these two the equality above passes on a scan that matched nothing at
 # all: every code would be screenless and the declaration would just have to be
-# longer. Nineteen codes are defined and sixteen have an arm of their own.
-assert_eq "$(printf '%s\n' "$defined_codes" | grep -c .)" "19"
-assert_eq "$(printf '%s\n' "$screened_codes" | grep -c .)" "16"
+# longer. Twenty codes are defined and seventeen have an arm of their own.
+assert_eq "$(printf '%s\n' "$defined_codes" | grep -c .)" "20"
+assert_eq "$(printf '%s\n' "$screened_codes" | grep -c .)" "17"
 
 it "and it reaches the modules, not the entry point alone"
 assert_eq "$(printf '%s\n' "$code_screens" | awk '$1 == "ZRO_E_NO_BLOB" {print $2}' \

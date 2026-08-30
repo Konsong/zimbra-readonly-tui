@@ -324,7 +324,7 @@ zro_prov_read() {
   esac
 
   local err out rc=0
-  err=$(zro_tmpfile) || return "$ZRO_E_UNAVAILABLE"
+  err=$(zro_tmpfile) || return $?
 
   out=$(zro_exec zmprov "$sub" "$@" 2>"$err") || rc=$?
   if [ "$rc" -eq 0 ]; then

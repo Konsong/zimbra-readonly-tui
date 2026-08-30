@@ -164,7 +164,7 @@ zro_logview_read() {
   zro_logview_declared "$key" "$path" || return $?
 
   local out err rc=0 said
-  err=$(zro_tmpfile) || return "$ZRO_E_UNAVAILABLE"
+  err=$(zro_tmpfile) || return $?
   case $path in
     *.gz)
       # Two gated commands, and the bound is the second one. The whole file is

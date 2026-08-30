@@ -387,7 +387,7 @@ zro_msg_dump_fetch() {
   local acct=${1-} id=${2-} err out rc=0
   zro_validate_email "$acct" || return "$ZRO_E_INPUT"
   zro_validate_item_id "$id" || return "$ZRO_E_INPUT"
-  err=$(zro_tmpfile) || return "$ZRO_E_UNAVAILABLE"
+  err=$(zro_tmpfile) || return $?
 
   out=$(zro_exec zmmetadump -m "$acct" -i "$id" 2>"$err") || rc=$?
 
@@ -483,7 +483,7 @@ zro_msg_head_fetch() {
   local path=${1-} err out rc=0 said n=$ZRO_MSG_HEAD_BYTES
   zro_msg_bound_ok || return "$ZRO_E_INPUT"
   zro_msg_admit_blob "$path" || return "$ZRO_E_DENIED"
-  err=$(zro_tmpfile) || return "$ZRO_E_UNAVAILABLE"
+  err=$(zro_tmpfile) || return $?
 
   if zro_msg_blob_compressed "$path"; then
     out=$( set -o pipefail
