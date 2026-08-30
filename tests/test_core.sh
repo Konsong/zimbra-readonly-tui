@@ -63,10 +63,18 @@ assert_status "$ZRO_E_INPUT" zro_clock_fmt
 it "zro_clock_fmt reports a clock it cannot run rather than answering empty"
 # An empty answer would reach a command line as a missing year or a missing
 # window bound, and the tracer reads either as a wider search that found nothing.
+#
+# THE CODE IS THE POINT AND NOT ONLY THE REFUSAL. It answered ZRO_E_UNAVAILABLE
+# until ADR-0017, which names a Zimbra service a read needed and that did not
+# answer — so an operator whose host's clock was broken was sent to check mailboxd
+# and the admin certificate. Nothing on this path asks any service anything.
+#
+# ONLY THE CLOCK THAT RAN AND FAILED IS DRIVEN HERE. The case for an EMPTY
+# ZRO_DATE_BIN is gone with the guard that answered it: zro_startup_check refuses
+# to open a session without `date`, so that state is one production cannot be in,
+# and a test driving it was holding a guard in place on behalf of the suite alone.
 rc=0; ( ZRO_DATE_BIN=/nonexistent/date; zro_clock_fmt '%Y' 1785405600 ) >/dev/null 2>&1 || rc=$?
-assert_eq "$rc" "$ZRO_E_UNAVAILABLE"
-rc=0; ( ZRO_DATE_BIN=''; zro_clock_fmt '%Y' 1785405600 ) >/dev/null 2>&1 || rc=$?
-assert_eq "$rc" "$ZRO_E_UNAVAILABLE"
+assert_eq "$rc" "$ZRO_E_NO_SYSTEM_TOOL"
 
 it "one separator carries every pair this program passes between functions"
 assert_eq "$ZRO_TAB" "$(printf '\t')"

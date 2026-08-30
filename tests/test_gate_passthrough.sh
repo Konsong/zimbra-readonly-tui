@@ -133,29 +133,27 @@ gate_denies  zro_queue_fetch
 gate_baduser zro_queue_fetch
 ZRO_POSTFIX_SBIN=/nonexistent assert_status "$ZRO_E_NOCAP" zro_queue_fetch
 
-it "and the fifth one too, on a path that exists in this harness and nowhere else"
-# THE CASE THAT COULD ONLY BE WRITTEN HERE, and the same is true of the service
-# status below. zro_startup_check refuses to start a session without `timeout`, so
-# in production the gate cannot answer either module with ZRO_E_UNAVAILABLE at all;
-# the runner sources the entry point without the preflight, which is what lets a
-# case reach it. ADR-0016 records the four mechanisms that close it and
-# docs/research/2026-08-30 holds the runs.
+it "and the fifth one too, on the path a real host can take"
+# THE FIFTH OF THE GATE'S CODES, and the same case is written for the service
+# status below. What stood at both was a session with no `timeout` binary at all —
+# a state zro_startup_check refuses to start in, reachable only because the runner
+# sources the entry point without the preflight. ADR-0017 deleted the guard that
+# answered it for exactly that reason, so the pair is driven by the timeout FIRING
+# instead: it is the code that bounds every command here, it arrives as this
+# program's own rather than as the 124 the wrapper exits with, and no harness-only
+# apology is needed for it.
 #
 # THE NUMBER ALONE DOES NOT SETTLE IT, which is why the case after this one asks
-# for the log line as well. zro_queue_fetch used to answer with this same constant
-# for a scratch file it could not create — one of the four borrowings ADR-0016 left
+# for the log line as well. zro_queue_fetch used to answer ZRO_E_UNAVAILABLE for a
+# scratch file it could not create — one of the four borrowings ADR-0016 left
 # standing — so the constant arriving proved that something had refused rather than
 # that the gate's code had travelled. #99 has since given that condition
-# ZRO_E_NO_SCRATCH and this module borrows the constant nowhere any more, and the
-# pair is kept anyway: the borrowing was the occasion for the discrimination and
-# never its reason. What tells a code that passed through from one the module read
-# as its own is that the module's own reading WRITES A LINE, and that stays true of
-# a sink this module has not invented yet.
-#
-# THE CLOCK IS EMPTIED, NOT POINTED SOMEWHERE THAT DOES NOT EXIST. The gate asks
-# whether it has a clock at all; a path that is merely absent passes that check
-# and fails as the command's own 127, which is the module's sink and not this.
-ZRO_TIMEOUT_BIN='' assert_status "$ZRO_E_UNAVAILABLE" zro_queue_fetch
+# ZRO_E_NO_SCRATCH and this module borrows no constant any more, and the pair is
+# kept anyway: the borrowing was the occasion for the discrimination and never its
+# reason. What tells a code that passed through from one the module read as its own
+# is that the module's own reading WRITES A LINE, and that stays true of a sink
+# this module has not invented yet.
+ZRO_MOCK_TIMEOUT_FIRE=1 assert_status "$ZRO_E_TIMEOUT" zro_queue_fetch
 
 it "and the queue left as the gate's code, by the line its own reading did not write"
 # THE DISCRIMINATING HALF, and the shape both seams use. Both the sink ADR-0016
@@ -164,7 +162,7 @@ it "and the queue left as the gate's code, by the line its own reading did not w
 # nothing. So this is what fails if the predicate is dropped — the case above
 # would go on passing, because the number the module invented for itself was the
 # number the gate had sent.
-said=$( { ZRO_TIMEOUT_BIN='' zro_queue_fetch >/dev/null; } 2>&1 )
+said=$( { ZRO_MOCK_TIMEOUT_FIRE=1 zro_queue_fetch >/dev/null; } 2>&1 )
 assert_not_contains "$said" "mail queue unreadable"
 
 it "the service status passes the gate's codes through"
@@ -172,19 +170,18 @@ gate_denies  zro_svc_fetch
 gate_baduser zro_svc_fetch
 ZRO_ZIMBRA_BIN=/nonexistent assert_status "$ZRO_E_NOCAP" zro_svc_fetch
 
-it "and the fifth one too, down the same harness-only path"
+it "and the fifth one too, down the same path"
 # THE SECOND OF THE TWO, and everything the pair rests on is written out at the
-# queue above: why this path exists in the suite and nowhere else, why the number
-# alone does not settle it, and why the clock is emptied rather than pointed
-# somewhere that is merely absent. This module's own borrowing of the constant was
-# the scratch file it could not create; #99 gave that its own code, and the pair is
-# kept for the reason written out at the queue.
-ZRO_TIMEOUT_BIN='' assert_status "$ZRO_E_UNAVAILABLE" zro_svc_fetch
+# queue above: which code is driven and why it replaced the one that was, and why
+# the number alone does not settle it. This module's own borrowing of
+# ZRO_E_UNAVAILABLE was the scratch file it could not create; #99 gave that its own
+# code, and the pair is kept for the reason written out at the queue.
+ZRO_MOCK_TIMEOUT_FIRE=1 assert_status "$ZRO_E_TIMEOUT" zro_svc_fetch
 
 it "and the service status left the same way, by the line it too did not write"
 # The other half of the pair, on this module's own line. Why it discriminates is
 # written out at the queue above.
-said=$( { ZRO_TIMEOUT_BIN='' zro_svc_fetch >/dev/null; } 2>&1 )
+said=$( { ZRO_MOCK_TIMEOUT_FIRE=1 zro_svc_fetch >/dev/null; } 2>&1 )
 assert_not_contains "$said" "service status unreadable"
 
 # --------------------------------------------- the two dispatchers --
@@ -262,21 +259,31 @@ ZRO_ZIMBRA_BIN=/nonexistent assert_status "$ZRO_E_NOCAP" \
   zro_prov_read "$ZRO_E_NO_ACCOUNT" ga "$ACCT"
 
 it "and a gate refusal it could retry through LDAP does not run a second command"
-# ZRO_E_UNAVAILABLE is the one gate code this seam used to act on rather than
-# report: while the mapping ended by returning the status it was handed, a
-# host-level refusal -- no `timeout` binary here -- was indistinguishable from an
-# unreachable mailboxd, and the LDAP retry ran. It could only fail the same way,
-# because what was missing is missing for both spellings.
+# THE SEAM WHERE A SECOND INVOCATION WOULD SHOW: `ga` is retriable through LDAP,
+# and while the mapping ended by returning the status it was handed, a host-level
+# refusal was indistinguishable from an unreachable mailboxd and the retry ran. It
+# could only fail the same way, because what refused the first spelling refuses
+# the second.
 #
 # The predicate is asked before anything reads the status now, so the refusal
-# returns from there. What pins it is the MOCK LOG rather than the code: the code
-# was already right by accident, which is exactly the kind of correctness ADR-0012
-# is about. `ga` is retriable through LDAP, so this is the seam where a second
-# invocation would show.
+# returns from there. What pins it is the MOCK LOG rather than the code, because
+# the code can be right by accident — which is exactly the kind of correctness
+# ADR-0012 is about.
+#
+# A REAL GATE CODE, WHICH IS WHAT THIS DRIVES NOW. It used to point the clock at a
+# path that does not exist and assert ZRO_E_UNAVAILABLE — but a merely absent path
+# passes an emptiness test, so what the gate returned was the command's own 127 and
+# the constant asserted came from this module's fall-through mapping. The case was
+# green while proving nothing about the gate. The timeout fires instead: a code the
+# gate really produces, which the predicate really recognises.
+#
+# ONE ATTEMPT RATHER THAN NONE, which is what the count says. The gate builds its
+# command before the timeout expires, so the wrapper's own record names zmprov
+# once. Two would be the retry this case exists to forbid.
 : >"$ZRO_MOCK_LOG"
-ZRO_TIMEOUT_BIN=/nonexistent assert_status "$ZRO_E_UNAVAILABLE" \
+ZRO_MOCK_TIMEOUT_FIRE=1 assert_status "$ZRO_E_TIMEOUT" \
   zro_prov_read "$ZRO_E_NO_ACCOUNT" ga "$ACCT"
-assert_not_contains "$(cat "$ZRO_MOCK_LOG")" "zmprov"
+assert_eq "$(grep -c 'zmprov' "$ZRO_MOCK_LOG")" "1"
 
 # ------------------------------------------------------- the log reads --
 

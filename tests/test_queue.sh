@@ -254,7 +254,7 @@ it "and the status Postfix refuses with is not one the gate could claim"
 # THE ONE THING THE REORDER COULD HAVE BROKEN. zro_exec_own_code is asked before
 # zro_queue_refused now, which is where ADR-0012 puts it — so a refusal would
 # leave as a gate code rather than as this module's permission answer if the gate
-# owned 69. It owns 21, 22, 90, 91 and 92 and nothing else, and this is the fact
+# owned 69. It owns 22, 28, 90, 91 and 92 and nothing else, and this is the fact
 # the reorder rests on, asserted rather than re-derived from a comment. The three
 # refusal cases above are the behavioural half and they are left exactly as they
 # were: what says the reorder is safe is that they still pass.

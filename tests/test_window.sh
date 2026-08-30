@@ -132,10 +132,16 @@ assert_status "$ZRO_E_INPUT" zro_win_day_start ''
 assert_status "$ZRO_E_INPUT" zro_win_day_start
 # Overridden inside a subshell: a temporary assignment in front of a function
 # call persists after it returns in bash, which would leak into the next case.
+#
+# A CLOCK THAT RAN AND FAILED, which is the half no preflight can retire. The
+# other half — an empty ZRO_DATE_BIN — went with the guard that answered it:
+# zro_startup_check refuses to open a session without `date`, so a case driving
+# that state was proving something about the suite rather than about a host.
+# ADR-0017.
 rc=0; ( ZRO_DATE_BIN=/nonexistent/date; zro_win_day_start "$NOW" ) >/dev/null 2>&1 || rc=$?
-assert_eq "$rc" "$ZRO_E_UNAVAILABLE"
-rc=0; ( ZRO_DATE_BIN=''; zro_win_now ) >/dev/null 2>&1 || rc=$?
-assert_eq "$rc" "$ZRO_E_UNAVAILABLE"
+assert_eq "$rc" "$ZRO_E_NO_SYSTEM_TOOL"
+rc=0; ( ZRO_DATE_BIN=/nonexistent/date; zro_win_now ) >/dev/null 2>&1 || rc=$?
+assert_eq "$rc" "$ZRO_E_NO_SYSTEM_TOOL"
 
 it "renders a timestamp the way an operator reads one"
 assert_out_eq "2026-07-30 16:45:20" zro_win_human "$NOW"

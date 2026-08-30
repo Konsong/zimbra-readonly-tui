@@ -458,16 +458,20 @@ _Avoid_: error code, status, failure reason
 **The gate's own code**:
 One of the five statuses `zro_exec` produces instead of running a command, or in
 place of the one it got — a denial, a wrong user, a gated binary this host does
-not have, a host missing a binary the gate's own plumbing needs, a timeout. It
+not have, a host that cannot reduce a process's priority, a timeout. It
 describes THIS TOOL or the host it is pointed at,
 never the command, and it reaches the operator unchanged. Whether a status is one
 is asked of the gate, which owns the predicate
 ([ADR-0010](docs/adr/0010-the-gate-owns-the-predicate-and-one-settler-asks-it.md));
 a module that answers it for itself is how a denial once reached a screen as a
-stopped service. Its fifth member currently borrows **unavailable**, which since
-[ADR-0016](docs/adr/0016-unavailable-names-a-service-that-did-not-answer.md) names
-something the gate never means; what that member should be called instead is
-[#100](https://github.com/Konsong/zimbra-readonly-tui/issues/100).
+stopped service. The membership MOVES WITH THE GATE: its fifth member was
+**unavailable** until that constant was bound to a service that did not answer,
+which is something the gate never means, and it is **no low priority** now
+([ADR-0016](docs/adr/0016-unavailable-names-a-service-that-did-not-answer.md),
+[ADR-0017](docs/adr/0017-a-guard-behind-a-precondition-states-it-rather-than-re-asking-it.md)).
+The gate's three other host conditions are no longer members at all: `id`,
+`timeout` and `runuser` are established at startup, so a guard inside the gate
+states that precondition rather than asking it again.
 _Avoid_: exit code, error code — both also name what a binary returned, which is
 the thing this term exists to tell apart
 
@@ -491,13 +495,15 @@ A Zimbra service that a read needed and that did not answer — the mail service
 behind `zmprov` and `zmmailbox`, reached over SOAP. It is the code a read ends on
 when the command ran, failed, and nothing recognised why, and it is an ANSWER an
 operator acts on: the service is stopped, or the certificate that authenticates to
-it is not valid. It names one condition and no other; three groups of sites still
-borrow it for something else and each has a ticket
-([ADR-0016](docs/adr/0016-unavailable-names-a-service-that-did-not-answer.md)).
+it is not valid. It names one condition and no other, and every site that once
+borrowed it for something else now has a code of its own
+([ADR-0016](docs/adr/0016-unavailable-names-a-service-that-did-not-answer.md),
+[ADR-0017](docs/adr/0017-a-guard-behind-a-precondition-states-it-rather-than-re-asking-it.md)).
 _Avoid_: using it for anything the command did not reach — a scratch file that
-could not be created, a host missing a binary, a clock that answered nonsense. All
-three are conditions in which no service was ever asked. The first of them is
-answered — **no scratch file** is the code for it — and the other two have tickets
+could not be created, a system tool that gave no usable answer, a host that cannot
+reduce a process's priority. All three are conditions in which no service was ever
+asked, and each is answered by its own code: **no scratch file**, **no system
+tool**, **no low priority**
 _Avoid_: unreachable host — the host is this one, and it answered; what did not
 answer is a service running on it
 
@@ -527,9 +533,10 @@ needed, so the operation was NEVER STARTED. A **scratch file** is taken before
 anything is run — it is where a command's error stream is captured to — which puts
 this failure ahead of the exec gate: no binary was invoked, and there is nothing on
 the server to have changed. The repair is on THIS host, under `TMPDIR`. Of the four
-conditions that borrowed **unavailable**, it is the one no startup check could have
-retired: `TMPDIR` fills or goes read-only at minute forty of a session, and a check
-made before the menu was drawn would prove nothing about the read that follows
+conditions that borrowed **unavailable**, it is one of the two no startup check
+could have retired — the other is **no low priority** — because `TMPDIR` fills or
+goes read-only at minute forty of a session, and a check made before the menu was
+drawn would prove nothing about the read that follows
 ([ADR-0016](docs/adr/0016-unavailable-names-a-service-that-did-not-answer.md)).
 _Avoid_: unavailable — no Zimbra service was asked, so none of them is what failed
 to answer, and that reading is how an operator with a full `/tmp` came to be sent
@@ -538,6 +545,36 @@ _Avoid_: disk full — one cause among several. A `TMPDIR` that does not exist, 
 the account this runs as cannot write, or that is out of inodes produces the same
 condition, and a screen naming only the first would send an operator to check a
 number that is fine
+
+**No system tool**:
+The code a step ends on when a tool this host's OWN base tooling provides gave
+this program no usable answer — the clock behind every arrival window and every
+rotated log's year, and the `stat` behind the log inventory's modification times.
+It covers the tool that answered something that is not a time as well as the tool
+that is not there to ask, the way **no blob** already covers a file the store no
+longer has and one it will not open. The repair is on THIS host and in the tooling
+itself, which is installed rather than provisioned
+([ADR-0017](docs/adr/0017-a-guard-behind-a-precondition-states-it-rather-than-re-asking-it.md)).
+_Avoid_: unavailable — no Zimbra service was asked, so none of them is what failed
+to answer
+_Avoid_: no scratch file — the two are kept apart because the screen IS the repair:
+a scratch file sends an operator to `TMPDIR`, where they add space or fix a
+permission; a base tool that answered nonsense sends them to the tool, which is a
+different afternoon's work
+
+**No low priority**:
+The code an operation ends on when it must run at REDUCED PRIORITY and this host
+cannot reduce one, so it was refused rather than run at ordinary priority. Reduced
+priority is a promise this program makes to the server it is diagnosing — that a
+whole-file read yields to the mail — and an operation that cannot keep it is not
+the operation the operator was offered. It is decided per operation rather than per
+session, which is why no startup check retires it: a host without `nice` and
+`ionice` still answers every screen that does not reach for one
+([ADR-0016](docs/adr/0016-unavailable-names-a-service-that-did-not-answer.md),
+[ADR-0017](docs/adr/0017-a-guard-behind-a-precondition-states-it-rather-than-re-asking-it.md)).
+_Avoid_: slow, throttled — nothing ran, so nothing was slowed
+_Avoid_: scan refused — the low-priority list holds `grep` AND `gzip`, so a
+compressed message blob is refused by this too, and it is not a scan
 
 **Failure reader**:
 The part of a module that turns what ITS command printed into a code this program

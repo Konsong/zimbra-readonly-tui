@@ -68,20 +68,15 @@ zro_startup_check() {
     return "$ZRO_E_UNAVAILABLE"
   fi
 
-  local user
-  user=$(zro_current_user) || return "$ZRO_E_UNAVAILABLE"
-  if ! zro_identity_mode "$user" >/dev/null; then
-    zro_log error "Bu arac yalnizca zimbra veya root ile calisir (bulunan: $user)"
-    return "$ZRO_E_BADUSER"
-  fi
-
-  # Every screen is drawn on the controlling terminal. Without one there is
-  # nowhere to draw, and whiptail would wait on input nobody can give.
-  if [ "$ZRO_UI_BACKEND" != stub ] && ! { : >>"$ZRO_UI_TTY"; } 2>/dev/null; then
-    zro_log error "Terminale yazilamiyor ($ZRO_UI_TTY); bu arac etkilesimli bir terminal gerektirir"
-    return "$ZRO_E_UNAVAILABLE"
-  fi
-
+  # THE BINARIES THIS PROGRAM'S OWN PLUMBING NEEDS, ASKED BEFORE ANYTHING USES
+  # ONE. This block used to stand below the identity read, and its `id` entry was
+  # unreachable behind it: zro_current_user returns rather than answering on a
+  # host without `id`, so the one message that would have named the missing
+  # command could never print and the session ended on a bare number. The order is
+  # the fix. It also makes this the function that ESTABLISHES the precondition the
+  # rest of the tree states rather than re-asks — `timeout`, `id`, the clock and
+  # `stat` are guaranteed from here on, which is what lets the exec gate and the
+  # window module state that guarantee instead of testing it again. ADR-0017.
   local missing=""
   [ -n "$ZRO_TIMEOUT_BIN" ] || missing="$missing timeout"
   [ -n "$ZRO_ID_BIN" ] || missing="$missing id"
@@ -91,11 +86,46 @@ zro_startup_check() {
   # operator would have to work back from.
   [ -n "$ZRO_DATE_BIN" ] || missing="$missing date"
   [ -n "$ZRO_STAT_BIN" ] || missing="$missing stat"
-  if [ "$(zro_identity_mode "$user")" = runuser ] && [ -z "$ZRO_RUNUSER" ]; then
-    missing="$missing runuser"
+
+  # STILL ONE MESSAGE, WHICH IS WHY THE ACCOUNT IS READ HERE RATHER THAN BELOW.
+  # Whether this session needs `runuser` at all is a question about the account it
+  # runs as, so it cannot be asked before that account is known — and the account
+  # cannot be asked for without `id`. Read here, guarded by the entry above, so
+  # that a host missing `date` AND `runuser` is told both at once. Reporting them
+  # one restart apart would be two trips to the server for one repair.
+  #
+  # A HOST WITH NO id KEEPS ITS PLACE IN THE LIST. That is the whole point of the
+  # order: the guarantee this function establishes is what the rest of the tree
+  # states rather than re-asks, so the message that names the binary has to be
+  # reachable. It was not, while the account was read first.
+  # A READ THAT FAILS WITH THE BINARY PRESENT IS NOT A MISSING BINARY, so it does
+  # not join the list: `id` is there and would not run, which no entry naming a
+  # command describes. It ends the session the way it always has, rather than
+  # falling through to the identity check below — an account this tool refuses to
+  # run as is a different answer, and it would be reported here as the empty name
+  # the failed read left behind.
+  local user=""
+  if [ -n "$ZRO_ID_BIN" ]; then
+    user=$(zro_current_user) || return "$ZRO_E_UNAVAILABLE"
+    if [ "$(zro_identity_mode "$user")" = runuser ] && [ -z "$ZRO_RUNUSER" ]; then
+      missing="$missing runuser"
+    fi
   fi
+
   if [ -n "$missing" ]; then
     zro_log error "Gerekli sistem komutlari bulunamadi:$missing"
+    return "$ZRO_E_UNAVAILABLE"
+  fi
+
+  if ! zro_identity_mode "$user" >/dev/null; then
+    zro_log error "Bu arac yalnizca zimbra veya root ile calisir (bulunan: $user)"
+    return "$ZRO_E_BADUSER"
+  fi
+
+  # Every screen is drawn on the controlling terminal. Without one there is
+  # nowhere to draw, and whiptail would wait on input nobody can give.
+  if [ "$ZRO_UI_BACKEND" != stub ] && ! { : >>"$ZRO_UI_TTY"; } 2>/dev/null; then
+    zro_log error "Terminale yazilamiyor ($ZRO_UI_TTY); bu arac etkilesimli bir terminal gerektirir"
     return "$ZRO_E_UNAVAILABLE"
   fi
 
@@ -321,8 +351,8 @@ EOF
   # Both readings are taken once, here, and handed to a pure function. Asking the
   # clock twice inside the arithmetic would let a window straddle midnight while
   # it was being computed.
-  now=$(zro_win_now) || return "$ZRO_E_UNAVAILABLE"
-  day_start=$(zro_win_day_start "$now") || return "$ZRO_E_UNAVAILABLE"
+  now=$(zro_win_now) || return $?
+  day_start=$(zro_win_day_start "$now") || return $?
   # An id the window module does not implement is refused by it, not by a second
   # list here that would have to be kept in step with the first.
   zro_win_preset "$choice" "$now" "$day_start" || return "$ZRO_E_INPUT"
@@ -533,6 +563,64 @@ bu nedenle islem hic baslatilmadi.
 Sunucuda hicbir komut calistirilmadi ve hicbir sey degismedi.
 
 $ZRO_TXT_NO_SCRATCH" ;;
+    # NOTHING RAN, AND THAT IS THE FIRST THING THIS SCREEN HAS TO SAY. The gate
+    # refuses an operation it cannot run at reduced priority rather than running it
+    # at ordinary priority, so an operator who reads this as "it ran, just slowly"
+    # has been told the opposite of what happened.
+    #
+    # WHY IT WAS REFUSED IS THE SECOND. Reduced priority is a promise this tool
+    # makes to the server it is diagnosing — a whole-file read yields to the mail —
+    # and running the read anyway would be this tool taking the disk from the mail
+    # server it was opened to diagnose, silently.
+    #
+    # WHERE THE REPAIR IS: nice and ionice, on this host. That is the whole
+    # difference between this screen and a bare number, and it is why this arm
+    # exists rather than the Zimbra one, which used to answer here and sent an
+    # operator to check mailboxd and a certificate for two missing binaries.
+    #
+    # IT MAY NOT CALL THIS A SCAN. ZRO_LOW_PRIORITY holds grep AND gzip, so a
+    # compressed message blob is refused by this same arm, and a screen about log
+    # scans would be false on that path. ADR-0008 and ADR-0017.
+    #
+    # NO KEPT MESSAGE, for the reason the two arms above give: nothing was run, so
+    # anything in that file belongs to an earlier screen.
+    "$ZRO_E_NO_LOW_PRIORITY")
+      zro_ui_msgbox "Dusuk oncelikle calistirilamiyor" \
+"Bu islem yalnizca DUSUK ONCELIKLE calistirilir; bu sunucuda onceligi
+dusuren komutlar bulunamadi, bu nedenle islem HIC CALISTIRILMADI.
+
+Yavas calisti demek degildir: hicbir sey calismadi ve hicbir sey okunmadi.
+Bu arac, tanilamak icin acildigi posta sunucusundan diski almamak icin boyle
+davranir.
+
+Eksik olan komutlar: nice ve ionice. Ikisi de bu sunucuda kurulu olmalidir." ;;
+    # THE BASE TOOLING OF THIS HOST GAVE NO USABLE ANSWER — the clock behind every
+    # arrival window and every rotated log's year, or the stat behind the log
+    # inventory's modification times. Its own screen rather than the Zimbra one,
+    # which is written for a service that did not answer: no service was asked on
+    # any of these paths, and an operator whose host has a broken clock was being
+    # sent to check mailboxd and the admin certificate. ADR-0016 and ADR-0017.
+    #
+    # IT COVERS BOTH a tool that is not there and one that answered something this
+    # program cannot use, because THE REPAIR IS THE SAME and the repair is what
+    # this screen is for: the tooling on this host, which is installed rather than
+    # provisioned. Not TMPDIR, which is where the scratch-file screen above sends
+    # its operator, and not Zimbra.
+    #
+    # NO KEPT MESSAGE: these tools' own words never reach this program — it reads
+    # their output and finds it unusable — so whatever is in that file belongs to
+    # an earlier screen.
+    "$ZRO_E_NO_SYSTEM_TOOL")
+      zro_ui_msgbox "Sistem araci yanit vermedi" \
+"Bu sunucunun kendi temel araclarindan biri kullanilabilir bir yanit vermedi,
+bu nedenle islem tamamlanamadi.
+
+Hicbir Zimbra servisine baglanilmadi: sorun bu sunucunun kendi araclarinda.
+Zaman araliklari ve log dosyalarinin tarihleri date komutuyla, log
+dosyalarinin degisiklik zamanlari stat komutuyla okunur.
+
+Bu iki komutun bu sunucuda kurulu oldugunu ve dogru calistigini kontrol edin;
+'date' komutunu tek basina calistirmak cogu durumda yeterlidir." ;;
     *)                   zro_ui_msgbox "Hata" "Islem basarisiz (kod $1).$detail" ;;
   esac
 }
@@ -1757,11 +1845,12 @@ zro_screen_trace() {
     # simply reappearing, which reads like the tool ignoring them.
     #
     # The clock is named rather than passed to the shared reporter, because the
-    # only thing in that prompt which can be unavailable is the clock, and the
-    # shared message for that code talks about the mailbox service.
+    # only base tool that prompt reaches for is the clock, and this screen can
+    # therefore say which one it was and what the window was for. The shared arm
+    # for the code names the tooling in general, which is all it can know.
     case $rc in
       "$ZRO_E_CANCEL"|"$ZRO_E_INPUT") ;;
-      "$ZRO_E_UNAVAILABLE")
+      "$ZRO_E_NO_SYSTEM_TOOL")
         zro_ui_msgbox "Saat okunamadi" \
 "Sistem saati okunamadi, bu nedenle varis araligi hesaplanamadi.
 
@@ -2009,7 +2098,13 @@ Islem kesildi ve dosyaya DOKUNULMADI. Gerekirse ZRO_TIMEOUT degerini
 yukseltip yeniden deneyin."
       continue
     fi
-    if [ "$rc" -eq "$ZRO_E_UNAVAILABLE" ] && ! zro_cap_search_available; then
+    # THE CODE SAYS IT NOW, so the capability is not consulted a second time. This
+    # read `rc is unavailable AND this host has no priority tools`, because the
+    # constant it tested also meant a Zimbra service that did not answer and the
+    # second half was the only thing telling the two apart. ADR-0017 gave the
+    # refusal a code of its own, and a call site that went on asking would be
+    # ranking the same fact twice — the shape ADR-0012 is about.
+    if [ "$rc" -eq "$ZRO_E_NO_LOW_PRIORITY" ]; then
       # A COMPRESSED FILE IS THE ONE THING THIS SCREEN READS AT REDUCED PRIORITY.
       # Decompressing a rotated log is the same disk and the same processor
       # whether a search or this screen asked for it, so the gate wraps it — and a
@@ -2343,10 +2438,10 @@ zro_screen_logsearch_do() {
   if [ "$rc" -ne 0 ]; then
     # Cancel is navigation, and a rejected date has already been shown on its own
     # screen. The clock is named rather than passed to the shared reporter,
-    # because the only thing in that prompt which can be unavailable is the clock.
+    # because the only base tool that prompt reaches for is the clock.
     case $rc in
       "$ZRO_E_CANCEL"|"$ZRO_E_INPUT") ;;
-      "$ZRO_E_UNAVAILABLE")
+      "$ZRO_E_NO_SYSTEM_TOOL")
         zro_ui_msgbox "Saat okunamadi" \
 "Sistem saati okunamadi, bu nedenle aralik hesaplanamadi.
 
@@ -2472,10 +2567,14 @@ GOSTERMEZ: tarama yarim kaldi.
 Araligi daraltip yeniden deneyin, ya da ZRO_TIMEOUT degerini yukseltin."
     return 0
   fi
-  if [ "$rc" -eq "$ZRO_E_UNAVAILABLE" ] && ! zro_cap_search_available; then
+  if [ "$rc" -eq "$ZRO_E_NO_LOW_PRIORITY" ]; then
     # The host lost the priority tools between the menu being drawn and the scan
     # being run, or the operator started the tool on a host that never had them.
     # Either way this is the screen that names the repair.
+    #
+    # The capability is not consulted alongside the code, for the reason written
+    # out at the compressed-file read above: since ADR-0017 the code is the answer
+    # to that question rather than a number needing one.
     zro_logsearch_unavailable
     return 0
   fi

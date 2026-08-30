@@ -151,8 +151,22 @@ assert_eq "$out" ""
 it "refuses to answer at all when it cannot read a modification time"
 # An empty inventory here would be indistinguishable from a host with no logs,
 # which is the ambiguity this whole feature exists to remove.
-rc=0; ( ZRO_STAT_BIN=''; zro_inv_discover syslog ) >/dev/null 2>&1 || rc=$?
-assert_eq "$rc" "$ZRO_E_UNAVAILABLE"
+#
+# THE GUARD THAT IS KEPT THOUGH THE PREFLIGHT ESTABLISHES stat, and this case is
+# what says why: deleting it would not propagate a failure. zro_inv_mtime prints
+# nothing without stat, every candidate is then skipped, and the loop ends on
+# success — an empty inventory, which a delivery trace reports as a quiet day.
+# So the answer asserted here is BOTH that it failed and that it emitted nothing
+# that could be read as an inventory. ADR-0017.
+rc=0; out=$( ( ZRO_STAT_BIN=''; zro_inv_discover syslog ) 2>/dev/null ) || rc=$?
+assert_eq "$rc" "$ZRO_E_NO_SYSTEM_TOOL"
+assert_eq "$out" ""
+
+it "and it says so on the log rather than failing silently"
+# The other half of the same guard. A code alone leaves the operator with a
+# number; the line names the command that is missing.
+err=$( { ( ZRO_STAT_BIN=''; zro_inv_discover syslog ) >/dev/null; } 2>&1 )
+assert_contains "$err" "stat"
 
 it "hands selection exactly what it read, with no reshaping in between"
 # The two halves composed: the operator's window is the afternoon of the 28th, so

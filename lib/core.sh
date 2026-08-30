@@ -32,12 +32,13 @@ ZRO_E_PERM=20
 #
 # NOT A COMMAND THAT RAN AND FAILED for a reason nothing recognised. That reading
 # is how an operator whose zmcontrol status had just failed was told to go and run
-# zmcontrol status, and it is why the two sinks have codes of their own. The sites
-# that still borrow this one for something the command never reached — a binary
-# the gate's own plumbing needs, a system tool that answered nonsense — are
-# violations with tickets rather than readings of it. The scratch file was the
-# third and has ZRO_E_NO_SCRATCH below. ADR-0016 binds the term and CONTEXT.md
-# carries it under 'Unavailable'.
+# zmcontrol status, and it is why the two sinks have codes of their own. Every
+# site that once borrowed this one for something the command never reached now has
+# a code of its own: a scratch file it could not create is ZRO_E_NO_SCRATCH, a
+# system tool that gave no usable answer is ZRO_E_NO_SYSTEM_TOOL, and a host that
+# cannot reduce a process's priority is ZRO_E_NO_LOW_PRIORITY, all three below.
+# ADR-0016 binds the term, ADR-0017 closed the last of the borrowings, and
+# CONTEXT.md carries it under 'Unavailable'.
 ZRO_E_UNAVAILABLE=21
 ZRO_E_TIMEOUT=22
 ZRO_E_NO_LOG=23
@@ -83,17 +84,53 @@ ZRO_E_NO_QUEUE=26
 # It is not one of the three the gate keeps for a defect in this tool either — 90,
 # 91 and 92 each name a refusal that did not happen here: no list refused this, no
 # user was wrong, no binary was missing. lib/settle.sh states that rule in full.
-# IT DOES NOT COVER THE SYSTEM TOOLS, which are the other condition that borrows
-# the constant above and are issue 101's to decide. The two are kept apart because
-# THE REPAIRS DIFFER AND THE SCREEN IS THE REPAIR: a scratch file sends an
-# operator to TMPDIR on this host, where they add space or fix a permission; a
-# clock or a formatter that answered nonsense sends them to the tool itself, which
-# is installed rather than provisioned and is a different afternoon's work. A code
-# broad enough for both would name neither, which is the disease ADR-0016 treats.
-# THE ONE BORROWER OF THE OLD CONSTANT THAT NO PREFLIGHT CAN RETIRE: TMPDIR fills
-# or goes read-only at minute forty of a session, and a check at startup would
-# prove nothing about the read that follows. ADR-0016 and issue 99.
+# IT DOES NOT COVER THE SYSTEM TOOLS, which have ZRO_E_NO_SYSTEM_TOOL below. The
+# two are kept apart because THE REPAIRS DIFFER AND THE SCREEN IS THE REPAIR: a
+# scratch file sends an operator to TMPDIR on this host, where they add space or
+# fix a permission; a clock or a formatter that answered nonsense sends them to
+# the tool itself, which is installed rather than provisioned and is a different
+# afternoon's work. A code broad enough for both would name neither, which is the
+# disease ADR-0016 treats and ADR-0017 settled.
+# ONE OF THE TWO BORROWERS OF THE OLD CONSTANT THAT NO PREFLIGHT CAN RETIRE:
+# TMPDIR fills or goes read-only at minute forty of a session, and a check at
+# startup would prove nothing about the read that follows. The other is the
+# reduced priority below. ADR-0016 and issue 99.
 ZRO_E_NO_SCRATCH=27
+# What an operation ends on when it MUST RUN AT REDUCED PRIORITY and this host
+# cannot reduce one, so the gate refused it rather than running it at ordinary
+# priority. What could not be had is not the binary but the PROMISE — that a
+# whole-file read yields to the mail — which is why it is not called NO_NICE: the
+# same discipline that keeps ZRO_E_NO_QUEUE from being called NO_POSTQUEUE, and
+# the one ADR-0016 enforced when it refused a name that made a claim of its own.
+# NOTHING RAN. The refusal happens while the command is still being built, so an
+# operator who reads this as 'it ran, just slowly' has been told the opposite of
+# what happened, and the screen for it says so outright.
+# IT IS NOT A SCAN REFUSAL. ZRO_LOW_PRIORITY holds grep AND gzip, so ADR-0008's
+# compressed blob read is refused by the same arm, and a name mentioning scans
+# would be false on that path.
+# THE OTHER BORROWER OF THE CONSTANT ABOVE THAT NO PREFLIGHT CAN RETIRE, and
+# deliberately so: priority is decided per operation, so a host without nice and
+# ionice still answers every screen that does not reach for one. Refusing the
+# whole session for it would take away far more than it protects. ADR-0017.
+ZRO_E_NO_LOW_PRIORITY=28
+# What a step ends on when THIS HOST'S OWN BASE TOOLING GAVE THIS PROGRAM NO
+# USABLE ANSWER — the clock behind every arrival window and every rotated log's
+# year, and the stat behind the log inventory's modification times.
+# IT COVERS BOTH the tool that answered something that is not a time and the tool
+# that is not there to ask, which is the reading NO_ already has in this band:
+# ZRO_E_NO_BLOB above means a file the store no longer has OR one the account
+# every command runs as cannot open. One code and not two, although a clock
+# talking nonsense and an absent stat are different conditions, because THE REPAIR
+# IS THE SAME AFTERNOON'S WORK IN THE SAME PLACE, and the repair is what a code
+# has to be true about.
+# It is not ZRO_E_NO_SCRATCH, and the two are kept apart because THE SCREEN IS THE
+# REPAIR: a scratch file sends an operator to TMPDIR on this host, where they add
+# space or fix a permission, while this one sends them to the tooling itself,
+# which is installed rather than provisioned. A code broad enough for both would
+# name neither. It is not ZRO_E_UNAVAILABLE for the reason the sinks above are
+# not — no Zimbra service was asked, so none of them is what failed to answer.
+# ADR-0017.
+ZRO_E_NO_SYSTEM_TOOL=29
 # Partial. The operation ran and answered, but not from everything it was meant to
 # read: a delivery trace whose arrival window selected a log file it could not open,
 # or a bulk read that could not reach every account. Never returned without saying
@@ -156,9 +193,14 @@ zro_clock_fmt() {
   local fmt=${1-} ts=${2-} out
   [ -n "$fmt" ] || return "$ZRO_E_INPUT"
   case $ts in ''|*[!0-9]*) return "$ZRO_E_INPUT" ;; esac
-  [ -n "$ZRO_DATE_BIN" ] || return "$ZRO_E_UNAVAILABLE"
-  out=$("$ZRO_DATE_BIN" -d "@$ts" "+$fmt" 2>/dev/null) || return "$ZRO_E_UNAVAILABLE"
-  [ -n "$out" ] || return "$ZRO_E_UNAVAILABLE"
+  # THAT THERE IS A CLOCK ON THIS HOST IS ESTABLISHED BY zro_startup_check, which
+  # refuses to open a session without `date` and names it in the message. Not
+  # re-asked here: the answer this guard used to give was ZRO_E_UNAVAILABLE, which
+  # sent an operator to check mailboxd for a binary that is not installed, and a
+  # guard standing behind a precondition states it rather than asking it again.
+  # ADR-0014 sets the shape and ADR-0017 applies it here.
+  out=$("$ZRO_DATE_BIN" -d "@$ts" "+$fmt" 2>/dev/null) || return "$ZRO_E_NO_SYSTEM_TOOL"
+  [ -n "$out" ] || return "$ZRO_E_NO_SYSTEM_TOOL"
   printf '%s' "$out"
 }
 
