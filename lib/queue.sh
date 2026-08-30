@@ -226,11 +226,18 @@ zro_queue_refused() {
 # stdout is whatever the tool printed, unread: what it means is decided by the
 # renderers above, and an empty queue is an answer rather than a failure.
 #
-# FOUR FAILURES, TOLD APART. A tool this build does not have is the gate's
-# $ZRO_E_NOCAP and stays that; a refusal by the host's own access-control setting
-# becomes $ZRO_E_PERM and is remembered for the session, so the menu can say so
-# before an operator spends another one; a timeout is the gate's and travels as
-# itself; anything else is a queue that could not be read.
+# FOUR FAILURES, TOLD APART, AND THE GATE ASKED FIRST. A status the gate produced
+# itself — a tool this build does not have, a timeout, a denial — travels out as
+# itself, and the predicate that says which those are is asked BEFORE anything
+# else looks at the status, which is where ADR-0012 puts it. A refusal by the
+# host's own access-control setting becomes $ZRO_E_PERM and is remembered for the
+# session, so the menu can say so before an operator spends another one; anything
+# else is a queue that could not be read.
+#
+# THE PREDICATE SITS ABOVE THE HOST'S REFUSAL and nothing observable turns on it:
+# Postfix answers 69 for that refusal and no code the gate produces is 69, so the
+# two cannot collide. What is gained is that the rule can be SEEN here rather than
+# re-derived from the numbers.
 zro_queue_fetch() {
   local out err rc=0 said
   err=$(zro_tmpfile) || return "$ZRO_E_UNAVAILABLE"
@@ -240,6 +247,11 @@ zro_queue_fetch() {
 
   if [ "$rc" -ne 0 ]; then
     [ -z "$said" ] || zro_set_error "$said"
+    # ASKED OF THE GATE, BEFORE ANYTHING ELSE READS THE STATUS. What stood below
+    # was a case naming four of the gate's five codes and using the fifth as the
+    # sink — a copy of a fact about zro_exec's return set, kept in this file, that
+    # would go stale silently the day the gate gains a sixth code.
+    zro_exec_own_code "$rc" && return "$rc"
     if zro_queue_refused "$rc" "$said"; then
       # Recorded rather than only reported: the menu marks this entry from the
       # capability module, and a refusal learned by running the tool is the only
@@ -250,12 +262,13 @@ zro_queue_fetch() {
       zro_log warn "mail queue refused by the host's own access-control setting"
       return "$ZRO_E_PERM"
     fi
-    case $rc in
-      "$ZRO_E_DENIED"|"$ZRO_E_BADUSER"|"$ZRO_E_NOCAP"|"$ZRO_E_TIMEOUT")
-        return "$rc" ;;
-    esac
+    # WHAT COULD NOT BE READ IS THE QUEUE. Not $ZRO_E_UNAVAILABLE, which names a
+    # Zimbra service a read needed and that did not answer: its screen sends the
+    # operator to check the mail service and the admin certificate, and this
+    # command reaches no ZIMBRA service at all — it reads Postfix's own queue on
+    # this host, so where to look for it is Postfix. ADR-0016.
     zro_log warn "mail queue unreadable (${said:-no message on stderr})"
-    return "$ZRO_E_UNAVAILABLE"
+    return "$ZRO_E_NO_QUEUE"
   fi
   zro_clear_error
   printf '%s' "$out"

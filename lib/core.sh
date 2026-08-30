@@ -58,6 +58,17 @@ ZRO_E_NO_BLOB=24
 # zmcontrol status that failed sends them to the Zimbra control plane and the
 # directory, and one code shared between them would be true about neither.
 ZRO_E_NO_STATUS=25
+# What the MAIL QUEUE read ends on when postqueue ran and failed for a reason
+# nothing above it recognised. Its own code rather than the one above, for the
+# reason the log and the blob are kept apart: the two name different tools with
+# different repairs. postqueue reads Postfix's own queue on this host and reaches
+# no ZIMBRA service — the qualifier is the claim, since it does speak to a Postfix
+# daemon of its own — so where to look for it is Postfix; zmcontrol status sends
+# an operator to the Zimbra control plane and the directory instead. One code
+# shared between them would be true about neither.
+# It is not ZRO_E_UNAVAILABLE for the same reason that one is not: no Zimbra
+# service was asked, so none of them is what failed to answer.
+ZRO_E_NO_QUEUE=26
 # Partial. The operation ran and answered, but not from everything it was meant to
 # read: a delivery trace whose arrival window selected a log file it could not open,
 # or a bulk read that could not reach every account. Never returned without saying

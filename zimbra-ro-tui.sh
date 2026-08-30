@@ -428,6 +428,37 @@ Servisler hakkinda HICBIR SEY ogrenilemedi: bu ekran hicbir servisin durdugunu
 ya da eksik oldugunu SOYLEMEZ, yalnizca durumun okunamadigini soyler.
 
 Ne oldugunu anlamak icin komutun kendi ciktisina ve arac gunlugune bakin.$detail" ;;
+    # THE OTHER COMMAND THAT RAN AND FAILED, and the reason it does not share the
+    # arm above. postqueue reads Postfix's own queue on this host: it opens no
+    # SOAP connection, reaches no mailboxd and presents no certificate, so the
+    # screen two arms up would send this operator to a subsystem the failed
+    # command never touched. Where to look is Postfix, and this arm is where that
+    # is said. ADR-0016.
+    #
+    # NO ZIMBRA SERVICE, rather than no service — the qualifier is the claim, and
+    # CONTEXT.md carries it under 'Queue unreadable' in those words. postqueue
+    # does reach a Postfix daemon of its own to read the queue; what it reaches
+    # nothing of is the mail service this program's other screens are about.
+    #
+    # ITS OWN HEADING FOR THE KEPT MESSAGE, for the reason zro_error_detail gives:
+    # the heading is the caller's because what said it differs. 'Zimbra ciktisi'
+    # over Postfix's words would put the operator back in the subsystem this arm
+    # has just taken them out of.
+    #
+    # WHAT WAS NOT LEARNED IS SAID OUTRIGHT, as it is above. An operator who reads
+    # 'kuyruk okunamadi' and takes it for an empty queue has been told the opposite
+    # of what happened — the queue is the one thing this program knows nothing
+    # about here.
+    "$ZRO_E_NO_QUEUE")
+      zro_ui_msgbox "Mail kuyrugu okunamadi" \
+"postqueue calisti ve basarisiz oldu; mail kuyrugu okunamadi.
+
+Kuyruk hakkinda HICBIR SEY ogrenilemedi: bu ekran kuyrugun bos oldugunu
+SOYLEMEZ, yalnizca okunamadigini soyler. Kuyruga DOKUNULMADI.
+
+postqueue Postfix'in bu sunucudaki kuyrugunu okur; hicbir Zimbra servisine
+baglanmaz. Aranacak yer bu nedenle Postfix tarafidir. Ne oldugunu anlamak icin
+komutun kendi ciktisina ve arac gunlugune bakin.$(zro_error_detail 'Postfix ciktisi')" ;;
     *)                   zro_ui_msgbox "Hata" "Islem basarisiz (kod $1).$detail" ;;
   esac
 }

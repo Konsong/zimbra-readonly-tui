@@ -88,6 +88,17 @@ queue_refused() {
   export ZRO_MOCK_POSTQUEUE__P_RC=69
 }
 no_queue_tool() { export ZRO_CAP_FORCE_QUEUE_BIN=no; }
+# The tool ran, failed, and said something nothing in this program has a reading
+# for. Synthetic for the reason the status one above is: no capture of this
+# failure exists, and what the case is about is the CODE the read ends on rather
+# than the sentence that produced it. Its status is 1 rather than 69, which is the
+# one status this module reads as the host's own refusal.
+unreadable_queue() {
+  export ZRO_CAP_FORCE_QUEUE_BIN=yes
+  unset ZRO_MOCK_POSTQUEUE__P_OUT
+  export ZRO_MOCK_POSTQUEUE__P_ERR="$FIX/postqueue_p_synthetic_unclassified.err"
+  export ZRO_MOCK_POSTQUEUE__P_RC=1
+}
 
 # --------------------------------------------------------------- the entries --
 
@@ -261,6 +272,61 @@ queue_empty
 queue "mail-queue" "detail" "__CANCEL__" "__CANCEL__"
 run
 assert_contains "$(transcript)" "gosterilecek kayit yok"
+
+it "a queue read that ran and failed says so, and shows what it said"
+# THE THIRD WAY THIS READ CAN FAIL, and the one no case asked about. It used to
+# end on $ZRO_E_UNAVAILABLE, whose one screen opens by explaining that zmprov
+# connects to mailboxd over SOAP — and postqueue reads Postfix's own queue on this
+# host, reaching no Zimbra service at all. ADR-0016.
+healthy_server; unreadable_queue
+queue "mail-queue" "__CANCEL__"
+run
+out=$(transcript)
+# ASKED OF THE SENTENCE THE ARM WRITES, not of the word postqueue, which the kept
+# stderr puts on the screen whichever arm drew it — including the one this change
+# moved off.
+assert_contains "$out" "postqueue calisti ve basarisiz oldu"
+assert_contains "$out" "no reading for"
+
+it "and what said it is named as Postfix, not as Zimbra"
+# The heading over the kept message is the caller's, for the reason
+# zro_error_detail gives: what said it differs. Labelling Postfix's own words
+# 'Zimbra ciktisi' would put the operator back in the subsystem this screen has
+# just taken them out of.
+assert_contains "$out" "Postfix ciktisi"
+assert_not_contains "$out" "Zimbra ciktisi"
+
+it "and it does not let the failure be read as an empty queue"
+# The opposite answer, and the one an operator would act on. A queue with nothing
+# in it has its own screen; this one knows nothing about the queue at all.
+assert_contains "$out" "HICBIR SEY"
+assert_not_contains "$out" "Kuyruk bos"
+assert_not_contains "$out" "Kuyruktaki kayit"
+
+it "and it sends the operator to Postfix rather than to Zimbra"
+# Where to look for a postqueue that failed is Postfix. Every repair the screen
+# this read used to end on names is somewhere else entirely, and an operator who
+# went looking there would find nothing wrong with any of them.
+assert_not_contains "$out" "mailboxd"
+assert_not_contains "$out" "SOAP"
+assert_not_contains "$out" "zmcertmgr"
+
+it "and it is neither the missing-tool screen nor the host's refusal"
+# Both of those name a repair — a package, a setting — and neither is what
+# happened. The tool is here and the host did not refuse.
+assert_not_contains "$out" "zimbra-mta"
+assert_not_contains "$out" "authorized_mailq_users"
+assert_not_contains "$out" "izin listesinde degil"
+
+it "and the entry is not marked afterwards, because nothing was learned about the host"
+# The host's refusal is recorded and marks the entry for the rest of the session.
+# A failure nobody has a reading for is not that: it may be gone on the next
+# attempt, and marking the entry would take the screen away over a guess.
+assert_contains "$(entries)" "mail-queue"
+assert_not_contains "$(entries)" "iletiler) - "
+
+it "and the menu comes back rather than the tool stopping"
+assert_contains "$out" "MENU Ana menu"
 
 # ------------------------------- the two ways this host can have no queue --
 

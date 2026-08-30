@@ -590,7 +590,10 @@ done
 
 it "the queue module reaches no Zimbra binary, and no second path to its own"
 queue=$(zro_scan_file "$ZRO_SRC/lib/queue.sh")
-assert_eq "$(printf '%s\n' "$queue" | grep -cE 'zro_exec')" "1"
+# ONE CALL, counted as a call, on the terms the service module below is counted
+# on: zro_exec_own_code names the gate and runs nothing, so it is not a second
+# path to the binary and a count of the bare name would report it as one.
+assert_eq "$(printf '%s\n' "$queue" | grep -cE 'zro_exec([[:space:]]|$)')" "1"
 assert_not_contains "$queue" "zmprov"
 assert_not_contains "$queue" "zmmailbox"
 assert_not_contains "$queue" "zmcontrol"
@@ -1285,7 +1288,7 @@ assert_eq "$(printf '%s\n' "$raw_code" | grep 'zro_list_position' \
 # THE QUESTION IS THE ARM AND NOT THE SCREEN, because zro_report_error ends in a
 # generic arm that catches everything: asked whether a code reaches a screen at
 # all, every code that will ever exist answers yes, and what the operator reads is
-# "Islem basarisiz (kod 25)". That is how a code the two host screens both fell
+# "Islem basarisiz (kod 26)". That is how a code the two host screens both fell
 # back to survived twenty-four cases written about those screens, and how an
 # operator whose zmcontrol status had just failed came to be told that zmprov
 # connects to mailboxd over SOAP. See docs/adr/0016.
@@ -1314,10 +1317,10 @@ ZRO_E_BADUSER:reaches an operator as a bare number today, and has issue 102
 # FOUR WAYS AN ARM CAN SPEAK, and they are the whole test: a UI box, a screen
 # function, a card or a message printed for a caller to show. Every arm in this
 # tree that names a code and does none of them is a mapping — the gate's own
-# predicate, the queue's remaining list, the two store arms that set a variable —
-# and none of those is a screen. That is a fact about the tree rather than a
-# guarantee about it: an arm that printed something no operator reads would be
-# counted here, and what this pin is for is the code nobody wrote an arm for.
+# predicate and the two store arms that set a variable — and none of those is a
+# screen. That is a fact about the tree rather than a guarantee about it: an arm
+# that printed something no operator reads would be counted here, and what this
+# pin is for is the code nobody wrote an arm for.
 #
 # THE COMMENTS ARE STRIPPED AND THE QUOTES ARE NOT, which is the opposite of what
 # every other case here reads. An arm's pattern IS a quoted span, so the view with
@@ -1397,9 +1400,9 @@ assert_eq "$bare_reason" ""
 it "and the scan found arms rather than agreeing with an empty answer"
 # Without these two the equality above passes on a scan that matched nothing at
 # all: every code would be screenless and the declaration would just have to be
-# longer. Eighteen codes are defined and fifteen have an arm of their own.
-assert_eq "$(printf '%s\n' "$defined_codes" | grep -c .)" "18"
-assert_eq "$(printf '%s\n' "$screened_codes" | grep -c .)" "15"
+# longer. Nineteen codes are defined and sixteen have an arm of their own.
+assert_eq "$(printf '%s\n' "$defined_codes" | grep -c .)" "19"
+assert_eq "$(printf '%s\n' "$screened_codes" | grep -c .)" "16"
 
 it "and it reaches the modules, not the entry point alone"
 assert_eq "$(printf '%s\n' "$code_screens" | awk '$1 == "ZRO_E_NO_BLOB" {print $2}' \
