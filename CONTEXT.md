@@ -457,13 +457,17 @@ _Avoid_: error code, status, failure reason
 
 **The gate's own code**:
 One of the five statuses `zro_exec` produces instead of running a command, or in
-place of the one it got — a denial, a wrong user, a missing binary, a host that
-cannot be reached, a timeout. It describes THIS TOOL or the host it is pointed at,
+place of the one it got — a denial, a wrong user, a gated binary this host does
+not have, a host missing a binary the gate's own plumbing needs, a timeout. It
+describes THIS TOOL or the host it is pointed at,
 never the command, and it reaches the operator unchanged. Whether a status is one
 is asked of the gate, which owns the predicate
 ([ADR-0010](docs/adr/0010-the-gate-owns-the-predicate-and-one-settler-asks-it.md));
 a module that answers it for itself is how a denial once reached a screen as a
-stopped service.
+stopped service. Its fifth member currently borrows **unavailable**, which since
+[ADR-0016](docs/adr/0016-unavailable-names-a-service-that-did-not-answer.md) names
+something the gate never means; what that member should be called instead is
+[#100](https://github.com/Konsong/zimbra-readonly-tui/issues/100).
 _Avoid_: exit code, error code — both also name what a binary returned, which is
 the thing this term exists to tell apart
 
@@ -481,6 +485,40 @@ one is how an account that has never been used gets reported as a stopped servic
 _Avoid_: verdict — the verdict is the WORD the gate reached, one of `exists`,
 `nomailbox`, `noaccount`; the refusal is the code a caller is answered with, and
 `exists` has none
+
+**Unavailable**:
+A Zimbra service that a read needed and that did not answer — the mail service
+behind `zmprov` and `zmmailbox`, reached over SOAP. It is the code a read ends on
+when the command ran, failed, and nothing recognised why, and it is an ANSWER an
+operator acts on: the service is stopped, or the certificate that authenticates to
+it is not valid. It names one condition and no other; four groups of sites still
+borrow it for something else and each has a ticket
+([ADR-0016](docs/adr/0016-unavailable-names-a-service-that-did-not-answer.md)).
+_Avoid_: using it for anything the command did not reach — a scratch file that
+could not be created, a host missing a binary, a clock that answered nonsense. All
+three are conditions in which no service was ever asked
+_Avoid_: unreachable host — the host is this one, and it answered; what did not
+answer is a service running on it
+
+**Queue unreadable**:
+The code the mail queue read ends on when the queue tool ran and failed for a
+reason nothing above it recognised. Its own code rather than **unavailable**
+because `postqueue` reaches no ZIMBRA service — no SOAP, no mailboxd — so the
+repair is in Postfix and not in Zimbra. Beside **status
+unreadable** and deliberately not folded into it, for the reason `ZRO_E_NO_LOG`
+and `ZRO_E_NO_BLOB` are kept apart: the two name different tools with different
+repairs.
+_Avoid_: empty queue — a queue with nothing in it is an ANSWER, arrives with a
+successful status, and has its own screen saying what it does not prove
+
+**Status unreadable**:
+The code the service-status read ends on when `zmcontrol status` ran and failed
+for a reason nothing above it recognised. What could not be read is the STATUS;
+this program has learned nothing at all about the services themselves.
+_Avoid_: no service, service missing, services down — the most alarming reading
+available on that screen and the one thing this code does not say. The card
+already refuses to invent it, and the code's name may not make the claim the card
+refuses to make
 
 **Failure reader**:
 The part of a module that turns what ITS command printed into a code this program

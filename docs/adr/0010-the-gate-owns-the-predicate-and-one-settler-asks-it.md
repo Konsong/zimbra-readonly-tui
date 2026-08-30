@@ -108,6 +108,25 @@ change is not about sinks.
 > made in [ADR-0012](./0012-no-reader-ends-with-the-status-it-was-handed.md). What this paragraph got right
 > is its second sentence, which is the whole reason to convert: the list lacked a reason to stay complete.
 
+> **Corrected 2026-08-30 — a gate refusal cannot reach either sink, so the decision deferred above was never
+> in the way.** The first paragraph's reasoning holds only if `zro_exec` can hand these two modules
+> `ZRO_E_UNAVAILABLE`, and it cannot. `zro_startup_check` refuses to start the session without `id`,
+> `timeout` or `runuser`; the identity helper's status is discarded inside a command substitution and
+> surfaces as `ZRO_E_BADUSER`; the other identity helper is never called by the gate; and the low-priority
+> arm is taken only for a binary in `ZRO_LOW_PRIORITY`, which holds `grep` and `gzip` — measured, with both
+> fetches returning cleanly on a host with no `nice` and no `ionice`. So converting them is a substitution,
+> as logview's was, and no log line a gate refusal writes was ever at stake. The path is real in the test
+> harness, which sources the entry point without the preflight, and nowhere else.
+>
+> **The second reason this ADR gives for excluding them is untouched and still holds** — see *Three modules
+> move rather than six* below: the capture, the classification and the sink are inline, `lib/queue.sh`
+> records a host refusal as a capability while it is in there, and neither module has a mapping the settler
+> could call. Both stay out of `lib/settle.sh`. A reader who finds the first reason falsified should not
+> discard the second with it.
+> [ADR-0016](./0016-unavailable-names-a-service-that-did-not-answer.md) records the correction and the
+> definition that replaced the deferred decision; the runs are in
+> [docs/research/2026-08-30](../research/2026-08-30-the-gate-cannot-reach-these-two-sinks.md).
+
 **Three modules move rather than six, because only three have a ceremony to move.** `lib/message.sh`,
 `lib/store.sh` and `lib/search.sh` each carried a `*_settle` routine that was a copy of the other two apart
 from the reader it named — until the message one grew the predicate check the settler now holds for all of
