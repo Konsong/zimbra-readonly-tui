@@ -52,6 +52,13 @@ WIDE="$FIX/zmmailbox_s_message_wide.txt"
 CAPPED="$FIX/zmmailbox_s_message_capped.txt"
 NOHITS="$FIX/zmmailbox_s_no_hits.txt"
 CONVS="$FIX/zmmailbox_s_conversations.txt"
+# THE SAME STATE REACHED TWO WAYS, which is the whole reason there are two of
+# them. The first is a table the server wrote no rows into; the second is a table
+# whose rows this reader refuses — their index prefix is not the `<digits>. ` the
+# row reader requires. Both carry `num: 4`. The screen cannot tell them apart and
+# the case below holds that it does not try.
+NOROWS="$FIX/zmmailbox_s_synthetic_hits_no_rows.txt"
+BADROWS="$FIX/zmmailbox_s_synthetic_unparsed_row.txt"
 SCMSG="$FIX/zmmailbox_sc_messages.txt"
 PARSE_ERR="$FIX/zmmailbox_s_query_parse_error.err"
 NOFOLDER_ERR="$FIX/zmmailbox_s_no_such_folder.err"
@@ -639,6 +646,85 @@ assert_contains "$none" 'bir sonuc'
 assert_contains "$none" 'COP KUTUSUNU VE SPAMI DISARIDA BIRAKIR'
 assert_not_contains "$none" 'Kimden / Konu'
 
+it "but an empty table under a count that is not zero is a different answer"
+# THE CLAIM THIS CASE EXISTS TO FORBID. The branch above used to run whatever the
+# count line said, so a search the server reported four hits for was answered with
+# "there is nothing in this mailbox matching" — printed two lines under the four.
+# The trash-and-spam advice went with it, sending an operator elsewhere to look
+# for messages the server had just said it holds.
+some=$(zro_search_body "$ACCT" 'subject:"fatura"' "$(cat "$NOROWS")" subject fatura 2>/dev/null)
+assert_contains "$some" "$ZRO_TXT_SEARCH_NO_ROWS"
+assert_contains "$some" 'Sunucu 4 eslesme bildirdi'
+assert_not_contains "$some" "$ZRO_TXT_SEARCH_NO_HITS"
+assert_not_contains "$some" 'bir sonuc'
+assert_not_contains "$some" 'COP KUTUSUNU VE SPAMI DISARIDA BIRAKIR'
+
+it "and it names both causes and settles neither, because the output cannot"
+assert_contains "$some" 'ayirt edilemez'
+assert_contains "$some" 'kayit turunu saymis olabilir'
+assert_contains "$some" 'okuyamadigi bir bicimde gelmis olabilir'
+
+it "and the two ways of reaching that state draw the same screen"
+# NOT A TIDINESS CHECK. A table the server wrote no rows into and a table this
+# reader could not read are different facts with the same output, and a screen
+# that distinguished them would be inventing the difference. Held as equality so
+# that a later arm claiming one of the two fails here.
+bad=$(zro_search_body "$ACCT" 'subject:"fatura"' "$(cat "$BADROWS")" subject fatura 2>/dev/null)
+assert_eq "$bad" "$some"
+
+it "and it reaches the log as a warning, not as a defect"
+# WARN AND NOT ERROR. In this program an error line is a defect, and one of the
+# two causes is the server behaving ordinarily — a log calling that a defect would
+# contradict the screen written beside it. Logged at all because the other cause
+# is this reader failing, and no screen can show which it was.
+SLOG=$(mktemp)
+ZRO_LOG_FILE=$SLOG zro_search_body "$ACCT" 'subject:"fatura"' "$(cat "$NOROWS")" \
+  subject fatura >/dev/null 2>&1
+assert_eq "$(grep -c '\[warn\] search: the server counted 4, the table holds 0' "$SLOG")" "1"
+assert_eq "$(grep -c '\[error\]' "$SLOG")" "0"
+rm -f -- "$SLOG"
+
+it "and a count that only partly disagrees is disclosed the same way, claiming no cause"
+# The arm that already existed, whose sentence used to say the difference COMES
+# FROM a record kind the server does not tabulate. It can equally be a row this
+# reader dropped, and nothing in the output says which.
+partly=$(zro_search_body "$ACCT" 'subject:"fatura"' \
+  "$(printf 'num: 4, more: false\n\n     Id  Type   From                  Subject                                             Date\n   ----  ----   --------------------  --------------------------------------------------  --------------\n1.  265  conv   Ali Veli              Ynt: Temmuz faturasi                                08/03/26 17:38\n')" \
+  subject fatura 2>/dev/null)
+assert_contains "$partly" 'Sunucu 4 eslesme bildirdi, tabloda 1 satir var'
+assert_contains "$partly" 'ayirt edilemez'
+assert_not_contains "$partly" 'turunden gelir'
+
+it "and every screen that sends the operator to the log has written a line in it"
+# THE THING THAT CAME APART ONCE. The sentence ends `Ayrinti icin arac gunlugune
+# bakin.` and the arm that drew it for a partial disagreement logged nothing, so
+# the one screen unable to show which cause it was pointed at an empty file. Held
+# for all three arms at once, from the sentence itself rather than from a list of
+# call sites, because a fourth arm would otherwise be free to come apart the same
+# way.
+PLOG=$(mktemp)
+for probe in \
+  "$(cat "$NOROWS")" \
+  "$(printf 'num: 4, more: false\n\n     Id  Type   From                  Subject                                             Date\n   ----  ----   --------------------  --------------------------------------------------  --------------\n1.  265  conv   Ali Veli              Konu                                                08/03/26 17:38\n')"
+do
+  : >"$PLOG"
+  said=$(ZRO_LOG_FILE=$PLOG zro_search_body "$ACCT" 'subject:"x"' "$probe" subject x 2>/dev/null)
+  case $said in
+    *'arac gunlugune bakin'*)
+      assert_eq "$(grep -c '\[warn\] search: the server counted' "$PLOG")" "1" ;;
+    *) zro_t_fail "probe drew no log-pointing sentence, so the case proves nothing" ;;
+  esac
+done
+: >"$PLOG"
+conv_said=$(ZRO_LOG_FILE=$PLOG zro_search_conv_body "$ACCT" '265' \
+  "$(printf 'num: 3, more: false\n\n     Id  From                  Subject                                             Date\n   ----  --------------------  --------------------------------------------------  --------------\n')" 2>/dev/null)
+case $conv_said in
+  *'arac gunlugune bakin'*)
+    assert_eq "$(grep -c '\[warn\] conversation listing: the server counted' "$PLOG")" "1" ;;
+  *) zro_t_fail "conversation probe drew no log-pointing sentence" ;;
+esac
+rm -f -- "$PLOG"
+
 it "and says so when the server had more than the bound allowed"
 fresh
 capped=$(proven search_msg "$CAPPED" 0 zro_search_fetch "$ACCT" 'is:anywhere')
@@ -667,6 +753,39 @@ assert_contains "$cbody" 'cop kutusuna'
 it "and renders a conversation the server no longer has as an answer"
 gone=$(zro_search_conv_body "$ACCT" '999999' '')
 assert_contains "$gone" "$ZRO_TXT_SEARCH_NO_CONV"
+
+it "and tells that apart from a listing that answered, which is the caller's own distinction"
+# THREE STATES, ONE BRANCH, UNTIL NOW. The caller hands an empty answer for a
+# conversation the server no longer has — deliberate, and the arm above. A listing
+# that DID arrive carries a count, and the two values it can take are not that and
+# not each other: nothing to list is a conversation that is there, and a count
+# that is not zero is the server naming messages this table does not carry.
+conv_hdr=$(printf '     Id  From                  Subject                                             Date\n   ----  --------------------  --------------------------------------------------  --------------\n')
+empty=$(zro_search_conv_body "$ACCT" '265' "$(printf 'num: 0, more: false\n\n')")
+assert_contains "$empty" "$ZRO_TXT_SEARCH_CONV_EMPTY"
+assert_contains "$empty" 'YOK oldugu anlamina gelmez'
+assert_not_contains "$empty" "$ZRO_TXT_SEARCH_NO_CONV"
+
+it "and never calls a conversation missing over a count of its own messages"
+# The card this repaired: `Sunucunun bildirdigi : 3` printed two lines above
+# `Bu konusma sunucuda bulunamadi.` — and the two cards were byte-identical below
+# the card lines, so nothing in the tool could tell an operator which had happened.
+counted=$(zro_search_conv_body "$ACCT" '265' "$(printf 'num: 3, more: false\n\n%s' "$conv_hdr")" 2>/dev/null)
+assert_contains "$counted" "$ZRO_TXT_SEARCH_CONV_NO_ROWS"
+assert_contains "$counted" 'Sunucu 3 ileti bildirdi'
+assert_contains "$counted" 'ayirt edilemez'
+assert_not_contains "$counted" "$ZRO_TXT_SEARCH_NO_CONV"
+
+it "and that one reaches the log as a warning too"
+CLOG=$(mktemp)
+ZRO_LOG_FILE=$CLOG zro_search_conv_body "$ACCT" '265' \
+  "$(printf 'num: 3, more: false\n\n%s' "$conv_hdr")" >/dev/null 2>&1
+assert_eq "$(grep -c '\[warn\] conversation listing: the server counted 3, the table holds 0' "$CLOG")" "1"
+# The same negative its twin carries. An error line in this program means a defect,
+# and the card beside it says one of the two causes is the server behaving
+# ordinarily — the two cards must not disagree about that, so both cases say it.
+assert_eq "$(grep -c '\[error\]' "$CLOG")" "0"
+rm -f -- "$CLOG"
 
 it "answers a one-message conversation without running anything at all"
 # The id is the negation of the message's id, and it may not reach a command line.

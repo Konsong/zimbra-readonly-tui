@@ -365,6 +365,50 @@ assert_contains "$out" "Ileti id             : 263"
 assert_not_contains "$(ran)" "$(printf 'sc\t')"
 assert_cost mailbox-conversation "$(opened)" 1
 
+it "a conversation search that matched nothing draws its answer and no menu"
+# THE ORDINARY WAY TO REACH AN EMPTY LIST, and the one nothing held before: this
+# fixture was wired to the message search only, so the conversation screen had
+# never been driven through it. `num: 0, more: false` carries a count line, so the
+# read ANSWERS rather than refuses, and zro_menu_conversation is entered with no
+# rows at all.
+exists_server
+zro_sel_set "$ADDR"
+queue "mailbox-conversation" "subject" "yokboyle" "__run__" "__CANCEL__" "__CANCEL__"
+ZRO_MOCK_ZMMAILBOX_S__L_OUT="$FIX/zmmailbox_s_no_hits.txt" run
+out=$(transcript)
+assert_contains "$out" "Bu sorguya uyan ileti bulunamadi"
+assert_contains "$out" "bir sonuc"
+
+it "and says it once, on the card, rather than twice"
+# WHY THE MENU IS SILENT. The screen the operator is standing on has already given
+# the answer a screen here would repeat; the folder menu's defect and the log
+# viewer's own screen are both the wrong answer for this list. So: no menu with no
+# entries, no defect, and no second screen.
+assert_not_contains "$out" "Konusma secin"
+assert_not_contains "$out" "Ic hata"
+assert_not_contains "$out" "MSG Islem basarisiz"
+
+it "and leaves the operator in front of the criteria they searched with"
+# Not dropped out of the screen: the last thing drawn before the main menu is the
+# criteria list, with the criterion still on it.
+assert_contains "$out" "Konu = yokboyle"
+assert_cost mailbox-conversation "$(opened)" 1
+
+it "and a search the server counted hits for draws the card that says so, still no menu"
+# The other reachable empty list, and the reason the guard above it is silent for
+# both: since #97 the card names an untabulated hit and a table this reader could
+# not read, settles neither, and warns to the log. Nothing this menu could add.
+exists_server
+zro_sel_set "$ADDR"
+queue "mailbox-conversation" "subject" "fatura" "__run__" "__CANCEL__" "__CANCEL__"
+ZRO_MOCK_ZMMAILBOX_S__L_OUT="$FIX/zmmailbox_s_synthetic_hits_no_rows.txt" run
+out=$(transcript)
+assert_contains "$out" "$ZRO_TXT_SEARCH_NO_ROWS"
+assert_contains "$out" "ayirt edilemez"
+assert_not_contains "$out" "Bu sorguya uyan ileti bulunamadi"
+assert_not_contains "$out" "Konusma secin"
+assert_not_contains "$out" "Ic hata"
+
 # ONE ANSWER, THE WHOLE WAY IN: the query that finds the conversations, that
 # answer, and the cancels it takes to leave. The shared driver runs it once per
 # hostile value.

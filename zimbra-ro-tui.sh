@@ -1118,6 +1118,27 @@ EOF
 $rows
 EOF
 
+  # NOTHING TO PICK FROM, AND NOTHING TO SAY HERE — because the screen the
+  # operator is standing on already said it. This is the third of the three built
+  # lists and the only one whose empty case is silent, which looked like the
+  # decision nobody made until it was measured; the folder menu reports a defect
+  # and the log viewer draws its own screen, and neither answer is right here.
+  #
+  # A SEARCH THAT MATCHED NOTHING IS THE ORDINARY WAY TO ARRIVE. `num: 0, more:
+  # false` carries a count line, so the read returns an answer rather than a
+  # refusal, and the card drawn immediately above this call has already said it in
+  # the words a screen here would repeat: the query ran, the server answered, and
+  # nothing matched. A second screen saying the same thing would be the only new
+  # information in it.
+  #
+  # AND A COUNT THAT IS NOT ZERO WITH NO ROW IS ALSO ALREADY ANSWERED, by the same
+  # card and since #97 in different words: an untabulated hit or a table this
+  # reader could not read, both named, neither claimed, and a warning in the log.
+  # This menu adds nothing to either, so it draws nothing — and no menu is drawn
+  # with no entries, which is a screen an operator could leave only by cancelling.
+  #
+  # WHAT WOULD MAKE THIS WRONG is a caller that reaches here without drawing that
+  # card. There is one, it is fifteen lines up, and it draws it unconditionally.
   [ "${#ids[@]}" -gt 0 ] || return 0
 
   while :; do
