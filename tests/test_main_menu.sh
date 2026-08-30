@@ -506,6 +506,71 @@ assert_not_contains "$said" "kod 10"
 assert_not_contains "$said" "Connection refused"
 zro_clear_error
 
+# ------------------------------- a scratch file this host could not create --
+#
+# Seventeen sites ended a failed zro_tmpfile on $ZRO_E_UNAVAILABLE, whose one
+# screen opens by explaining that zmprov connects to mailboxd over SOAP. Nothing
+# ran on that path: no host was asked, the exec gate was not reached, and the
+# repair is space or permissions under TMPDIR on this machine. ADR-0016 binds the
+# term and issue 99 gives the condition its own code and its own screen.
+
+it "a scratch file this host could not create says the operation was never started"
+: >"$ZRO_UI_OUT"
+# A message left on file by an EARLIER screen. Nothing ran on this path, so
+# whatever is in that file belongs to something else, exactly as it does on the
+# invalid-address screen above.
+zro_set_error "ERROR: zclient.IO_ERROR (Connection refused)"
+zro_report_error "$ZRO_E_NO_SCRATCH"
+said=$(transcript)
+assert_contains "$said" "islem hic baslatilmadi"
+assert_not_contains "$said" "kod 27"
+assert_not_contains "$said" "Connection refused"
+
+it "and that nothing was run on the server and nothing changed"
+# The sentence an operator needs before they go looking for damage. This failure
+# happens before the gate, so the read-only claim is not merely intact here — the
+# server was never spoken to at all.
+assert_contains "$said" "hicbir komut calistirilmadi"
+assert_contains "$said" "hicbir sey degismedi"
+
+it "and it sends the operator to this host rather than to a Zimbra service"
+assert_contains "$said" "TMPDIR"
+assert_contains "$said" "/tmp"
+assert_not_contains "$said" "mailboxd"
+assert_not_contains "$said" "SOAP"
+assert_not_contains "$said" "zmcertmgr"
+zro_clear_error
+
+it "an answer that could not be written to a file is a screen, not a silent return"
+# zro_show_text is the last statement of every screen function that uses it and no
+# caller reads its status, so this path used to compute the answer, find nowhere
+# to put it, discard it and return the operator to the menu in silence. The only
+# trace was mktemp's own stderr, behind whiptail. A msgbox takes its text directly
+# and needs no file, which makes it the one screen still available exactly when
+# the textbox path is not.
+: >"$ZRO_UI_OUT"
+( export TMPDIR=/nonexistent/zro-no-such-directory
+  zro_show_text "Servis durumu" "the answer nobody ever saw" ) >/dev/null 2>&1
+said=$(transcript)
+assert_contains "$said" "MSG "
+assert_contains "$said" "gosterilemedi"
+
+it "and it says the answer was produced, not that the operation failed"
+# The two are different repairs and different next steps. An operator told the
+# query failed would run it again; this one has to be told the query worked and
+# the screen did not.
+assert_contains "$said" "Sonuc hazirlandi"
+assert_contains "$said" "TMPDIR"
+
+it "and it names the screen whose answer was lost"
+# Twenty-four screens end in this function. A box naming none of them leaves an
+# operator who ran two reads unable to tell which answer they are missing.
+assert_contains "$said" "Servis durumu"
+
+it "and no textbox is drawn with nothing behind it"
+assert_not_contains "$said" "TEXT "
+assert_not_contains "$said" "the answer nobody ever saw"
+
 it "and an operation this file does not answer is reported as the defect it is"
 # Never the allowlist's message: an operator sent to check the allowlist for a
 # dispatch table's mistake reads the wrong file and finds nothing wrong with it.

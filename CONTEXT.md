@@ -491,12 +491,13 @@ A Zimbra service that a read needed and that did not answer — the mail service
 behind `zmprov` and `zmmailbox`, reached over SOAP. It is the code a read ends on
 when the command ran, failed, and nothing recognised why, and it is an ANSWER an
 operator acts on: the service is stopped, or the certificate that authenticates to
-it is not valid. It names one condition and no other; four groups of sites still
+it is not valid. It names one condition and no other; three groups of sites still
 borrow it for something else and each has a ticket
 ([ADR-0016](docs/adr/0016-unavailable-names-a-service-that-did-not-answer.md)).
 _Avoid_: using it for anything the command did not reach — a scratch file that
 could not be created, a host missing a binary, a clock that answered nonsense. All
-three are conditions in which no service was ever asked
+three are conditions in which no service was ever asked. The first of them is
+answered — **no scratch file** is the code for it — and the other two have tickets
 _Avoid_: unreachable host — the host is this one, and it answered; what did not
 answer is a service running on it
 
@@ -519,6 +520,24 @@ _Avoid_: no service, service missing, services down — the most alarming readin
 available on that screen and the one thing this code does not say. The card
 already refuses to invent it, and the code's name may not make the claim the card
 refuses to make
+
+**No scratch file**:
+The code an operation ends on when this tool could not create the working file it
+needed, so the operation was NEVER STARTED. A **scratch file** is taken before
+anything is run — it is where a command's error stream is captured to — which puts
+this failure ahead of the exec gate: no binary was invoked, and there is nothing on
+the server to have changed. The repair is on THIS host, under `TMPDIR`. Of the four
+conditions that borrowed **unavailable**, it is the one no startup check could have
+retired: `TMPDIR` fills or goes read-only at minute forty of a session, and a check
+made before the menu was drawn would prove nothing about the read that follows
+([ADR-0016](docs/adr/0016-unavailable-names-a-service-that-did-not-answer.md)).
+_Avoid_: unavailable — no Zimbra service was asked, so none of them is what failed
+to answer, and that reading is how an operator with a full `/tmp` came to be sent
+to mailboxd and the admin certificate
+_Avoid_: disk full — one cause among several. A `TMPDIR` that does not exist, that
+the account this runs as cannot write, or that is out of inodes produces the same
+condition, and a screen naming only the first would send an operator to check a
+number that is fine
 
 **Failure reader**:
 The part of a module that turns what ITS command printed into a code this program

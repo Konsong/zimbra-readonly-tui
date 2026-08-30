@@ -20,6 +20,11 @@ assert_eq "$ZRO_E_NO_STATUS" "25"
 # The mail queue read's own sink, beside it and deliberately not folded into it:
 # the two name different tools with different repairs. Pinned for the same reason.
 assert_eq "$ZRO_E_NO_QUEUE" "26"
+# What a scratch file this host could not create ends on, in the same band and
+# pinned for the same reason. This one reaches an operator from seventeen places
+# rather than from one screen, which makes the number harder to move quietly, not
+# easier.
+assert_eq "$ZRO_E_NO_SCRATCH" "27"
 
 it "zro_log writes to stderr, never stdout"
 assert_out_eq "" zro_log info "should not appear on stdout"
@@ -75,6 +80,26 @@ it "zro_tmpfile returns a fresh path each call"
 a=$(zro_tmpfile); b=$(zro_tmpfile)
 assert_not_contains "$a" "$b"
 rm -f -- "$a" "$b"
+
+it "zro_tmpfile answers with the code for a scratch file it could not create"
+# DRIVEN rather than read off the source, because what changed is what the
+# FUNCTION returns. It used to answer a bare 1 that seventeen call sites each
+# translated into $ZRO_E_UNAVAILABLE — the code for a Zimbra service a read needed
+# and that did not answer — so an operator whose TMPDIR was full or unwritable was
+# sent to check mailboxd and the admin certificate. ADR-0016 and issue 99.
+rc=0; ( export TMPDIR=/nonexistent/zro-no-such-directory; zro_tmpfile ) >/dev/null 2>&1 || rc=$?
+assert_eq "$rc" "$ZRO_E_NO_SCRATCH"
+
+it "and it writes a line naming the directory that refused"
+# THE DIRECTORY IS THE ONE FACT THE SCREEN CANNOT CARRY. Its message names TMPDIR
+# as the thing to look at; the log names what TMPDIR actually was, which is what an
+# operator debugging a session that set it for itself needs. Written here for the
+# same reason lib/service.sh and lib/queue.sh write one before their own codes:
+# mktemp's own words go to stderr, behind whiptail, so this is the only account of
+# the failure that survives the screen.
+said=$( { TMPDIR=/nonexistent/zro-no-such-directory zro_tmpfile >/dev/null; } 2>&1 )
+assert_contains "$said" "scratch file"
+assert_contains "$said" "/nonexistent/zro-no-such-directory"
 
 it "zro_human_bytes formats magnitudes"
 assert_out_eq "0 B" zro_human_bytes 0

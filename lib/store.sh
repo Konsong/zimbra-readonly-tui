@@ -306,7 +306,7 @@ zro_store_folders_fetch() {
   local acct=${1-} err out rows rc=0
   zro_validate_email "$acct" || return "$ZRO_E_INPUT"
   zro_mbox_require "$acct" || return $?
-  err=$(zro_tmpfile) || return "$ZRO_E_UNAVAILABLE"
+  err=$(zro_tmpfile) || return $?
 
   out=$(zro_mbox_run "$acct" gaf 2>"$err") || rc=$?
   rc=$(zro_settle "$err" "$rc" zro_store_fail_code)
@@ -329,7 +329,7 @@ zro_store_folder_fetch() {
   zro_validate_email "$acct" || return "$ZRO_E_INPUT"
   zro_validate_folder_path "$path" || return "$ZRO_E_INPUT"
   zro_mbox_require "$acct" || return $?
-  err=$(zro_tmpfile) || return "$ZRO_E_UNAVAILABLE"
+  err=$(zro_tmpfile) || return $?
 
   out=$(zro_mbox_run "$acct" gf "$path" 2>"$err") || rc=$?
   rc=$(zro_settle "$err" "$rc" zro_store_fail_code)
@@ -343,7 +343,7 @@ zro_store_grants_fetch() {
   zro_validate_email "$acct" || return "$ZRO_E_INPUT"
   zro_validate_folder_path "$path" || return "$ZRO_E_INPUT"
   zro_mbox_require "$acct" || return $?
-  err=$(zro_tmpfile) || return "$ZRO_E_UNAVAILABLE"
+  err=$(zro_tmpfile) || return $?
 
   out=$(zro_mbox_run "$acct" gfg "$path" 2>"$err") || rc=$?
   rc=$(zro_settle "$err" "$rc" zro_store_fail_code)
@@ -363,7 +363,7 @@ zro_store_size_fetch() {
   local acct=${1-} err out rc=0
   zro_validate_email "$acct" || return "$ZRO_E_INPUT"
   zro_mbox_require "$acct" || return $?
-  err=$(zro_tmpfile) || return "$ZRO_E_UNAVAILABLE"
+  err=$(zro_tmpfile) || return $?
 
   out=$(zro_mbox_run "$acct" gms -v 2>"$err") || rc=$?
   rc=$(zro_settle "$err" "$rc" zro_store_fail_code)

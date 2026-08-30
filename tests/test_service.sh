@@ -73,6 +73,25 @@ assert_contains "$(zro_last_error)" "no reading for"
 unset ZRO_MOCK_ZMCONTROL_STATUS_RC ZRO_MOCK_ZMCONTROL_STATUS_ERR
 export ZRO_MOCK_ZMCONTROL_STATUS_OUT="$FIX/zmcontrol_status_ok.txt"
 
+it "a scratch file this host could not create ends the read on its own code"
+# A GATED READ DRIVEN END TO END, because the code an operator meets comes out of
+# a module rather than out of lib/core.sh. This read used to end on
+# $ZRO_E_UNAVAILABLE for a TMPDIR that was full or unwritable — the one screen
+# that sends an operator to mailboxd, SOAP and the admin certificate, for a repair
+# that is entirely on this host. ADR-0016 and issue 99.
+#
+# THE ONE BORROWER NO PREFLIGHT CAN RETIRE: /tmp fills at minute forty of a
+# session, and a check at startup would prove nothing about the read that follows.
+reset
+rc=0; ( export TMPDIR=/nonexistent/zro-no-such-directory; zro_svc_fetch ) >/dev/null 2>&1 || rc=$?
+assert_eq "$rc" "$ZRO_E_NO_SCRATCH"
+
+it "and the operation was never started, so nothing ran on the server"
+# What the screen for this code claims, asserted where it is true. The scratch
+# file is the read's first statement: the exec gate is not reached, no binary is
+# invoked, and there is nothing on the server to have changed.
+assert_eq "$(ran | grep -c '^zmcontrol')" "0"
+
 # ------------------------------------------------------- reading the output --
 
 it "every service on the host is read, and the host it is about with them"

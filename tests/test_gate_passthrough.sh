@@ -142,11 +142,15 @@ it "and the fifth one too, on a path that exists in this harness and nowhere els
 # docs/research/2026-08-30 holds the runs.
 #
 # THE NUMBER ALONE DOES NOT SETTLE IT, which is why the case after this one asks
-# for the log line as well. zro_queue_fetch answers with this same constant for a
-# scratch file it could not create — one of the four borrowings ADR-0016 leaves
-# standing, and #99 — so the constant arriving proves that something refused and
-# not that the gate's code travelled. What tells a code that passed through from
-# one the module read as its own is that the module's own reading WRITES A LINE.
+# for the log line as well. zro_queue_fetch used to answer with this same constant
+# for a scratch file it could not create — one of the four borrowings ADR-0016 left
+# standing — so the constant arriving proved that something had refused rather than
+# that the gate's code had travelled. #99 has since given that condition
+# ZRO_E_NO_SCRATCH and this module borrows the constant nowhere any more, and the
+# pair is kept anyway: the borrowing was the occasion for the discrimination and
+# never its reason. What tells a code that passed through from one the module read
+# as its own is that the module's own reading WRITES A LINE, and that stays true of
+# a sink this module has not invented yet.
 #
 # THE CLOCK IS EMPTIED, NOT POINTED SOMEWHERE THAT DOES NOT EXIST. The gate asks
 # whether it has a clock at all; a path that is merely absent passes that check
@@ -172,8 +176,9 @@ it "and the fifth one too, down the same harness-only path"
 # THE SECOND OF THE TWO, and everything the pair rests on is written out at the
 # queue above: why this path exists in the suite and nowhere else, why the number
 # alone does not settle it, and why the clock is emptied rather than pointed
-# somewhere that is merely absent. This module's own borrowing of the constant is
-# the scratch file it could not create, which is #99.
+# somewhere that is merely absent. This module's own borrowing of the constant was
+# the scratch file it could not create; #99 gave that its own code, and the pair is
+# kept for the reason written out at the queue.
 ZRO_TIMEOUT_BIN='' assert_status "$ZRO_E_UNAVAILABLE" zro_svc_fetch
 
 it "and the service status left the same way, by the line it too did not write"

@@ -139,7 +139,7 @@ EOF
 # failure would take away the one message that names the directory server.
 zro_svc_fetch() {
   local out err rc=0 said
-  err=$(zro_tmpfile) || return "$ZRO_E_UNAVAILABLE"
+  err=$(zro_tmpfile) || return $?
   out=$(zro_exec zmcontrol status 2>"$err") || rc=$?
   said=$(head -c "$ZRO_ERROR_KEEP_BYTES" -- "$err" 2>/dev/null)
   rm -f -- "$err"

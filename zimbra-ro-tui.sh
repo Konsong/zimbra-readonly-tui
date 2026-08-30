@@ -131,9 +131,59 @@ zro_startup_check() {
   return 0
 }
 
+# WHERE A SCRATCH FILE COMES FROM, SAID ONCE. Two screens answer a scratch file
+# this host could not create — the shared reporter's arm, and zro_show_text below,
+# which has an answer in hand and nowhere to put it — and both have to end by
+# naming the same directory. Written here rather than twice, for the reason
+# zro_error_detail is written once: a second copy is always made by copying the
+# first, and then only one of the two ever gets corrected.
+#
+# TMPDIR AND NOT /tmp, in that order. /tmp is the default and not the answer, and
+# an operator sent to check a filesystem this program was never using would find
+# nothing wrong with it.
+#
+# THREE CAUSES AND NOT ONE. mktemp refuses a directory that is missing just as
+# readily as one that is full, and CONTEXT.md makes that a rule about this screen
+# under 'No scratch file': a message naming only 'disk full' sends an operator to
+# check a number that is fine. The tool cannot tell the three apart from a failed
+# mktemp, so it names all three rather than guessing one.
+ZRO_TXT_NO_SCRATCH="Sorun bu makinededir: gecici dosya dizini ya yok, ya dolu, ya da bu
+kullanicinin yazma izni yok.
+Bakilacak dizin TMPDIR ortam degiskeninin gosterdigi dizindir; TMPDIR tanimli
+degilse /tmp kullanilir. Ayrinti icin arac gunlugune bakin."
+
+# THE ANSWER IS ALREADY IN HAND HERE, which is what makes this scratch file
+# different from the sixteen others and why it ends in a screen rather than in a
+# code alone. This is the last statement of every screen function that uses it and
+# no caller reads its status — the callers have handled rc long before — so a
+# scratch file it could not create used to compute the answer, find nowhere to put
+# it, discard it and return the operator to the menu in silence. The only trace was
+# mktemp's own stderr, behind whiptail.
+#
+# A MSGBOX TAKES ITS TEXT DIRECTLY AND NEEDS NO FILE, which makes it the one screen
+# still available exactly when the textbox path is not. The status is still the
+# one zro_tmpfile answered with; it is simply no longer the only thing that
+# happens. Issue 99.
 zro_show_text() {
-  local title=$1 body=$2 f
-  f=$(zro_tmpfile) || return "$ZRO_E_UNAVAILABLE"
+  local title=$1 body=$2 f rc=0
+  f=$(zro_tmpfile) || rc=$?
+  if [ "$rc" -ne 0 ]; then
+    # WHAT THE OPERATOR HAS TO BE TOLD IS THAT THE ANSWER EXISTS. 'The operation
+    # failed' would send them to run the query again; what failed is the screen.
+    #
+    # AND WHICH ANSWER IT WAS. This function is the last statement of twenty-four
+    # screens, so a box that named none of them would leave an operator who ran two
+    # reads unable to tell which one they are missing. The title is the heading the
+    # answer would have been shown under, which is the name they chose it by.
+    zro_ui_msgbox "Sonuc gosterilemedi" \
+"Sonuc hazirlandi, ancak ekranda gosterilemedi: bu arac sonucu yazacagi gecici
+calisma dosyasini olusturamadi.
+
+Gosterilemeyen ekran: $title
+
+$ZRO_TXT_NO_SCRATCH"
+    return "$rc"
+  fi
   printf '%s\n' "$body" >"$f"
   zro_ui_textbox "$title" "$f"
   rm -f -- "$f"
@@ -459,6 +509,30 @@ SOYLEMEZ, yalnizca okunamadigini soyler. Kuyruga DOKUNULMADI.
 postqueue Postfix'in bu sunucudaki kuyrugunu okur; hicbir Zimbra servisine
 baglanmaz. Aranacak yer bu nedenle Postfix tarafidir. Ne oldugunu anlamak icin
 komutun kendi ciktisina ve arac gunlugune bakin.$(zro_error_detail 'Postfix ciktisi')" ;;
+    # THE OPERATION WAS NEVER STARTED. This tool could not create the working file
+    # a step needed, and a scratch file is taken before anything runs: the exec
+    # gate was not reached, no binary was invoked, and there is nothing on the
+    # server to have changed. Its own screen rather than the Zimbra one three arms
+    # up, which was what an operator with a full or unwritable /tmp used to be
+    # shown — sent to check mailboxd and the admin certificate for a repair that is
+    # entirely on this host. ADR-0016.
+    #
+    # WHERE TO LOOK IS NAMED, because that is the whole difference between this
+    # screen and a bare code: TMPDIR, and /tmp when it is not set. mktemp's own
+    # words never reach the operator — they go to stderr, behind whiptail — so this
+    # arm is the only account of the failure they get.
+    #
+    # NO KEPT MESSAGE, for the reason the invalid-address arm at the top gives:
+    # nothing ran on this path, so whatever is in that file belongs to an earlier
+    # screen and would be read as this one's explanation.
+    "$ZRO_E_NO_SCRATCH")
+      zro_ui_msgbox "Gecici dosya olusturulamadi" \
+"Bu arac islem icin gereken gecici calisma dosyasini olusturamadi;
+bu nedenle islem hic baslatilmadi.
+
+Sunucuda hicbir komut calistirilmadi ve hicbir sey degismedi.
+
+$ZRO_TXT_NO_SCRATCH" ;;
     *)                   zro_ui_msgbox "Hata" "Islem basarisiz (kod $1).$detail" ;;
   esac
 }
