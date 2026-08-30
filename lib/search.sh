@@ -981,6 +981,7 @@ zro_search_value_label() {
 #
 #   $1  the count the server printed   $2  the rows this program read
 #   $3  what the server was counting, in the operator's language
+#   $4  which listing is speaking, in the log's
 #
 # ONE PLACE, because two cards and two arms of one card say it, and three copies
 # of a sentence are free to disagree — the rule this file already states about its
@@ -1001,7 +1002,20 @@ zro_search_value_label() {
 # stood here named the record kind as THE cause, which is a claim about the
 # server this program has never been in a position to make.
 zro_search_untabulated_body() {
-  local num=${1-} count=${2-} noun=${3-}
+  local num=${1-} count=${2-} noun=${3-} listing=${4-}
+  # THE LINE IS WRITTEN FROM HERE, BESIDE THE SENTENCE THAT PROMISES IT. This body
+  # ends by sending the operator to the log, and the arm that explained a partial
+  # disagreement wrote nothing there — so the one screen that could not show which
+  # cause it was pointed at a file with nothing about it in. Logging at the call
+  # sites is what let those two come apart; there is one caller of this sentence
+  # now, and it is this.
+  #
+  # WARN AND NOT ERROR, at every one of them. An error line in this program means
+  # a defect, and one of the two causes is the server behaving ordinarily — a log
+  # calling that a defect would contradict the screen written beside it. Logged at
+  # all because the other cause is this reader dropping a row, which an operator
+  # looking at a table cannot see.
+  zro_log warn "$listing: the server counted $num, the table holds $count"
   if [ "$count" -eq 0 ]; then
     printf 'Sunucu %s %s bildirdi, tabloya hicbir satir yazilmadi.\n' "$num" "$noun"
   else
@@ -1075,14 +1089,8 @@ EOF
   # send them looking elsewhere for messages the server just said it has.
   if [ "$count" -eq 0 ]; then
     if [ -n "$num" ] && [ "$num" -gt 0 ]; then
-      # WARN AND NOT ERROR, and no defect reported. One of the two causes is the
-      # server behaving ordinarily, so a log line calling this a defect would
-      # contradict the screen it was written beside. It is logged at all because
-      # the other cause is this program failing to read a table, and the operator's
-      # screen is the one place that cannot show which it was.
-      zro_log warn "search: $num hits counted, no row in the table"
       printf '\n%s\n\n' "$ZRO_TXT_SEARCH_NO_ROWS"
-      zro_search_untabulated_body "$num" "$count" eslesme
+      zro_search_untabulated_body "$num" "$count" eslesme search
       printf '\n%s\n' "$ZRO_TXT_SEARCH_READONLY"
       return 0
     fi
@@ -1117,7 +1125,7 @@ EOF
   # §10.3 of the message-search research, and the conversation form is in neither.
   # So the comparison is made for both, and the sentence claims no cause.
   if [ -n "$num" ] && [ "$num" -ne "$count" ]; then
-    zro_search_untabulated_body "$num" "$count" eslesme
+    zro_search_untabulated_body "$num" "$count" eslesme search
     printf '\n'
   fi
   printf '%s\n' "$ZRO_TXT_SEARCH_COLUMNS"
@@ -1179,9 +1187,8 @@ EOF
   # conversation was gone while printing the server's count of three above it.
   if [ "$count" -eq 0 ]; then
     if [ -n "$num" ] && [ "$num" -gt 0 ]; then
-      zro_log warn "conversation listing: $num messages counted, no row in the table"
       printf '\n%s\n\n' "$ZRO_TXT_SEARCH_CONV_NO_ROWS"
-      zro_search_untabulated_body "$num" "$count" ileti
+      zro_search_untabulated_body "$num" "$count" ileti 'conversation listing'
       return 0
     fi
     if [ -n "$num" ]; then
