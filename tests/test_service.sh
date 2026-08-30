@@ -56,6 +56,23 @@ export ZRO_MOCK_ZMCONTROL_STATUS_RC=124
 assert_status "$ZRO_E_TIMEOUT" zro_svc_fetch
 unset ZRO_MOCK_ZMCONTROL_STATUS_RC
 
+it "a failure nothing above recognised ends on the status that could not be read"
+# NOT $ZRO_E_UNAVAILABLE, which names a Zimbra service a read needed and that did
+# not answer. Its one screen tells the operator to check the mail service with
+# zmcontrol status — the command that has just failed here — and the admin
+# certificate with zmcertmgr, neither of which this command talks to at all.
+# ADR-0016 gives the read its own code so the screen can be about what happened.
+reset
+unset ZRO_MOCK_ZMCONTROL_STATUS_OUT
+export ZRO_MOCK_ZMCONTROL_STATUS_RC=1
+export ZRO_MOCK_ZMCONTROL_STATUS_ERR="$FIX/zmcontrol_status_synthetic_unclassified.err"
+assert_status "$ZRO_E_NO_STATUS" zro_svc_fetch
+
+it "and what the command said is kept where the screen will find it"
+assert_contains "$(zro_last_error)" "no reading for"
+unset ZRO_MOCK_ZMCONTROL_STATUS_RC ZRO_MOCK_ZMCONTROL_STATUS_ERR
+export ZRO_MOCK_ZMCONTROL_STATUS_OUT="$FIX/zmcontrol_status_ok.txt"
+
 # ------------------------------------------------------- reading the output --
 
 it "every service on the host is read, and the host it is about with them"

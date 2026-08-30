@@ -231,11 +231,34 @@ export ZRO_MOCK_POSTQUEUE__P_RC=69
 assert_status "$ZRO_E_PERM" zro_queue_fetch
 
 it "and an ordinary failure is not read as a refusal"
+# IT ENDS ON THE QUEUE'S OWN CODE, not on $ZRO_E_UNAVAILABLE, which names a Zimbra
+# service a read needed and that did not answer. postqueue reads Postfix's own
+# queue on this host and reaches no ZIMBRA service — no SOAP, no mailboxd, no
+# admin certificate — so that screen sends an operator to the wrong subsystem
+# entirely. Where to look for a postqueue that failed is Postfix. ADR-0016.
 reset
 unset ZRO_MOCK_POSTQUEUE__P_ERR
 export ZRO_MOCK_POSTQUEUE__P_RC=1
-assert_status "$ZRO_E_UNAVAILABLE" zro_queue_fetch
+assert_status "$ZRO_E_NO_QUEUE" zro_queue_fetch
 assert_out_eq "ok" zro_cap_queue_reason
+
+it "and what the tool said is kept where the screen will find it"
+reset
+export ZRO_MOCK_POSTQUEUE__P_ERR="$FIX/postqueue_p_synthetic_unclassified.err"
+export ZRO_MOCK_POSTQUEUE__P_RC=1
+assert_status "$ZRO_E_NO_QUEUE" zro_queue_fetch
+assert_contains "$(zro_last_error)" "no reading for"
+unset ZRO_MOCK_POSTQUEUE__P_ERR
+
+it "and the status Postfix refuses with is not one the gate could claim"
+# THE ONE THING THE REORDER COULD HAVE BROKEN. zro_exec_own_code is asked before
+# zro_queue_refused now, which is where ADR-0012 puts it — so a refusal would
+# leave as a gate code rather than as this module's permission answer if the gate
+# owned 69. It owns 21, 22, 90, 91 and 92 and nothing else, and this is the fact
+# the reorder rests on, asserted rather than re-derived from a comment. The three
+# refusal cases above are the behavioural half and they are left exactly as they
+# were: what says the reorder is safe is that they still pass.
+assert_fail zro_exec_own_code "$ZRO_QUEUE_RC_DENIED"
 
 it "a queue tool that never answered is reported as the timeout it was"
 # The gate's timeout is what bounds every command here. It arrives as this

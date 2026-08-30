@@ -590,7 +590,10 @@ done
 
 it "the queue module reaches no Zimbra binary, and no second path to its own"
 queue=$(zro_scan_file "$ZRO_SRC/lib/queue.sh")
-assert_eq "$(printf '%s\n' "$queue" | grep -cE 'zro_exec')" "1"
+# ONE CALL, counted as a call, on the terms the service module below is counted
+# on: zro_exec_own_code names the gate and runs nothing, so it is not a second
+# path to the binary and a count of the bare name would report it as one.
+assert_eq "$(printf '%s\n' "$queue" | grep -cE 'zro_exec([[:space:]]|$)')" "1"
 assert_not_contains "$queue" "zmprov"
 assert_not_contains "$queue" "zmmailbox"
 assert_not_contains "$queue" "zmcontrol"
@@ -607,7 +610,11 @@ done
 
 it "and the module that asks for it reaches nothing else"
 svc=$(zro_scan_file "$ZRO_SRC/lib/service.sh")
-assert_eq "$(printf '%s\n' "$svc" | grep -cE 'zro_exec')" "1"
+# ONE CALL, counted as a call. Asking the gate which statuses are its own is not
+# reaching it: zro_exec_own_code names the gate and runs nothing, the way
+# zro_allowed does, and a count of the bare name would have to be raised by one
+# every time a module asked the gate a question about itself.
+assert_eq "$(printf '%s\n' "$svc" | grep -cE 'zro_exec([[:space:]]|$)')" "1"
 assert_not_contains "$svc" "zmprov"
 assert_not_contains "$svc" "zmmailbox"
 assert_not_contains "$svc" "postqueue"
@@ -1272,6 +1279,134 @@ assert_contains "$(zro_scan_file "$ZRO_SRC/lib/list.sh")" "zro_list_position()"
 it "and it has exactly three call sites, one per built list"
 assert_eq "$(printf '%s\n' "$raw_code" | grep 'zro_list_position' \
             | grep -vc 'zro_list_position()')" "3"
+
+# ------------------------------------------------- a code and the screen for it --
+#
+# EVERY CODE THIS PROGRAM DEFINES HAS AN ARM OF ITS OWN, or is declared below as
+# one that does not.
+#
+# THE QUESTION IS THE ARM AND NOT THE SCREEN, because zro_report_error ends in a
+# generic arm that catches everything: asked whether a code reaches a screen at
+# all, every code that will ever exist answers yes, and what the operator reads is
+# "Islem basarisiz (kod 26)". That is how a code the two host screens both fell
+# back to survived twenty-four cases written about those screens, and how an
+# operator whose zmcontrol status had just failed came to be told that zmprov
+# connects to mailboxd over SOAP. See docs/adr/0016.
+#
+# THE SEARCH REACHES THE MODULES, not the entry point alone. ZRO_E_NO_BLOB is
+# answered inside lib/message.sh, because each cause of an unreadable blob has a
+# different repair and the record is still on the screen above it; a pin that read
+# only the shared reporter would call that code unanswered.
+
+# The three, written out, each with the reason it is one. A list derived from the
+# source would agree with the source by construction and say nothing; this is the
+# list a maintainer has to add a fourth line to, and the equality below is what
+# makes them stop and write the reason down.
+# SC2034: read by NAME through lib/table.sh, never expanded here — the same terms
+# every declared table in the program is read on.
+# shellcheck disable=SC2034
+ZRO_T_CODE_NO_SCREEN='
+ZRO_E_OK:not a failure
+ZRO_E_CANCEL:not a failure, and never becomes a process exit status
+ZRO_E_BADUSER:reaches an operator as a bare number today, and has issue 102
+'
+
+# Every case arm that names a code this program defines, kept only when the arm
+# REACHES THE OPERATOR, as one "<code> <file>" line per code the arm names.
+#
+# FOUR WAYS AN ARM CAN SPEAK, and they are the whole test: a UI box, a screen
+# function, a card or a message printed for a caller to show. Every arm in this
+# tree that names a code and does none of them is a mapping — the gate's own
+# predicate and the two store arms that set a variable — and none of those is a
+# screen. That is a fact about the tree rather than a guarantee about it: an arm
+# that printed something no operator reads would be counted here, and what this
+# pin is for is the code nobody wrote an arm for.
+#
+# THE COMMENTS ARE STRIPPED AND THE QUOTES ARE NOT, which is the opposite of what
+# every other case here reads. An arm's pattern IS a quoted span, so the view with
+# quoted spans removed has no arms left in it at all.
+zro_code_screen_facts() {
+  local f
+  for f in "${SOURCES[@]}"; do
+    zro_strip_comments "$f" | awk -v file="$(basename -- "$f")" '
+      function flush(   i) {
+        if (reaches) for (i = 1; i <= n; i++) print code[i], file
+        inarm = 0; n = 0; reaches = 0
+      }
+      {
+        line = $0
+        # An arm opens on a line that is nothing but code names and a closing
+        # parenthesis. The names are read off the pattern, and the pattern is then
+        # cut away so that the rest of the line is read as the body it is.
+        if (!inarm && line ~ /^[[:space:]]*"?[$]ZRO_E_[A-Z_]+"?([|]"?[$]ZRO_E_[A-Z_]+"?)*[)]/) {
+          inarm = 1; reaches = 0; n = 0
+          pat = line
+          sub(/[)].*$/, "", pat)
+          while (match(pat, /ZRO_E_[A-Z_]+/)) {
+            code[++n] = substr(pat, RSTART, RLENGTH)
+            pat = substr(pat, RSTART + RLENGTH)
+          }
+          sub(/^[^)]*[)]/, "", line)
+        }
+        if (!inarm) next
+        if (line ~ /zro_ui_msgbox|zro_ui_notice|zro_show_text|zro_screen_|printf/) reaches = 1
+        if (index(line, ";;")) flush()
+      }
+    '
+  done
+}
+
+code_screens=$(zro_code_screen_facts)
+screened_codes=$(printf '%s\n' "$code_screens" | awk '{print $1}' | sort -u)
+# Read off the file that DEFINES them rather than off the loaded shell, which would
+# answer with every ZRO_E_ name any sourced module happens to be holding.
+defined_codes=$(grep -oE '^ZRO_E_[A-Z_]+' "$ZRO_SRC/lib/core.sh" | sort -u)
+
+no_screen=""
+while IFS= read -r c; do
+  [ -n "$c" ] || continue
+  found=no
+  while IFS= read -r s; do
+    [ "$s" = "$c" ] && found=yes
+  done <<SCREENED
+$screened_codes
+SCREENED
+  [ "$found" = yes ] || no_screen="$no_screen$c
+"
+done <<EOF
+$defined_codes
+EOF
+
+it "every code this program defines has a screen of its own, or is declared as one that does not"
+# THE TWO SETS ARE HELD EQUAL IN BOTH DIRECTIONS, exactly as the thirteen menus
+# above are. A code missing from the declaration is one that reaches an operator as
+# a bare number; a line in the declaration with no code behind it is an excuse for
+# a screen somebody has since written.
+assert_eq "$(printf '%s' "$no_screen" | sort)" "$(zro_table_keys ZRO_T_CODE_NO_SCREEN | sort)"
+
+it "and each declared exception says why it is one"
+# The reason is the whole value of declaring it. A bare name would read as a code
+# nobody got round to, which is the one thing these three are not.
+bare_reason=""
+while IFS= read -r c; do
+  [ -n "$c" ] || continue
+  why=$(zro_table_field ZRO_T_CODE_NO_SCREEN "$c" 1) || why=""
+  [ -n "$why" ] || bare_reason="$bare_reason [$c]"
+done <<EOF
+$(zro_table_keys ZRO_T_CODE_NO_SCREEN)
+EOF
+assert_eq "$bare_reason" ""
+
+it "and the scan found arms rather than agreeing with an empty answer"
+# Without these two the equality above passes on a scan that matched nothing at
+# all: every code would be screenless and the declaration would just have to be
+# longer. Nineteen codes are defined and sixteen have an arm of their own.
+assert_eq "$(printf '%s\n' "$defined_codes" | grep -c .)" "19"
+assert_eq "$(printf '%s\n' "$screened_codes" | grep -c .)" "16"
+
+it "and it reaches the modules, not the entry point alone"
+assert_eq "$(printf '%s\n' "$code_screens" | awk '$1 == "ZRO_E_NO_BLOB" {print $2}' \
+            | sort -u)" "message.sh"
 
 it "every library guards against being loaded twice"
 for f in "$ZRO_SRC"/lib/*.sh; do

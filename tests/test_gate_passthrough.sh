@@ -133,10 +133,54 @@ gate_denies  zro_queue_fetch
 gate_baduser zro_queue_fetch
 ZRO_POSTFIX_SBIN=/nonexistent assert_status "$ZRO_E_NOCAP" zro_queue_fetch
 
+it "and the fifth one too, on a path that exists in this harness and nowhere else"
+# THE CASE THAT COULD ONLY BE WRITTEN HERE, and the same is true of the service
+# status below. zro_startup_check refuses to start a session without `timeout`, so
+# in production the gate cannot answer either module with ZRO_E_UNAVAILABLE at all;
+# the runner sources the entry point without the preflight, which is what lets a
+# case reach it. ADR-0016 records the four mechanisms that close it and
+# docs/research/2026-08-30 holds the runs.
+#
+# THE NUMBER ALONE DOES NOT SETTLE IT, which is why the case after this one asks
+# for the log line as well. zro_queue_fetch answers with this same constant for a
+# scratch file it could not create — one of the four borrowings ADR-0016 leaves
+# standing, and #99 — so the constant arriving proves that something refused and
+# not that the gate's code travelled. What tells a code that passed through from
+# one the module read as its own is that the module's own reading WRITES A LINE.
+#
+# THE CLOCK IS EMPTIED, NOT POINTED SOMEWHERE THAT DOES NOT EXIST. The gate asks
+# whether it has a clock at all; a path that is merely absent passes that check
+# and fails as the command's own 127, which is the module's sink and not this.
+ZRO_TIMEOUT_BIN='' assert_status "$ZRO_E_UNAVAILABLE" zro_queue_fetch
+
+it "and the queue left as the gate's code, by the line its own reading did not write"
+# THE DISCRIMINATING HALF, and the shape both seams use. Both the sink ADR-0016
+# removed and the sink that replaced it write 'mail queue unreadable' before
+# returning; a status the predicate recognised returns above that line and writes
+# nothing. So this is what fails if the predicate is dropped — the case above
+# would go on passing, because the number the module invented for itself was the
+# number the gate had sent.
+said=$( { ZRO_TIMEOUT_BIN='' zro_queue_fetch >/dev/null; } 2>&1 )
+assert_not_contains "$said" "mail queue unreadable"
+
 it "the service status passes the gate's codes through"
 gate_denies  zro_svc_fetch
 gate_baduser zro_svc_fetch
 ZRO_ZIMBRA_BIN=/nonexistent assert_status "$ZRO_E_NOCAP" zro_svc_fetch
+
+it "and the fifth one too, down the same harness-only path"
+# THE SECOND OF THE TWO, and everything the pair rests on is written out at the
+# queue above: why this path exists in the suite and nowhere else, why the number
+# alone does not settle it, and why the clock is emptied rather than pointed
+# somewhere that is merely absent. This module's own borrowing of the constant is
+# the scratch file it could not create, which is #99.
+ZRO_TIMEOUT_BIN='' assert_status "$ZRO_E_UNAVAILABLE" zro_svc_fetch
+
+it "and the service status left the same way, by the line it too did not write"
+# The other half of the pair, on this module's own line. Why it discriminates is
+# written out at the queue above.
+said=$( { ZRO_TIMEOUT_BIN='' zro_svc_fetch >/dev/null; } 2>&1 )
+assert_not_contains "$said" "service status unreadable"
 
 # --------------------------------------------- the two dispatchers --
 

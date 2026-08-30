@@ -146,12 +146,18 @@ zro_svc_fetch() {
 
   if [ "$rc" -ne 0 ]; then
     [ -z "$said" ] || zro_set_error "$said"
-    case $rc in
-      "$ZRO_E_DENIED"|"$ZRO_E_BADUSER"|"$ZRO_E_NOCAP"|"$ZRO_E_TIMEOUT")
-        return "$rc" ;;
-    esac
+    # ASKED OF THE GATE, BEFORE ANYTHING ELSE READS THE STATUS, which is the rule
+    # ADR-0012 states. What stood here was a case naming four of the gate's five
+    # codes and using the fifth as the sink below — a copy of a fact about
+    # zro_exec's return set, kept in this file, that would go stale silently the
+    # day the gate gains a sixth code.
+    zro_exec_own_code "$rc" && return "$rc"
+    # WHAT COULD NOT BE READ IS THE STATUS. Not $ZRO_E_UNAVAILABLE, which names a
+    # Zimbra service a read needed and that did not answer: its screen sends the
+    # operator to check the mail service with zmcontrol status and the admin
+    # certificate with zmcertmgr, and this command reaches neither. ADR-0016.
     zro_log warn "service status unreadable (${said:-no message on stderr})"
-    return "$ZRO_E_UNAVAILABLE"
+    return "$ZRO_E_NO_STATUS"
   fi
   zro_clear_error
   printf '%s' "$out"

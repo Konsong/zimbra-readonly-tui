@@ -968,11 +968,13 @@ zro_exec() {
 # while a binary's status is undocumented here and has to become a code this
 # program defines.
 #
-# ONE PLACE TO ASK, AND ONE CALLER THAT ASKS IT: lib/settle.sh, the routine a gated
-# read finishes through — the message read today, the store and search reads next.
-# The predicate stays here rather than moving there because
-# its membership is a fact about zro_exec above — it changes when that function's
-# return set changes and at no other time. ADR-0010 records the decision.
+# ONE PLACE TO ASK, AND MORE THAN ONE CALLER. lib/settle.sh asks it for every read
+# that finishes through the settler; a module whose capture and classification are
+# written inline asks it itself, at the point the settler would have — BEFORE
+# anything else looks at the status, which is the rule ADR-0012 states. The
+# predicate stays here rather than moving to the settler because its membership is
+# a fact about zro_exec above: it changes when that function's return set changes
+# and at no other time. ADR-0010 records the decision.
 #
 # It is here at all because six modules answered this question separately and
 # arrived at three different answers. What that cost is on the record:
@@ -981,13 +983,20 @@ zro_exec() {
 # reached the operator as a screen naming mailboxd, a service that command never
 # talks to.
 #
-# THREE HAND-WRITTEN LISTS STILL STAND — lib/logview.sh, lib/queue.sh and
-# lib/service.sh — and that is a scope line rather than an oversight: this change
-# fixes the module that was wrong and gives the others somewhere to ask. Both
-# queue and service use ZRO_E_UNAVAILABLE as their own fall-through sink, so
-# converting them is a decision about what a sink means and not a substitution.
-# tests/test_gate_passthrough.sh holds all three to the rule meanwhile, which is
-# what makes leaving them safe.
+# NO HAND-WRITTEN LIST OF THESE CODES STANDS ANYWHERE IN THIS TREE. There were
+# three when this predicate was written — lib/logview.sh, lib/queue.sh and
+# lib/service.sh — and the last two were left out of step once, each waiting on
+# what its fall-through sink MEANT. ADR-0016 settled that and they were converted
+# in order behind it. tests/test_gate_passthrough.sh is what keeps it so: ten of
+# the twelve seams that read a gated command are driven down a real refusal there,
+# the two left out answer with a boolean and are named in its header, and a list
+# copied back into any of the ten fails a case rather than going quiet.
+#
+# ONE LIST REMAINS THAT IS NOT ONE OF THESE, and it is the inverse:
+# zro_logsearch_gate_code names the READERS' statuses and reads everything else as
+# the gate's. This predicate is not a drop-in for it — the two are not
+# complements, so a status belonging to neither would leave there as a gate code
+# it never was. That is a redesign rather than a substitution, and it is #79.
 #
 # THE MEMBERSHIP IS READ OFF zro_exec ABOVE, not chosen. Those are the only five it
 # returns: ZRO_E_INPUT appears in zro_bin_path and zro_identity_mode, and zro_exec
