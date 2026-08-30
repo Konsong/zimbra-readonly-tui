@@ -138,6 +138,34 @@ gate_denies  zro_svc_fetch
 gate_baduser zro_svc_fetch
 ZRO_ZIMBRA_BIN=/nonexistent assert_status "$ZRO_E_NOCAP" zro_svc_fetch
 
+it "and the fifth one too, on a path that exists in this harness and nowhere else"
+# THE CASE THAT COULD ONLY BE WRITTEN HERE. zro_startup_check refuses to start a
+# session without `timeout`, so in production the gate cannot answer this module
+# with ZRO_E_UNAVAILABLE at all; the runner sources the entry point without the
+# preflight, which is what lets a case reach it. ADR-0016 records the four
+# mechanisms that close it and docs/research/2026-08-30 holds the runs.
+#
+# THE NUMBER ALONE DOES NOT SETTLE IT, which is why the case after this one asks
+# for the log line as well. zro_svc_fetch answers with this same constant for a
+# scratch file it could not create — one of the four borrowings ADR-0016 leaves
+# standing, and #99 — so the constant arriving proves that something refused and
+# not that the gate's code travelled. What tells a code that passed through from
+# one the module read as its own is that the module's own reading WRITES A LINE.
+#
+# THE CLOCK IS EMPTIED, NOT POINTED SOMEWHERE THAT DOES NOT EXIST. The gate asks
+# whether it has a clock at all; a path that is merely absent passes that check
+# and fails as the command's own 127, which is the module's sink and not this.
+ZRO_TIMEOUT_BIN='' assert_status "$ZRO_E_UNAVAILABLE" zro_svc_fetch
+
+it "and it left as the gate's code rather than through the module's own reading"
+# THE DISCRIMINATING HALF. Both the sink this change removed and the sink that
+# replaced it write 'service status unreadable' before returning; a status the
+# predicate recognised returns above that line and writes nothing. So this is what
+# fails if the predicate is dropped — the case above would go on passing, because
+# the number the module invented for itself was the number the gate had sent.
+said=$( { ZRO_TIMEOUT_BIN='' zro_svc_fetch >/dev/null; } 2>&1 )
+assert_not_contains "$said" "service status unreadable"
+
 # --------------------------------------------- the two dispatchers --
 
 # These two hold no mapping code at all: every arm is a tail call, so the gate's

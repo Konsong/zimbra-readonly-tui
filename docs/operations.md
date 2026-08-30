@@ -1284,6 +1284,7 @@ comes from `zmmailbox gms -v`, behind the existence gate.
 | 22 | command timed out |
 | 23 | log unreadable |
 | 24 | a stored message file (blob) could not be read |
+| 25 | the service **status** could not be read — `zmcontrol status` ran and failed, and nothing is known about the services themselves |
 | 30 | partial result — some of the sources could not be read |
 | 40 | operator cancelled — navigation, never a process exit status |
 | 90 | **allowlist denial** |

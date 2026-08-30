@@ -968,11 +968,14 @@ zro_exec() {
 # while a binary's status is undocumented here and has to become a code this
 # program defines.
 #
-# ONE PLACE TO ASK, AND ONE CALLER THAT ASKS IT: lib/settle.sh, the routine a gated
-# read finishes through — the message read today, the store and search reads next.
-# The predicate stays here rather than moving there because
-# its membership is a fact about zro_exec above — it changes when that function's
-# return set changes and at no other time. ADR-0010 records the decision.
+# ONE PLACE TO ASK, AND MORE THAN ONE CALLER. lib/settle.sh asks it for every read
+# that finishes through the settler; a module whose capture and classification are
+# written inline asks it itself, at the point the settler would have — BEFORE
+# anything else looks at the status, which is the rule ADR-0012 states. One inline
+# module has not been converted yet, and it is named below. The predicate stays
+# here rather than moving to the settler because its membership is a fact about
+# zro_exec above: it changes when that function's return set changes and at no
+# other time. ADR-0010 records the decision.
 #
 # It is here at all because six modules answered this question separately and
 # arrived at three different answers. What that cost is on the record:
@@ -981,13 +984,12 @@ zro_exec() {
 # reached the operator as a screen naming mailboxd, a service that command never
 # talks to.
 #
-# THREE HAND-WRITTEN LISTS STILL STAND — lib/logview.sh, lib/queue.sh and
-# lib/service.sh — and that is a scope line rather than an oversight: this change
-# fixes the module that was wrong and gives the others somewhere to ask. Both
-# queue and service use ZRO_E_UNAVAILABLE as their own fall-through sink, so
-# converting them is a decision about what a sink means and not a substitution.
-# tests/test_gate_passthrough.sh holds all three to the rule meanwhile, which is
-# what makes leaving them safe.
+# ONE HAND-WRITTEN LIST STILL STANDS — lib/queue.sh — and that is a scope line
+# rather than an oversight. It is the module lib/service.sh reads alike, and it is
+# converted by the ticket ADR-0016 sequences after this one — the two were left
+# out of step once already, and answering them in one order is what puts them
+# back. tests/test_gate_passthrough.sh holds it to the rule meanwhile, which is
+# what makes leaving it safe.
 #
 # THE MEMBERSHIP IS READ OFF zro_exec ABOVE, not chosen. Those are the only five it
 # returns: ZRO_E_INPUT appears in zro_bin_path and zro_identity_mode, and zro_exec

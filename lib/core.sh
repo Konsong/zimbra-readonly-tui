@@ -24,6 +24,19 @@ ZRO_E_NO_RESULT=14
 ZRO_E_NO_DOMAIN=15
 # Environment
 ZRO_E_PERM=20
+# A ZIMBRA SERVICE A READ NEEDED AND THAT DID NOT ANSWER: the mail service behind
+# zmprov and zmmailbox, reached over SOAP. That one condition and no other, which
+# is what its screen already describes and what makes it an ANSWER an operator
+# acts on — the service is stopped, or the certificate that authenticates to it is
+# not valid.
+#
+# NOT A COMMAND THAT RAN AND FAILED for a reason nothing recognised. That reading
+# is how an operator whose zmcontrol status had just failed was told to go and run
+# zmcontrol status, and it is why the two sinks have codes of their own. The sites
+# that still borrow this one for something the command never reached — a scratch
+# file, a binary the gate's own plumbing needs, a system tool that answered
+# nonsense — are violations with tickets rather than readings of it. ADR-0016
+# binds the term and CONTEXT.md carries it under 'Unavailable'.
 ZRO_E_UNAVAILABLE=21
 ZRO_E_TIMEOUT=22
 ZRO_E_NO_LOG=23
@@ -34,6 +47,17 @@ ZRO_E_NO_LOG=23
 # a file the store no longer has, or one the account every command runs as cannot
 # open — so no undocumented status from `head` or `gzip` reaches a caller.
 ZRO_E_NO_BLOB=24
+# What the service-status read ends on when zmcontrol status ran and failed for a
+# reason nothing above it recognised. THE STATUS is what could not be read; the
+# services themselves are exactly what this program has learned nothing about, so
+# it is not called NO_SERVICE — that is the most alarming reading available on that
+# screen, and zro_svc_card already refuses to invent it.
+# It is not folded into the code the MAIL QUEUE read ends on, for the reason the
+# log and the blob above are kept apart: the two name different tools with
+# different repairs. A postqueue that failed sends an operator to Postfix; a
+# zmcontrol status that failed sends them to the Zimbra control plane and the
+# directory, and one code shared between them would be true about neither.
+ZRO_E_NO_STATUS=25
 # Partial. The operation ran and answered, but not from everything it was meant to
 # read: a delivery trace whose arrival window selected a log file it could not open,
 # or a bulk read that could not reach every account. Never returned without saying

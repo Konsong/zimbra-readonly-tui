@@ -12,6 +12,11 @@ assert_eq "$ZRO_E_CANCEL" "40"
 assert_eq "$ZRO_E_DENIED" "90"
 assert_eq "$ZRO_E_BADUSER" "91"
 assert_eq "$ZRO_E_NOCAP" "92"
+# The service-status read's own sink, in the environment band beside the log and
+# the blob. Pinned here for the reason those two are: a code an operator reads off
+# a screen is part of this program's interface, and a number that moved under a
+# name would change what a screen means without changing a word of it.
+assert_eq "$ZRO_E_NO_STATUS" "25"
 
 it "zro_log writes to stderr, never stdout"
 assert_out_eq "" zro_log info "should not appear on stdout"

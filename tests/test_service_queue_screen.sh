@@ -62,6 +62,15 @@ blocked_server() {
   unset ZRO_MOCK_ZMCONTROL_STATUS_OUT ZRO_MOCK_ZMCONTROL_STATUS_ERR
   export ZRO_MOCK_ZMCONTROL_STATUS_RC=124
 }
+# The command ran, failed, and said something nothing in this program has a
+# reading for. The fixture is named synthetic because it is: no capture of this
+# failure exists, and what the case is about is the CODE the read ends on rather
+# than the sentence that produced it.
+unreadable_server() {
+  unset ZRO_MOCK_ZMCONTROL_STATUS_OUT
+  export ZRO_MOCK_ZMCONTROL_STATUS_RC=1
+  export ZRO_MOCK_ZMCONTROL_STATUS_ERR="$FIX/zmcontrol_status_synthetic_unclassified.err"
+}
 queue_with_mail() {
   export ZRO_CAP_FORCE_QUEUE_BIN=yes
   export ZRO_MOCK_POSTQUEUE__P_OUT="$FIX/postqueue_p_deferred_hold.txt"
@@ -162,6 +171,39 @@ assert_contains "$out" "LDAP"
 assert_contains "$out" "DOKUNULMADI"
 
 it "and the menu comes back afterwards rather than the tool stopping"
+assert_contains "$out" "MENU Ana menu"
+
+it "a status command that ran and failed says so, and shows what it said"
+# THE CASE THE TWENTY-FOUR BEFORE IT NEVER ASKED. This read used to end on
+# $ZRO_E_UNAVAILABLE, whose one screen opens by explaining that zmprov connects
+# to mailboxd over SOAP — so an operator whose zmcontrol status had just failed
+# was told to check the mailbox service with zmcontrol status. ADR-0016.
+unreadable_server
+queue "service-status" "__CANCEL__"
+run
+out=$(transcript)
+assert_contains "$out" "zmcontrol status calisti ve basarisiz oldu"
+assert_contains "$out" "Zimbra ciktisi"
+assert_contains "$out" "no reading for"
+
+it "and it does not send the operator to a service this command never talks to"
+# zmcontrol status speaks no SOAP, does not reach mailboxd, and does not present
+# the admin certificate. Every one of those was on the screen this read used to
+# end on, and each of them is a place an operator would look and find nothing.
+assert_not_contains "$out" "mailboxd"
+assert_not_contains "$out" "SOAP"
+assert_not_contains "$out" "zmcertmgr"
+
+it "and it claims nothing about the services themselves"
+# zro_svc_card refuses to report an answer it could not read as a row of stopped
+# services — 'the most alarming screen in the tool, invented'. A screen that let
+# that reading in by implication would undo the refusal in words.
+assert_contains "$out" "HICBIR SEY"
+assert_not_contains "$out" "DURMUS"
+assert_not_contains "$out" "Servis sayisi"
+assert_not_contains "$out" "Durmus"
+
+it "and the menu comes back from this one too"
 assert_contains "$out" "MENU Ana menu"
 
 # --------------------------------------------------------------- the queue --

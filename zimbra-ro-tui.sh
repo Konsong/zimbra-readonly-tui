@@ -409,6 +409,25 @@ Bir sey bulunamamasi, aranan seyin var olmadigini KANITLAMAZ.$detail" ;;
 zmprov varsayilan olarak mailboxd servisine SOAP ile baglanir. En sik iki sebep:
   - mailbox servisi durmus     (kontrol: zmcontrol status)
   - admin sertifikasi gecersiz (kontrol: zmcertmgr viewdeployedcrt)$detail" ;;
+    # THE COMMAND RAN AND FAILED, and nothing above it recognised why. Its own
+    # screen rather than the one above, which is written for a Zimbra service that
+    # did not answer: zmcontrol status speaks no SOAP, never reaches mailboxd and
+    # presents no certificate, so every repair that screen names is a place this
+    # operator would look and find nothing — and one of them is the command that
+    # has just failed. ADR-0016.
+    #
+    # WHAT WAS NOT LEARNED IS SAID OUTRIGHT. zro_svc_card refuses to render an
+    # answer it could not read as a row of stopped services, because that would be
+    # the most alarming screen in the tool, invented; a failure screen that let the
+    # same reading in by implication would undo the refusal in words.
+    "$ZRO_E_NO_STATUS")
+      zro_ui_msgbox "Servis durumu okunamadi" \
+"zmcontrol status calisti ve basarisiz oldu; servis durumu alinamadi.
+
+Servisler hakkinda HICBIR SEY ogrenilemedi: bu ekran hicbir servisin durdugunu
+ya da eksik oldugunu SOYLEMEZ, yalnizca durumun okunamadigini soyler.
+
+Ne oldugunu anlamak icin komutun kendi ciktisina ve arac gunlugune bakin.$detail" ;;
     *)                   zro_ui_msgbox "Hata" "Islem basarisiz (kod $1).$detail" ;;
   esac
 }
