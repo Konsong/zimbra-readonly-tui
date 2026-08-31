@@ -214,6 +214,92 @@ assert_fail zro_allowed zmprov -l gis
 assert_fail zro_allowed zmprov -l gis "$POPULATED"
 assert_fail zro_ldap_form_allowed gis "$POPULATED"
 
+# ------------------------------------ the oracle's sentence, and the store it uses --
+
+# THE STORE IS NOT A SCREEN CHANNEL AT THIS SEAM. zro_mbox_classify reads the text
+# zro_prov_read left in the error store, so the store is what carries the oracle's
+# answer from the read to the verdict — which is why the rule these cases hold is
+# that it contains THIS read's sentence, or nothing at all. ADR-0018.
+
+it "the oracle's sentence replaces whatever an earlier read left behind"
+# THE POSITIVE HALF, and what the write after the mapping is for: it is what puts
+# the sentence where the classifier reads it.
+fresh
+zro_set_error "ERROR: zclient.IO_ERROR (Connection refused) left by an earlier read"
+assert_eq "$(answers_no_account zro_mbox_verdict "$GONE")" "noaccount"
+assert_contains "$(zro_last_error)" "no such account"
+assert_not_contains "$(zro_last_error)" "earlier read"
+
+# WHICH REFUSALS THE RULE IS ACTUALLY ABOUT, measured on this tree rather than
+# reasoned from "a refusal ran nothing, so the file is empty". Two of the gate's
+# codes arrive WITH the gate's own log line on the stream the caller captured:
+#
+#   ZRO_E_NOCAP    not available on this host: /nonexistent/zmprov
+#   ZRO_E_DENIED   denied by allowlist: zmprov gis ...
+#
+# For those two a guarded write would still fire and still overwrite. The other two
+# say NOTHING, and they are the ones a guard would mishandle. Writing unconditionally
+# is what makes the rule hold for all four without the caller having to know which
+# kind it got — and the two cases below are the two SILENT ones, deliberately. A case
+# built on NOCAP passes with the guard in place and proves nothing at all; this file
+# had one for the length of an afternoon.
+
+it "a silent gate refusal leaves nothing of an earlier operation for the classifier"
+# THE FAILURE #85 PROPOSED OPENING. A refusal ran nothing, so no sentence in the
+# store is about this account — the only one that could survive belongs to an earlier
+# operation, and zro_mbox_classify cannot tell. It would answer for an account that
+# EXISTS that it does not, with status 0.
+fresh
+zro_set_error "ERROR: account.NO_SUCH_ACCOUNT (no such account: baska@example.com)"
+ZRO_MOCK_ID_USER=nobody assert_status "$ZRO_E_BADUSER" zro_mbox_verdict "$POPULATED"
+
+it "and the same holds for the other word, on the other silent refusal"
+# Both sentences and both silent codes. The two words are what this gate exists to
+# separate, and one of each would leave half the rule untested.
+fresh
+zro_set_error "ERROR: service.FAILURE (system failure: mailbox not found for account 42)"
+ZRO_MOCK_TIMEOUT_FIRE=1 assert_status "$ZRO_E_TIMEOUT" zro_mbox_verdict "$POPULATED"
+
+it "and a refusal that never asked proves nothing either way"
+assert_fail zro_mbox_proven "$POPULATED"
+
+# THE RULE READ FROM THE SOURCE, beside the cases above and not instead of them.
+# Those catch a wrong ANSWER; this catches the wrong FIX — the one-line guard #85
+# proposed, copied from zro_settle, which a maintainer can write in the time it takes
+# to notice the two seams differ. A guard wrapped over two lines is caught by the
+# cases above rather than by this one; what this holds is the spelling the ticket
+# actually asked for.
+#
+# COMMENTS ARE STRIPPED FIRST, for the reason tests/test_settle.sh gives about its own
+# extraction: prose in this tree names zro_set_error, and a claim about what the
+# program DOES may not be answered by what a comment SAYS.
+prov_body=$(sed -e 's/^[[:space:]]*#.*$//' -e 's/\([[:space:]]\)#.*$/\1/' "$ZRO_SRC/lib/account.sh" \
+            | awk '$0 == "zro_prov_read() {" { inside = 1; next }
+                   inside && $0 == "}" { inside = 0 }
+                   inside')
+prov_writes=$(printf '%s\n' "$prov_body" \
+              | grep -cE '(^|[^[:alnum:]_])zro_set_error([^[:alnum:]_]|$)') || prov_writes=0
+prov_guarded=$(printf '%s\n' "$prov_body" \
+               | grep -cE '(\]|&&|\|\|)[[:space:]]*zro_set_error') || prov_guarded=0
+
+it "the function this rule is read from was found, and it is that function's text"
+# THE FLOOR, AND IT NAMES A LANDMARK RATHER THAN COUNTING. An extraction that matched
+# nothing leaves every count at zero, and the case below would pass for having read no
+# text rather than for finding no guard. tests/test_settle.sh states the reason for
+# naming rather than counting here: a count is the number this file would be
+# describing back to itself.
+assert_contains "$prov_body" "zro_exec_own_code"
+assert_contains "$prov_body" "zro_prov_outcome_code"
+
+it "both writes of the oracle's sentence are still in it, and neither carries a guard"
+# THE COUNT BELONGS TO THIS CASE AND NOT TO THE FLOOR, because here it is the rule
+# rather than a self-description: ADR-0018 is about BOTH writes — one puts the
+# sentence where the classifier reads it, the other keeps a stale one out — so a third
+# write appearing in this function is a change to what the rule covers and is supposed
+# to stop the build until someone says so.
+assert_eq "$prov_writes" "2"
+assert_eq "$prov_guarded" "0"
+
 # ------------------------------------------------ the gate a screen asks of --
 
 it "the gate answers a mailbox screen with a documented code"

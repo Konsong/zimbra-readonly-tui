@@ -348,6 +348,27 @@ zro_prov_read() {
   # invocation buys nothing -- and while the fall-through was here, a host-level
   # ZRO_E_UNAVAILABLE was indistinguishable from an unreachable mailboxd and ran it
   # anyway. ADR-0012.
+  #
+  # THE STORE HOLDS THIS READ'S SENTENCE OR NOTHING, WHICH IS WHY THIS WRITE IS
+  # UNCONDITIONAL WHERE zro_settle GUARDS ITS OWN. It is not a copy that missed a
+  # correction: this seam has a reader that is not a screen. `gis` is the existence
+  # oracle, so zro_mbox_verdict sits directly on top of this function and reaches its
+  # verdict by CLASSIFYING THE STORE'S TEXT — both absences exit 2, so a status cannot
+  # tell them apart. Three of the gate's four refusals happen before anything runs, so
+  # anything left in the store belongs to an EARLIER operation; on the fourth, a
+  # timeout, the command ran and was killed, and whatever it managed to say is not an
+  # answer about existence either. zro_mbox_classify cannot tell any of that: handed a
+  # stale sentence it would answer `noaccount` for an account that EXISTS, with status
+  # 0, which is the sentence zro_mbox_verdict says must never come out of a failure.
+  #
+  # AND WHICH KIND ARRIVED IS NOT KNOWABLE FROM HERE, which is the argument for writing
+  # rather than guarding. Two of the four come with the gate's own log line on the
+  # stream captured above -- ZRO_E_NOCAP and ZRO_E_DENIED, measured -- so a guard would
+  # fire for those anyway and the rule would never be reached. ZRO_E_BADUSER carries
+  # nothing, and ZRO_E_TIMEOUT carries only whatever the command said before it died,
+  # which on a quiet failure is nothing. A guard would therefore be right for some of
+  # them and silently wrong for the rest, and this line cannot see which it got.
+  # ADR-0018.
   if zro_exec_own_code "$rc"; then
     zro_set_error "$first_msg"
     rm -f -- "$err"
@@ -390,6 +411,11 @@ zro_prov_read() {
   fi
 
   # The SOAP message is the informative one; a retry failure just repeats it.
+  #
+  # AND THIS IS THE OTHER HALF OF THE RULE ABOVE, unconditional for the reason that
+  # one is: this write is what PUTS the oracle's sentence where zro_mbox_classify
+  # reads it. Guarded, the gate could no longer tell an absent mailbox from an absent
+  # account at all — the two words it exists to separate. ADR-0018.
   zro_set_error "$first_msg"
   rm -f -- "$err"
   return "$mapped"
