@@ -128,6 +128,18 @@ is**. The next delivered message falsifies a no, and an operator who has just
 sent a test message must not be told a stale one.
 _Avoid_: verified account, known-good account
 
+**The oracle's sentence**:
+The text the existence oracle wrote on the read a verdict is being reached from,
+and the only thing a verdict may be read out of — an absent mailbox and an absent
+account both exit 2, so the status cannot tell them apart. It reaches the
+classifier through the store that also holds the last underlying failure message,
+which is why that store must hold **this** read's sentence or nothing at all: one
+left behind by an earlier operation is classified as this account's answer, and
+the gate then reports an account that exists as one that does not
+([ADR-0018](docs/adr/0018-the-store-holds-this-reads-sentence-or-nothing.md)).
+_Avoid_: last error, detail — those name the store's other role, the one an
+operator reads on a failure screen. The two roles share a file and not a purpose.
+
 ## Inside a mailbox
 
 **Folder listing**:
