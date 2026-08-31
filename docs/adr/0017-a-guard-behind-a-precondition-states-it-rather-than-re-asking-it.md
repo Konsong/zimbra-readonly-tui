@@ -6,7 +6,8 @@
   `ZRO_E_NO_SCRATCH` comment loses a deferral to a closed ticket; `lib/exec.sh` loses three guards
   and keeps one; `lib/window.sh`, `lib/core.sh` and `lib/inventory.sh` lose or re-answer the clock's
   and `stat`'s; `lib/delivery.sh`, `lib/logsearch.sh` and `zimbra-ro-tui.sh` stop restating a
-  constant at eight call sites; `zro_startup_check` reorders so its own missing-binaries message can
+  constant at eight call sites; `zro_startup_check` reorders, and reads the account between its list
+  and that list's report, so its own missing-binaries message can
   print, and `zro_report_error` gains two arms; `tests/test_readonly_scan.sh` gains two codes with
   arms and rewrites one declared exception's reason; `CONTEXT.md` gains **no system tool** and **no
   low priority** and corrects **Unavailable**; issues
@@ -75,15 +76,29 @@ An exception is not "the evidence favoured it here". It is a condition the rule'
 does not cover: **the rule assumes that deleting a guard lets a failure propagate, and at two sites
 it does not — it produces a silent success instead.**
 
-**`exec.sh:710`, `zro_current_user`.** This guard is not merely behind the preflight; it *is* how the
-preflight detects a missing `id`. `zro_startup_check:72` calls it before reaching its own list of
-required binaries, so deleting the guard would break the check that establishes the precondition the
-rule leans on.
+**`exec.sh:710`, `zro_current_user`.** Deleting this guard does not propagate a failure either, and
+what follows it is worse than a silent success: it is a **wrong answer about a different question**.
+`zro_exec` reads this function through command substitution, where a status is discarded, so a guard
+removed here hands `zro_identity_mode` an empty name — and that answers `ZRO_E_BADUSER`, the code for
+an account this tool refuses to run as. A host with no way to ask who it is running as would be told
+it is the wrong user, which is a different condition with a different repair.
 
-It is kept **and corrected**, because it is also wrong today. Neither `zro_current_user` nor line 72
-logs anything, so a host without `id` gets a bare code 21 and no account of it at all — and
-`zro_startup_check:87`, which would have named `id` in the missing-binaries message, is unreachable
-behind the earlier return. The message an operator needs exists and cannot print.
+It is kept **and corrected**, because it is also silent today. Neither `zro_current_user` nor
+`zro_startup_check:72` logs anything, so a host without `id` gets a bare code 21 and no account of it
+at all — and `zro_startup_check:87`, which would have named `id` in the missing-binaries message, is
+unreachable behind the earlier return. The message an operator needs exists and cannot print. The log
+line is the whole correction here, because the code itself cannot travel out of a command
+substitution.
+
+**THIS PARAGRAPH IS A CORRECTION, AND IT IS HERE RATHER THAN IN A REWRITE.** The reason first given
+for keeping this guard was that it *is* how the preflight detects a missing `id` — `zro_startup_check`
+called it before reaching its own list of required binaries, so deleting it would have broken the
+check that establishes the precondition the rule leans on. That reason does not survive the reorder
+this same ADR asks for: once the list is built and reported first, **the list is the detector and the
+guard is not**. The guard is kept anyway, on the ground written above it, which was always the
+stronger of the two. Recorded in place under ADR-0012's rule that a reader should meet the correction
+with the claim — a decision record that quietly acquires a reason it never had is one nobody can
+audit.
 
 **`inventory.sh:359`, `zro_inv_discover`.** Deleting this one does not propagate a failure either.
 `zro_inv_mtime` prints nothing when `stat` cannot run, every candidate is then skipped by the
@@ -95,6 +110,25 @@ was nothing to scan, which reads on the screen as a quiet day rather than as a h
 The two exceptions share the shape and not the mechanism, and the shape is the part that generalises:
 **a guard may be deleted when what follows it fails loudly, and is kept when what follows it succeeds
 quietly.**
+
+## The reorder costs a property unless the account is read between
+
+Moving the missing-binaries list above the identity read is what makes the `id` entry printable, and
+this ADR asked for it without noticing what it takes away. `runuser` cannot join a list that is
+reported before the account is known: whether the session needs it at all is a question about the
+user it runs as. Reported afterwards, on its own, it becomes a **second message one restart later** —
+a host missing `date` *and* `runuser` is told about `date`, repairs it, restarts, and is only then
+told about `runuser`. Two trips to a production server for one repair, and the issue that opened this
+describes the property being lost as current behaviour: *"naming everything absent in one message."*
+
+**The account is therefore read between the list and its report**, guarded by the list's own `id`
+entry, so both still arrive together. That ordering is the whole of it and it is easy to flatten
+back by accident, so `tests/test_startup.sh` pins it directly: a host missing `date` and `runuser`
+gets both names and **exactly one** occurrence of the sentence.
+
+This is the shape the rest of the ADR is about, one level up. A precondition is only worth stating
+where something establishes it, and a preflight that reports before it knows what to report has
+established less than it looks like it has.
 
 ## Seven sites, two codes
 
