@@ -94,7 +94,7 @@ zro_trace_stamp() {
   # the operator did not ask.
   case $out in
     [0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]) ;;
-    *) return "$ZRO_E_UNAVAILABLE" ;;
+    *) return "$ZRO_E_NO_SYSTEM_TOOL" ;;
   esac
   printf '%s' "$out"
 }
@@ -264,15 +264,15 @@ zro_trace_run() {
   # the same capture as the table view.
   local pattern from to from_h to_h
   pattern=$(zro_regex_quote "$subject")
-  from=$(zro_trace_stamp "$ws") || return "$ZRO_E_UNAVAILABLE"
-  to=$(zro_trace_stamp "$we") || return "$ZRO_E_UNAVAILABLE"
+  from=$(zro_trace_stamp "$ws") || return $?
+  to=$(zro_trace_stamp "$we") || return $?
   # The window as the operator will read it, resolved BEFORE any file is opened.
   # Interpolating these into the header instead would let a clock that stopped
   # answering print a report headed by a blank range — in a report whose whole
   # purpose is stating which window was searched. Better to refuse than to answer
   # about a window nobody can see.
-  from_h=$(zro_win_human "$ws") || return "$ZRO_E_UNAVAILABLE"
-  to_h=$(zro_win_human "$we") || return "$ZRO_E_UNAVAILABLE"
+  from_h=$(zro_win_human "$ws") || return $?
+  to_h=$(zro_win_human "$we") || return $?
 
   # Which files the window covers. The syslog family only: the tracer parses
   # postfix and amavis lines, and those land in no other log in the inventory.

@@ -549,8 +549,8 @@ zro_logsearch_run() {
   # answering would otherwise print a report headed by a blank range, in a report
   # whose whole purpose is stating what was searched.
   local from_h to_h
-  from_h=$(zro_win_human "$ws") || return "$ZRO_E_UNAVAILABLE"
-  to_h=$(zro_win_human "$we") || return "$ZRO_E_UNAVAILABLE"
+  from_h=$(zro_win_human "$ws") || return $?
+  to_h=$(zro_win_human "$we") || return $?
 
   local files rc=0
   files=$(zro_logsearch_files "$key" "$ws" "$we") || rc=$?

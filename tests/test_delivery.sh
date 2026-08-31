@@ -654,7 +654,7 @@ assert_status "$ZRO_E_INPUT" zro_trace_stamp 'now'
 assert_status "$ZRO_E_INPUT" zro_trace_stamp ''
 assert_status "$ZRO_E_INPUT" zro_trace_stamp
 rc=0; ( ZRO_DATE_BIN=/nonexistent/date; zro_trace_stamp "$W_28_FROM" ) >/dev/null 2>&1 || rc=$?
-assert_eq "$rc" "$ZRO_E_UNAVAILABLE"
+assert_eq "$rc" "$ZRO_E_NO_SYSTEM_TOOL"
 
 # The one place in this milestone that depends on the report's internal shape.
 # It is isolated here so that re-verifying it against output captured from a real

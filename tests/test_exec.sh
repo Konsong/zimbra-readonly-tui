@@ -359,11 +359,17 @@ rm -f -- "$plain2"
 it "refuses a scan on a host that cannot reduce priority, and runs nothing"
 # The honest refusal. Running it anyway would be this tool taking the disk from
 # the mail server it was opened to diagnose, and doing it silently.
+#
+# ON A CODE OF ITS OWN SINCE ADR-0017. This answered ZRO_E_UNAVAILABLE while it
+# was one of five conditions sharing it here, and that constant names a Zimbra
+# service a read needed and that did not answer — nothing is asked of any service
+# on this path, and the operator was being sent to check mailboxd and a
+# certificate for two binaries missing from their own host.
 : >"$ZRO_MOCK_LOG"
 ZRO_MOCK_ID_USER=zimbra ZRO_NICE_BIN='' \
-  assert_status "$ZRO_E_UNAVAILABLE" zro_exec grep -a -F -m 5 'alpha' "$hay"
+  assert_status "$ZRO_E_NO_LOW_PRIORITY" zro_exec grep -a -F -m 5 'alpha' "$hay"
 ZRO_MOCK_ID_USER=zimbra ZRO_IONICE_BIN='' \
-  assert_status "$ZRO_E_UNAVAILABLE" zro_exec grep -a -F -m 5 'alpha' "$hay"
+  assert_status "$ZRO_E_NO_LOW_PRIORITY" zro_exec grep -a -F -m 5 'alpha' "$hay"
 # The identity read is the gate's own plumbing and runs before any of this; what
 # must not have happened is the search.
 assert_eq "$(grep -cE '^(grep|nice|ionice)' "$ZRO_MOCK_LOG")" "0"

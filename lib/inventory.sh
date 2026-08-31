@@ -354,9 +354,16 @@ zro_inv_file_perms() {
 zro_inv_discover() {
   local key=${1-}
   if [ -z "$ZRO_STAT_BIN" ]; then
-    # Silence here would be indistinguishable from an empty inventory.
+    # KEPT THOUGH zro_startup_check ESTABLISHES stat, and the exception to the rule
+    # ADR-0017 states. Deleting this one does not let a failure propagate: without
+    # it zro_inv_mtime prints nothing, every candidate is skipped by the
+    # ''|*[!0-9]* arm below, and the loop ends on return 0 — an empty inventory,
+    # reported as success. Silence here would be indistinguishable from an empty
+    # inventory, which for a delivery trace reads as a quiet day rather than as a
+    # host without stat. A guard may be deleted when what follows it fails loudly,
+    # and is kept when what follows it succeeds quietly.
     zro_log error "cannot read log modification times: stat not found"
-    return "$ZRO_E_UNAVAILABLE"
+    return "$ZRO_E_NO_SYSTEM_TOOL"
   fi
 
   local base

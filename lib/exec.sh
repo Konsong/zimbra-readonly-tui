@@ -706,8 +706,31 @@ EOF
 ZRO_NICE_LEVEL=19
 ZRO_IONICE_CLASS=3
 
+# KEPT THOUGH zro_startup_check ESTABLISHES id, and the other exception to the
+# rule ADR-0017 states: a guard may be deleted when what follows it fails loudly,
+# and is kept when what follows it does not.
+#
+# WHAT FOLLOWS THIS ONE ANSWERS A DIFFERENT QUESTION. zro_exec reads this function
+# through command substitution, where a status is discarded, so a deleted guard
+# would hand zro_identity_mode an empty name — and that answers ZRO_E_BADUSER, the
+# code for an account this tool refuses to run as. A host that has no way to ask
+# who it is running as would be told it is the wrong user, which is a different
+# condition with a different repair.
+#
+# THE LOG LINE IS THE WHOLE CORRECTION, for that reason: the code cannot travel
+# out of a command substitution, so this line is the only account of the condition
+# an operator or a maintainer gets. Without it the shell's own 'command not found'
+# is all there is, and that goes to a stderr nobody reads from behind whiptail.
+#
+# IT IS NOT WHAT THE PREFLIGHT DETECTS ANY MORE, and ADR-0017 says it is only
+# because it was written before the reorder it also asks for. zro_startup_check
+# now names `id` in its own missing-binaries list and returns before it reaches
+# this function — which is the fix that made that message printable at all.
 zro_current_user() {
-  [ -n "$ZRO_ID_BIN" ] || return "$ZRO_E_UNAVAILABLE"
+  if [ -z "$ZRO_ID_BIN" ]; then
+    zro_log error "cannot read the account this is running as: id not found"
+    return "$ZRO_E_NO_SYSTEM_TOOL"
+  fi
   "$ZRO_ID_BIN" -un
 }
 
@@ -723,7 +746,12 @@ zro_current_user() {
 # one running the tool on purpose: whether the account every command runs as can
 # read a file is not a question about who started the tool.
 zro_user_groups() {
-  [ -n "$ZRO_ID_BIN" ] || return "$ZRO_E_UNAVAILABLE"
+  # That `id` is on this host is established by zro_startup_check, which refuses
+  # to open a session without it and names it in the message. Stated rather than
+  # re-asked: the answer this guard gave was ZRO_E_UNAVAILABLE, a code about a
+  # Zimbra service that did not answer, for a binary nobody had asked anything.
+  # ADR-0014 sets the shape and ADR-0017 applies it. The guard one function up is
+  # kept, because that one is how the preflight detects the absence at all.
   [ -n "${1-}" ] || return "$ZRO_E_INPUT"
   "$ZRO_ID_BIN" -Gn "$1"
 }
@@ -906,7 +934,12 @@ zro_exec() {
   local mode
   mode=$(zro_identity_mode "$(zro_current_user)") || return "$ZRO_E_BADUSER"
 
-  [ -n "$ZRO_TIMEOUT_BIN" ] || return "$ZRO_E_UNAVAILABLE"
+  # THAT THERE IS A `timeout` ON THIS HOST IS zro_startup_check's TO ESTABLISH.
+  # It refuses to open a session without one and names it in the missing-binaries
+  # message, so this function is only ever reached with the precondition already
+  # held. Not re-asked here: the answer this guard gave was ZRO_E_UNAVAILABLE,
+  # which sent an operator to check mailboxd and the admin certificate for a
+  # binary that is not installed. ADR-0014 sets the shape, ADR-0017 applies it.
 
   # THE FIXED PREFIX, PUT BACK WHERE THE BINARY EXPECTS IT. The allowlist has
   # already read this vector with the subcommand in the token position, which is
@@ -922,13 +955,23 @@ zro_exec() {
   # it, immediately inside the privilege wrapper.
   #
   # A host without them refuses the operation rather than running it at ordinary
-  # priority. That is the same refusal the missing clock gets below, and it is the
-  # honest one: this program promises that a scan yields, and a scan that cannot
-  # yield is not the operation the operator was offered.
+  # priority, and it is the honest refusal: this program promises that a whole-file
+  # read yields to the mail, and a read that cannot yield is not the operation the
+  # operator was offered.
+  #
+  # THE ONE CONDITION HERE THAT NO PREFLIGHT RETIRES, and deliberately so. Priority
+  # is decided per operation, so a host without nice and ionice still answers every
+  # screen that never reaches for one; refusing the whole session would take away
+  # far more than it protects. So this guard is real rather than defensive, and it
+  # is the only one in this function that keeps a test of its own.
+  #
+  # ITS OWN CODE SINCE ADR-0017. It answered ZRO_E_UNAVAILABLE while it was the
+  # only reachable one of the five here, which named a Zimbra service that did not
+  # answer for a condition in which nothing was asked of any service.
   if zro_runs_low_priority "$bin"; then
     if [ -z "$ZRO_NICE_BIN" ] || [ -z "$ZRO_IONICE_BIN" ]; then
       zro_log error "cannot run at reduced priority: nice or ionice is not on this host"
-      return "$ZRO_E_UNAVAILABLE"
+      return "$ZRO_E_NO_LOW_PRIORITY"
     fi
     argv+=("$ZRO_NICE_BIN" -n "$ZRO_NICE_LEVEL" "$ZRO_IONICE_BIN" -c "$ZRO_IONICE_CLASS")
   fi
@@ -940,7 +983,10 @@ zro_exec() {
   argv+=("$token" "$@")
 
   if [ "$mode" = runuser ]; then
-    [ -n "$ZRO_RUNUSER" ] || return "$ZRO_E_UNAVAILABLE"
+    # `runuser` is established by zro_startup_check too, and in this same mode:
+    # the preflight asks zro_identity_mode first and adds runuser to its
+    # missing-binaries message only when the answer is this branch. Stated rather
+    # than re-asked, as above. ADR-0017.
     # timeout goes INSIDE the wrapper: killing runuser from outside would leave
     # the Zimbra JVM running.
     argv=("$ZRO_RUNUSER" -u zimbra -- "${argv[@]}")
@@ -1001,9 +1047,16 @@ zro_exec() {
 # THE MEMBERSHIP IS READ OFF zro_exec ABOVE, not chosen. Those are the only five it
 # returns: ZRO_E_INPUT appears in zro_bin_path and zro_identity_mode, and zro_exec
 # converts both before they leave it, so it is not one of these.
+#
+# IT MOVED WITH THE GATE'S RETURN SET, WHICH IS THE WHOLE POINT OF ASKING HERE.
+# ZRO_E_UNAVAILABLE left this list the day ADR-0017 took it out of zro_exec — the
+# gate never meant a Zimbra service that did not answer — and ZRO_E_NO_LOW_PRIORITY
+# took its place as the code the low-priority refusal now returns. A copy of this
+# list kept in a module would have gone stale silently on that day, which is the
+# reason ADR-0010 gives for the predicate living beside the function it describes.
 zro_exec_own_code() {
   case ${1-} in
-    "$ZRO_E_DENIED"|"$ZRO_E_BADUSER"|"$ZRO_E_NOCAP"|"$ZRO_E_UNAVAILABLE"|"$ZRO_E_TIMEOUT")
+    "$ZRO_E_DENIED"|"$ZRO_E_BADUSER"|"$ZRO_E_NOCAP"|"$ZRO_E_NO_LOW_PRIORITY"|"$ZRO_E_TIMEOUT")
       return 0 ;;
   esac
   return 1

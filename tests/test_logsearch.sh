@@ -719,7 +719,7 @@ rm -f -- "$TREE/var/log/secret.txt" "$SYS.bak"
 it "passes the gate's own refusals through instead of calling them unreadable logs"
 # A host that cannot reduce priority is not a log that cannot be read, and an
 # operator sent to zmfixperms over a missing ionice would repair nothing.
-ZRO_IONICE_BIN='' assert_status "$ZRO_E_UNAVAILABLE" \
+ZRO_IONICE_BIN='' assert_status "$ZRO_E_NO_LOW_PRIORITY" \
   zro_logsearch_named rejected '' "$LIVE_S" "$LIVE_E"
 ZRO_SYSTEM_BIN=/nonexistent assert_status "$ZRO_E_NOCAP" \
   zro_logsearch_named rejected '' "$LIVE_S" "$LIVE_E"
@@ -791,7 +791,12 @@ assert_out_eq "" zro_logsearch_gate_code '0 1'
 assert_out_eq "" zro_logsearch_gate_code '141 0'
 assert_out_eq "" zro_logsearch_gate_code '2'
 assert_out_eq "$ZRO_E_DENIED" zro_logsearch_gate_code "0 $ZRO_E_DENIED"
-assert_out_eq "$ZRO_E_UNAVAILABLE" zro_logsearch_gate_code "$ZRO_E_UNAVAILABLE"
+# A code the gate can actually produce on this path: the scan runs grep, grep is
+# in ZRO_LOW_PRIORITY, and a host with no ionice is refused. It read
+# ZRO_E_UNAVAILABLE here until ADR-0017 took that constant out of the gate's
+# return set, which would have left this case asserting the passthrough of a
+# status the gate cannot send.
+assert_out_eq "$ZRO_E_NO_LOW_PRIORITY" zro_logsearch_gate_code "$ZRO_E_NO_LOW_PRIORITY"
 assert_out_eq "$ZRO_E_TIMEOUT" zro_logsearch_gate_code "141 $ZRO_E_TIMEOUT"
 
 rm -f -- "$ZRO_MOCK_LOG" "$ZRO_ERROR_FILE"

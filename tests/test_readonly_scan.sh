@@ -1346,7 +1346,7 @@ assert_eq "$(printf '%s\n' "$tmpfile_sites" | grep -vc '[$][?]')" "0"
 ZRO_T_CODE_NO_SCREEN='
 ZRO_E_OK:not a failure
 ZRO_E_CANCEL:not a failure, and never becomes a process exit status
-ZRO_E_BADUSER:reaches an operator as a bare number today, and has issue 102
+ZRO_E_BADUSER:never reaches a screen — its one reachable site is zro_startup_check, which logs and whose code becomes a process exit status, the channel ADR-0016 puts out of scope
 '
 
 # Every case arm that names a code this program defines, kept only when the arm
@@ -1438,9 +1438,9 @@ assert_eq "$bare_reason" ""
 it "and the scan found arms rather than agreeing with an empty answer"
 # Without these two the equality above passes on a scan that matched nothing at
 # all: every code would be screenless and the declaration would just have to be
-# longer. Twenty codes are defined and seventeen have an arm of their own.
-assert_eq "$(printf '%s\n' "$defined_codes" | grep -c .)" "20"
-assert_eq "$(printf '%s\n' "$screened_codes" | grep -c .)" "17"
+# longer. Twenty-two codes are defined and nineteen have an arm of their own.
+assert_eq "$(printf '%s\n' "$defined_codes" | grep -c .)" "22"
+assert_eq "$(printf '%s\n' "$screened_codes" | grep -c .)" "19"
 
 it "and it reaches the modules, not the entry point alone"
 assert_eq "$(printf '%s\n' "$code_screens" | awk '$1 == "ZRO_E_NO_BLOB" {print $2}' \

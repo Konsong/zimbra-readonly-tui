@@ -75,10 +75,11 @@ zro_win_preset() {
 # --- the clock: thin ------------------------------------------------------
 
 zro_win_now() {
-  [ -n "$ZRO_DATE_BIN" ] || return "$ZRO_E_UNAVAILABLE"
+  # The clock's presence is established by zro_startup_check, which refuses to
+  # open a session without `date`; this asks only what it answered. ADR-0017.
   local out
-  out=$("$ZRO_DATE_BIN" '+%s' 2>/dev/null) || return "$ZRO_E_UNAVAILABLE"
-  case $out in ''|*[!0-9]*) return "$ZRO_E_UNAVAILABLE" ;; esac
+  out=$("$ZRO_DATE_BIN" '+%s' 2>/dev/null) || return "$ZRO_E_NO_SYSTEM_TOOL"
+  case $out in ''|*[!0-9]*) return "$ZRO_E_NO_SYSTEM_TOOL" ;; esac
   printf '%s' "$out"
 }
 
@@ -96,7 +97,7 @@ zro_win_day_start() {
   m=${rest%% *}
   s=${rest##* }
   # One test for all three, because a partial answer is as unusable as none.
-  case "$h$m$s" in ''|*[!0-9]*) return "$ZRO_E_UNAVAILABLE" ;; esac
+  case "$h$m$s" in ''|*[!0-9]*) return "$ZRO_E_NO_SYSTEM_TOOL" ;; esac
   # '10#' for the same reason as in the validator: '08' is a valid hour and an
   # invalid octal number.
   printf '%s' "$(( ts - (10#$h * 3600 + 10#$m * 60 + 10#$s) ))"
@@ -116,7 +117,9 @@ zro_win_human() {
 zro_win_epoch() {
   local t=${1-} out
   zro_validate_datetime "$t" || return "$ZRO_E_INPUT"
-  [ -n "$ZRO_DATE_BIN" ] || return "$ZRO_E_UNAVAILABLE"
+  # The clock's presence is zro_startup_check's to establish, as it is above.
+  # ADR-0017.
+  #
   # A day the calendar does not have — 2026-02-30 — is refused here, which is
   # where the validator deliberately left it.
   out=$("$ZRO_DATE_BIN" -d "$t" '+%s' 2>/dev/null) || return "$ZRO_E_INPUT"
